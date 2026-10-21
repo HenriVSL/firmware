@@ -1,0 +1,223 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Tommi Tauriainen
+
+#include "dmm/services/calibration.h"
+
+namespace dmm::services {
+
+namespace {
+
+// Byte 0x11: battery reading offset, 100 = none, in 10 mV steps.
+constexpr std::uint32_t BatteryOffsetAt = 0x11;
+constexpr std::uint8_t BatteryOffsetMax = 200;
+
+constexpr std::uint32_t MHz = 1'000'000;
+
+// Two 32-byte band blocks, UHF first. In each: power base per level at
+// +2..+5, deviation at +6..+8, squelch base at +9, three little-endian
+// front-end tune points at +10, +12 and +14. The UHF block's first word is
+// the reference trim.
+constexpr std::uint32_t UhfBlock = 0x000;
+constexpr std::uint32_t VhfBlock = 0x020;
+constexpr std::uint32_t PowerBaseAt = 2;
+constexpr std::uint32_t DeviationAt = 6;
+constexpr std::uint32_t SquelchBaseAt = 9;
+constexpr std::uint32_t TunePointsAt = 10;
+constexpr std::uint32_t BasebandGainsAt = 0x040;
+// In the first 39-byte modulator block: codec trims at +0x12..+0x14.
+constexpr std::uint32_t CodecTrimsAt = 0x080 + 0x12;
+
+struct Band
+{
+    std::uint32_t block;
+    std::uint32_t lowHz;
+    std::uint32_t highHz;
+    // Power flatness: one byte per MHz from lowHz per level, tables
+    // powerStride apart; the base value is calibrated at powerRef.
+    std::uint32_t powerFlatness;
+    std::uint32_t powerStride;
+    unsigned powerRef;
+    // Squelch flatness: one byte per squelchStepHz from lowHz.
+    std::uint32_t squelchFlatness;
+    std::uint32_t squelchStepHz;
+    unsigned squelchEntries;
+    unsigned squelchRef;
+    // Front-end tune points at these frequencies; the last band edge is
+    // pinned to fullTune when it is not a calibration point.
+    std::uint32_t tuneHz[3];
+    std::uint16_t tuneTop;
+};
+
+constexpr Band Vhf{VhfBlock, 136 * MHz, 174 * MHz, 0x400, 0x40, 19, 0x500, 2 * MHz, 20, 10,
+    {136 * MHz, 155 * MHz, 174 * MHz}, 0};
+constexpr Band Uhf{UhfBlock, 400 * MHz, 520 * MHz, 0x200, 0x80, 60, 0x520, 5 * MHz, 25, 12,
+    {400 * MHz, 440 * MHz, 480 * MHz}, 0x1000};
+
+const Band *bandFor(std::uint32_t hz)
+{
+    for (const Band *b : {&Vhf, &Uhf}) {
+        if (hz >= b->lowHz && hz <= b->highHz) {
+            return b;
+        }
+    }
+    return nullptr;
+}
+
+std::uint16_t le16(const std::uint8_t *p)
+{
+    return static_cast<std::uint16_t>(p[0] | (p[1] << 8));
+}
+
+constexpr int DacMax = 0xFFF;
+
+bool copyValid(Storage &storage, std::uint32_t copy)
+{
+    constexpr std::uint32_t MarkerBytes = 8;
+    std::uint8_t markers[MarkerBytes];
+    if (!readable(storage.read(copy + StockCalibration::BlockBytes - MarkerBytes, markers))) {
+        return false;
+    }
+    const bool valid = markers[4] == 0x55 && markers[5] == 0x55 && markers[6] == 0xAA && markers[7] == 0xAA;
+    const bool superseded = markers[0] == 0xAA && markers[1] == 0xAA && markers[2] == 0x55 && markers[3] == 0x55;
+    return valid && !superseded;
+}
+
+} // namespace
+
+bool StockCalibration::load(Storage &storage)
+{
+    m_loaded = false;
+    m_copy = copyValid(storage, CopyA) ? 0 : 1;
+    const StorageResult r = storage.read(m_copy == 0 ? CopyA : CopyB, m_data);
+    if (!readable(r)) {
+        return false;
+    }
+    m_flagged = !usable(r);
+    m_loaded = true;
+    return true;
+}
+
+void StockCalibration::use(std::span<const std::uint8_t, Bytes> bytes)
+{
+    for (std::uint32_t i = 0; i < Bytes; ++i) {
+        m_data[i] = bytes[i];
+    }
+    m_copy = 0;
+    m_flagged = false;
+    m_loaded = true;
+}
+
+std::optional<int> StockCalibration::batteryOffsetMv() const
+{
+    if (!present() || m_data[BatteryOffsetAt] > BatteryOffsetMax) {
+        return std::nullopt;
+    }
+    return (static_cast<int>(m_data[BatteryOffsetAt]) - 100) * 10;
+}
+
+std::optional<std::uint16_t> StockCalibration::referenceTrim() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    const std::uint16_t v = le16(m_data + UhfBlock);
+    if (v > DacMax) {
+        return std::nullopt;
+    }
+    return v;
+}
+
+std::optional<std::uint16_t> StockCalibration::txPower(std::uint32_t hz, PowerLevel level) const
+{
+    const Band *b = bandFor(hz);
+    if (!present() || b == nullptr) {
+        return std::nullopt;
+    }
+    const auto l = static_cast<unsigned>(level);
+    const std::uint8_t *flatness = m_data + b->powerFlatness + l * b->powerStride;
+    const unsigned seg = (hz - b->lowHz) / MHz;
+    const int value = m_data[b->block + PowerBaseAt + l] + flatness[seg] - flatness[b->powerRef];
+    constexpr int PowerMax = 0xFF;
+    constexpr int PowerShift = 4;
+    if (value < 0 || value > PowerMax) {
+        return std::nullopt;
+    }
+    return static_cast<std::uint16_t>(value << PowerShift);
+}
+
+std::optional<std::uint16_t> StockCalibration::rxTune(std::uint32_t hz) const
+{
+    const Band *b = bandFor(hz);
+    if (!present() || b == nullptr) {
+        return std::nullopt;
+    }
+    // Points: the three calibrated ones, then the top band edge when it
+    // has a fixed value of its own.
+    std::uint32_t at[4];
+    int value[4];
+    unsigned n = 0;
+    for (unsigned i = 0; i < 3; ++i) {
+        at[n] = b->tuneHz[i];
+        value[n++] = le16(m_data + b->block + TunePointsAt + 2 * i);
+    }
+    if (b->tuneTop != 0) {
+        at[n] = b->highHz;
+        value[n++] = b->tuneTop;
+    }
+    unsigned i = 0;
+    while (i + 2 < n && hz > at[i + 1]) {
+        ++i;
+    }
+    const auto span = static_cast<std::int64_t>(at[i + 1] - at[i]);
+    const auto offset = static_cast<std::int64_t>(hz) - at[i];
+    const std::int64_t v = value[i] + (value[i + 1] - value[i]) * offset / span;
+    return static_cast<std::uint16_t>(v < 0 ? 0 : v > DacMax ? DacMax
+                                                             : v);
+}
+
+std::optional<int> StockCalibration::squelchThreshold(std::uint32_t hz, int level) const
+{
+    const Band *b = bandFor(hz);
+    if (!present() || b == nullptr) {
+        return std::nullopt;
+    }
+    level = level < 1 ? 1 : level;
+    unsigned seg = (hz - b->lowHz) / b->squelchStepHz;
+    if (seg >= b->squelchEntries) {
+        seg = b->squelchEntries - 1;
+    }
+    const std::uint8_t *flatness = m_data + b->squelchFlatness;
+    return m_data[b->block + SquelchBaseAt] - 2 * (level - 1) + flatness[b->squelchRef] - flatness[seg];
+}
+
+std::optional<StockCalibration::Deviation> StockCalibration::deviation() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    const std::uint8_t *d = m_data + UhfBlock + DeviationAt;
+    return Deviation{d[0], d[1], d[2]};
+}
+
+std::optional<std::array<std::uint8_t, 10>> StockCalibration::basebandAnalogGains() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    std::array<std::uint8_t, 10> g{};
+    for (std::size_t i = 0; i < g.size(); ++i) {
+        g[i] = m_data[BasebandGainsAt + i];
+    }
+    return g;
+}
+
+std::optional<StockCalibration::CodecTrims> StockCalibration::codecTrims() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    const std::uint8_t *c = m_data + CodecTrimsAt;
+    return CodecTrims{c[0], c[1], c[2]};
+}
+
+} // namespace dmm::services

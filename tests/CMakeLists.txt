@@ -22,13 +22,16 @@ target_link_libraries(tests PRIVATE dmm_lib dmm_drivers_usb dmm_drivers_display 
 target_compile_definitions(tests PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
 dmm_core_options(tests)
 if(TARGET dmm_os)
-    target_sources(tests PRIVATE os/test_os.cpp)
-    target_link_libraries(tests PRIVATE dmm_os)
+    target_sources(tests PRIVATE os/test_os.cpp services/test_log.cpp services/test_power.cpp services/test_text.cpp services/test_input.cpp services/test_battery.cpp services/test_storage.cpp services/test_data_link.cpp services/test_baseband.cpp services/test_audio.cpp services/test_calibration.cpp services/test_fm.cpp services/test_key_lock.cpp services/test_codeplug.cpp services/test_channel_selector.cpp)
+    target_link_libraries(tests PRIVATE dmm_os dmm_services)
 endif()
 add_test(NAME tests COMMAND tests)
 
 # The core libraries must not pull in the heap, exceptions or printf.
 set(DMM_CORE_LIBS $<TARGET_FILE:dmm_lib> $<TARGET_FILE:dmm_drivers_usb> $<TARGET_FILE:dmm_drivers_display> $<TARGET_FILE:dmm_drivers_storage> $<TARGET_FILE:dmm_drivers_baseband> $<TARGET_FILE:dmm_drivers_radio>)
+if(TARGET dmm_services)
+    list(APPEND DMM_CORE_LIBS $<TARGET_FILE:dmm_services>)
+endif()
 add_test(NAME core-heap-free
     COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} "-DLIBS=${DMM_CORE_LIBS}"
             -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeapFree.cmake)
