@@ -34,6 +34,7 @@ add_library(dmm_version INTERFACE)
 target_include_directories(dmm_version INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/generated)
 
 add_subdirectory(lib)
+add_subdirectory(hal)
 
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
