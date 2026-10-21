@@ -13,6 +13,7 @@ path = [
     ".clang-format",
     ".clang-tidy",
     ".gitignore",
+    ".github/**",
 ]
 SPDX-FileCopyrightText = "2026 Tommi Tauriainen"
 SPDX-License-Identifier = "MIT"
