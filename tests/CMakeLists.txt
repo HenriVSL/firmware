@@ -21,6 +21,10 @@ add_executable(tests
 target_link_libraries(tests PRIVATE dmm_lib dmm_drivers_usb dmm_drivers_display dmm_drivers_storage dmm_drivers_baseband dmm_drivers_radio doctest::doctest)
 target_compile_definitions(tests PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
 dmm_core_options(tests)
+if(TARGET dmm_os)
+    target_sources(tests PRIVATE os/test_os.cpp)
+    target_link_libraries(tests PRIVATE dmm_os)
+endif()
 add_test(NAME tests COMMAND tests)
 
 # The core libraries must not pull in the heap, exceptions or printf.

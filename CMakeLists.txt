@@ -36,6 +36,7 @@ target_include_directories(dmm_version INTERFACE ${CMAKE_CURRENT_BINARY_DIR}/gen
 add_subdirectory(lib)
 add_subdirectory(hal)
 add_subdirectory(drivers)
+add_subdirectory(os)
 
 if(NOT CMAKE_CROSSCOMPILING)
     enable_testing()
