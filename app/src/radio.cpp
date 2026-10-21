@@ -53,6 +53,7 @@ services::PowerLevel powerLevel = services::PowerLevel::Low;
 std::uint16_t timeoutS = DefaultTimeoutS;
 bool receiveOnly = false;
 bool transmitting = false;
+FmTransmitAudio::Route transmitAudio = FmTransmitAudio::Route::Both;
 os::Ticks transmitStarted = 0;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
@@ -298,7 +299,7 @@ void startTransmit()
         return;
     }
     setSpeaker(false);
-    baseband->setMicrophone(true);
+    baseband->setMicrophone(transmitAudio != FmTransmitAudio::Route::Direct);
     baseband->setWorkMode(services::Baseband::WorkMode::Transmit);
     const char *problem = fm->transmit(channel, powerLevel, static_cast<std::uint16_t>(ctcssDeciHz * 10), *cal);
     if (problem != nullptr) {
@@ -307,6 +308,9 @@ void startTransmit()
         log::error("fm") << "transmit refused at " << mhz(channel.transmitHz).view() << " MHz: " << problem;
         fmReceive();
         return;
+    }
+    if (transmitAudio == FmTransmitAudio::Route::Baseband) {
+        fm->setMicrophoneMuted(true);
     }
     transmitting = true;
     power::hold(power::AwakeReason::Transmit);
@@ -520,6 +524,11 @@ void handle(Message &message)
                    [](const FmPower &p) {
                        powerLevel = p.level;
                        log::info("fm") << "transmit power " << powerName(powerLevel);
+                   },
+                   [](const FmTransmitAudio &a) {
+                       transmitAudio = a.route;
+                       constexpr const char *Names[] = {"both routes", "through the baseband only", "straight to the transceiver only"};
+                       log::info("fm") << "transmit audio: " << Names[static_cast<int>(a.route)];
                    },
                    [](const FmTimeout &t) {
                        timeoutS = t.seconds;
