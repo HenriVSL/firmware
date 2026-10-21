@@ -39,6 +39,7 @@ add_subdirectory(drivers)
 add_subdirectory(os)
 if(TARGET dmm_os)
     add_subdirectory(services)
+    add_subdirectory(app)
 endif()
 
 if(NOT CMAKE_CROSSCOMPILING)
