@@ -667,7 +667,7 @@ void uiMain(void *)
             break;
         case MenuItem::Backlight:
             menuValue.open("Backlight");
-            for (std::uint8_t i = 0; i <= 5; ++i) {
+            for (std::uint8_t i = 1; i <= Display::BacklightLevels; ++i) {
                 lib::StaticString<4> s;
                 s << i;
                 menuValue.add(i, s.view());
