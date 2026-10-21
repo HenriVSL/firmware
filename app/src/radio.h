@@ -125,6 +125,18 @@ struct FmTimeout
 {
     std::uint16_t seconds;
 };
+/// Which microphone routes feed the transmitter (console test): both, only
+/// through the baseband, or only straight to the transceiver.
+struct FmTransmitAudio
+{
+    enum class Route : std::uint8_t
+    {
+        Both,
+        Baseband,
+        Direct,
+    };
+    Route route;
+};
 /// Works on @c channel from now on: receive, and transmit on PTT, with its
 /// frequencies, width, tone and power. @c squelch is 0..5.
 struct UseChannel
@@ -134,7 +146,7 @@ struct UseChannel
 };
 
 using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, CodecWrite, RawPacket, FmRead, Microphone, FmWrite,
-    FmReceive, FmIdle, FmSquelch, FmStatus, FmSweep, FmTune, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, UseChannel, BatterySave, BatterySaveStatus>;
+    FmReceive, FmIdle, FmSquelch, FmStatus, FmSweep, FmTune, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus>;
 
 /// Starts the radio task, which owns @p baseband and @p fm (may be
 /// nullptr) and brings them up.

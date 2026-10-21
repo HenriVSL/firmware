@@ -226,6 +226,11 @@ bool radioCommand(std::string_view command)
         posted = radio::post(radio::FmCtcss{static_cast<std::uint16_t>(n[0])});
     } else if (const int level = powerLevel(command); level >= 0) {
         posted = radio::post(radio::FmPower{static_cast<services::PowerLevel>(level)});
+    } else if (command == "fm txaudio both" || command == "fm txaudio bb" || command == "fm txaudio direct") {
+        using Route = radio::FmTransmitAudio::Route;
+        const Route route = command == "fm txaudio bb" ? Route::Baseband : command == "fm txaudio direct" ? Route::Direct
+                                                                                                          : Route::Both;
+        posted = radio::post(radio::FmTransmitAudio{route});
     } else if (numbersAfter(command, "fm tot ", 10, n, 1) && n[0] >= 5 && n[0] <= 600) {
         posted = radio::post(radio::FmTimeout{static_cast<std::uint16_t>(n[0])});
     } else if (command == "lock" || command == "unlock") {
@@ -307,7 +312,7 @@ void runCommand(std::string_view command)
         log::info("console") << "commands: help, fault, hang, restart, battery, autooff <min>, storage, peek <hex addr>, "
                                 "light 0-5, pattern, logview, keytest, panel on|off, beep <hz> <ms>, rx on|off, bb, bb restart, "
                                 "bbtone <hz> <ms>, codec <page> <reg> <value> (hex), bbx <type> <bytes> (hex), fm <reg> [value] (hex), "
-                                "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm sweep, fm tune <0-4095>|auto, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
+                                "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm sweep, fm tune <0-4095>|auto, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
