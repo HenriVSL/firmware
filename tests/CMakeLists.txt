@@ -12,14 +12,19 @@ add_executable(tests
     lib/test_containers.cpp
     lib/test_format.cpp
     lib/test_strings.cpp
-    lib/test_tone_synth.cpp)
-target_link_libraries(tests PRIVATE dmm_lib doctest::doctest)
+    lib/test_tone_synth.cpp
+    drivers/test_rda1846.cpp
+    drivers/test_sct3258.cpp
+    drivers/test_spi_nand.cpp
+    drivers/test_st7735.cpp
+    drivers/test_usb.cpp)
+target_link_libraries(tests PRIVATE dmm_lib dmm_drivers_usb dmm_drivers_display dmm_drivers_storage dmm_drivers_baseband dmm_drivers_radio doctest::doctest)
 target_compile_definitions(tests PRIVATE DOCTEST_CONFIG_NO_EXCEPTIONS_BUT_WITH_ALL_ASSERTS)
 dmm_core_options(tests)
 add_test(NAME tests COMMAND tests)
 
 # The core libraries must not pull in the heap, exceptions or printf.
-set(DMM_CORE_LIBS $<TARGET_FILE:dmm_lib>)
+set(DMM_CORE_LIBS $<TARGET_FILE:dmm_lib> $<TARGET_FILE:dmm_drivers_usb> $<TARGET_FILE:dmm_drivers_display> $<TARGET_FILE:dmm_drivers_storage> $<TARGET_FILE:dmm_drivers_baseband> $<TARGET_FILE:dmm_drivers_radio>)
 add_test(NAME core-heap-free
     COMMAND ${CMAKE_COMMAND} -DNM=${CMAKE_NM} "-DLIBS=${DMM_CORE_LIBS}"
             -P ${PROJECT_SOURCE_DIR}/cmake/CheckHeapFree.cmake)
