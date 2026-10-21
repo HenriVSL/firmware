@@ -53,7 +53,9 @@ services::PowerLevel powerLevel = services::PowerLevel::Low;
 std::uint16_t timeoutS = DefaultTimeoutS;
 bool receiveOnly = false;
 bool transmitting = false;
-FmTransmitAudio::Route transmitAudio = FmTransmitAudio::Route::Both;
+// FM transmit audio takes the transceiver's own microphone input; adding
+// the route through the baseband gives a delayed second copy.
+FmTransmitAudio::Route transmitAudio = FmTransmitAudio::Route::Direct;
 os::Ticks transmitStarted = 0;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
@@ -72,6 +74,12 @@ bool transmitAllowed(std::uint32_t hz)
         }
     }
     return false;
+}
+
+const char *routeName(FmTransmitAudio::Route route)
+{
+    constexpr const char *Names[] = {"both routes", "through the baseband only", "straight to the transceiver only"};
+    return Names[static_cast<int>(route) % 3];
 }
 
 const char *powerName(services::PowerLevel level)
@@ -317,7 +325,8 @@ void startTransmit()
     ui::post(ui::Transmitting{true});
     transmitStarted = os::nowMs();
     log::info("fm") << "transmitting " << mhz(channel.transmitHz).view() << " MHz, power " << powerName(powerLevel)
-                    << " (control " << fm->transmitPower() << "), " << ctcssText().view() << ", timeout " << timeoutS << " s";
+                    << " (control " << fm->transmitPower() << "), " << ctcssText().view() << ", timeout " << timeoutS << " s, audio "
+                    << routeName(transmitAudio);
 }
 
 void stopTransmit(const char *why)
@@ -527,8 +536,7 @@ void handle(Message &message)
                    },
                    [](const FmTransmitAudio &a) {
                        transmitAudio = a.route;
-                       constexpr const char *Names[] = {"both routes", "through the baseband only", "straight to the transceiver only"};
-                       log::info("fm") << "transmit audio: " << Names[static_cast<int>(a.route)];
+                       log::info("fm") << "transmit audio: " << routeName(a.route);
                    },
                    [](const FmTimeout &t) {
                        timeoutS = t.seconds;
