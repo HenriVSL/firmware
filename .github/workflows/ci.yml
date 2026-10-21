@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  host:
+    name: Host build and tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja and GL headers
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          modules: 'qtserialport'
+          cache: true
+      - name: Configure
+        run: cmake --preset host -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+      - name: Build
+        run: cmake --build --preset host
+      - name: Test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --preset host --output-on-failure
+
+  firmware:
+    name: Firmware build (D878UVII)
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        preset: [fw-d878uv2-release, fw-d878uv2-debug]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Cache Arm GNU Toolchain
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: ~/arm-gnu-toolchain
+          key: arm-gnu-toolchain-14.2.rel1-x86_64
+      - name: Install Arm GNU Toolchain 14.2
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/arm-gnu-toolchain
+          curl -sSL https://developer.arm.com/-/media/Files/downloads/gnu/14.2.rel1/binrel/arm-gnu-toolchain-14.2.rel1-x86_64-arm-none-eabi.tar.xz \
+            | tar -xJ --strip-components=1 -C ~/arm-gnu-toolchain
+      - name: Configure
+        run: ARM_GNU_TOOLCHAIN=~/arm-gnu-toolchain cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+
+  checks:
+    name: Formatting and licences
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format
+        run: |
+          pip install clang-format==22.1.8
+          git ls-files '*.cpp' '*.h' | xargs clang-format --dry-run --Werror
+      - name: REUSE
+        uses: fsfe/reuse-action@v5
