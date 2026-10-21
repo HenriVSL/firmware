@@ -1,0 +1,46 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "host",
+      "displayName": "Host: tests, simulators, tools",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/host",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "fw-d878uv2-debug",
+      "displayName": "Firmware: AnyTone D878UVII, debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/fw-d878uv2-debug",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "DMM_BOARD": "anytone_d878uv2"
+      }
+    },
+    {
+      "name": "fw-d878uv2-release",
+      "displayName": "Firmware: AnyTone D878UVII, release",
+      "inherits": "fw-d878uv2-debug",
+      "binaryDir": "${sourceDir}/build/fw-d878uv2-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "MinSizeRel"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host", "configurePreset": "host" },
+    { "name": "fw-d878uv2-debug", "configurePreset": "fw-d878uv2-debug" },
+    { "name": "fw-d878uv2-release", "configurePreset": "fw-d878uv2-release" }
+  ],
+  "testPresets": [
+    {
+      "name": "host",
+      "configurePreset": "host",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

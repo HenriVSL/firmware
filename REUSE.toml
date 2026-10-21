@@ -1,0 +1,24 @@
+version = 1
+SPDX-PackageName = "deltamm"
+SPDX-PackageSupplier = "Tommi Tauriainen"
+
+# Project docs and plain config files where an inline header would be noise.
+[[annotations]]
+path = [
+    "README.md",
+    "AGENTS.md",
+    "ARCHITECTURE.md",
+    "docs/**",
+    "CMakePresets.json",
+    ".clang-format",
+    ".clang-tidy",
+    ".gitignore",
+]
+SPDX-FileCopyrightText = "2026 Tommi Tauriainen"
+SPDX-License-Identifier = "MIT"
+
+# The Spleen bitmap font by Frederic Cambus, as released (2.1.0).
+[[annotations]]
+path = ["third_party/spleen/**"]
+SPDX-FileCopyrightText = "2018-2024 Frederic Cambus"
+SPDX-License-Identifier = "BSD-2-Clause"

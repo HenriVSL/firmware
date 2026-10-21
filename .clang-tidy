@@ -1,0 +1,9 @@
+# bugprone-* and cert-* only: the broader sets mostly conflict with the
+# project's own constraints (no heap in the core, no exceptions or RTTI,
+# fixed-size containers, register access through integer addresses).
+Checks: >
+  -*,
+  bugprone-*,
+  cert-*
+WarningsAsErrors: '*'
+HeaderFilterRegex: '(lib|os|services|app|hal|drivers|boards|tools)/.*'

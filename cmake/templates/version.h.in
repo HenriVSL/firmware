@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Tommi Tauriainen
+
+#pragma once
+
+namespace dmm {
+
+inline constexpr char Version[] = "@PROJECT_VERSION@";
+
+} // namespace dmm

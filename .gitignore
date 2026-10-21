@@ -1,0 +1,9 @@
+build/
+build-*/
+docs/api/
+CMakeUserPresets.json
+*.CDD
+*.cdd
+*.CDI
+*.spi
+*.rdt
