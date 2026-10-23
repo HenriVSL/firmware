@@ -8,6 +8,7 @@
 #include "board_baseband.h"
 #include "board_battery.h"
 #include "board_display.h"
+#include "board_fm_tuning.h"
 #include "board_input.h"
 #include "board_rf.h"
 #include "panel_bus.h"
@@ -303,7 +304,8 @@ void hal::boardMain()
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
     static dmm::services::Sct3258Baseband baseband{basebandChip, basebandBoard, dmm::baseband::bootBlob()};
     static dmm::drivers::radio::Rda1846 fmChip{fmBus};
-    static dmm::services::Rda1846Transceiver fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); }};
+    static dmm::services::Rda1846Transceiver fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); },
+        []() -> const dmm::drivers::radio::Rda1846::Tuning & { return fmTuning(&storage); }};
 
     startWatchdog(WatchdogTimeoutMs);
 

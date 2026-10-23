@@ -276,6 +276,22 @@ std::size_t indexOf(const std::vector<std::string> &v, const std::string &s)
 
 } // namespace
 
+namespace {
+
+// The chip's own values, plus the transmit drive the board sets.
+constexpr Rda1846::WidthSetting TransmitDrive[] = {{0x0A, 0x3BA0, 0x3BA0}};
+const Rda1846::Tuning &transmitTuning()
+{
+    static const Rda1846::Tuning tuning = [] {
+        Rda1846::Tuning t = Rda1846::makerTuning();
+        t.transmit = TransmitDrive;
+        return t;
+    }();
+    return tuning;
+}
+
+} // namespace
+
 TEST_CASE("transmit: band switches and transceiver first, power amplifier last")
 {
     using dmm::services::PowerLevel;
@@ -284,7 +300,7 @@ TEST_CASE("transmit: band switches and transceiver first, power amplifier last")
     Rda1846 chip(bus);
     FakeRf rf;
     rf.events = &bus.events;
-    Rda1846Transceiver fm(chip, rf, BoardPins, noSleep);
+    Rda1846Transceiver fm(chip, rf, BoardPins, noSleep, transmitTuning);
     REQUIRE(fm.start());
     const StockCalibration cal = calibration();
     REQUIRE(fm.receive(FmChannel{433'500'000, 433'500'000, false}, 1, cal) == nullptr);

@@ -9,15 +9,13 @@ namespace dmm::drivers::radio {
 
 namespace {
 
-struct Setting
-{
-    std::uint8_t reg;
-    std::uint16_t value;
-};
+using Setting = Rda1846::Setting;
+using WidthSetting = Rda1846::WidthSetting;
+using BandWord = Rda1846::BandWord;
 
 // The chip maker's start-up list for a 26 MHz reference (soft reset and
 // the calibration run are done around it).
-constexpr Setting StartUp[] = {
+constexpr Setting MakerStartUp[] = {
     {0x04, 0x0FD0}, // 26 MHz reference
     {0x31, 0x0031},
     {0x33, 0x44A5}, // AGC
@@ -35,16 +33,8 @@ constexpr Setting StartUp[] = {
     {0x63, 0x16AD}, // pre-emphasis bypass threshold
 };
 
-// Per channel width, from the same list: {register, narrow, wide}. Page 1
-// (selected through 0x7F) holds the AGC table.
-struct WidthSetting
-{
-    std::uint8_t reg;
-    std::uint16_t narrow;
-    std::uint16_t wide;
-};
-
-constexpr WidthSetting WidthPage0[] = {
+// Per channel width, from the same list. Page 1 holds the AGC table.
+constexpr WidthSetting MakerWidth[] = {
     {0x15, 0x1100, 0x1F00},
     {0x32, 0x4495, 0x7564}, // AGC
     {0x3A, 0x40C3, 0x44C3}, // transmit from the microphone; squelch detectors
@@ -56,7 +46,7 @@ constexpr WidthSetting WidthPage0[] = {
     {0x66, 0xEB2E, 0xFF2E}, // RSSI compensation
 };
 
-constexpr WidthSetting WidthPage1[] = {
+constexpr WidthSetting MakerWidthPage1[] = {
     {0x06, 0x0014, 0x0024},
     {0x07, 0x020C, 0x0214},
     {0x08, 0x0214, 0x0224},
@@ -70,6 +60,27 @@ constexpr WidthSetting WidthPage1[] = {
     {0x12, 0xE0EB, 0xE0EB},
 };
 
+// The band setting for frequencies near the 26 MHz reference's harmonics
+// (136.5, 409.5 and 455 MHz).
+constexpr BandWord MakerBandWords[] = {
+    {135'500'000, 137'500'000, 0x8543},
+    {408'500'000, 410'500'000, 0x8543},
+    {454'000'000, 456'000'000, 0x8543},
+};
+constexpr std::uint16_t BandNormal = 0x8763;
+
+constexpr Rda1846::Tuning Maker{
+    .startUp = MakerStartUp,
+    .afterCalibration = {},
+    .width = MakerWidth,
+    .widthPage1 = MakerWidthPage1,
+    .ranges = {},
+    .receive = {},
+    .transmit = {},
+    .bandWords = MakerBandWords,
+    .normalBand = BandNormal,
+};
+
 constexpr std::uint8_t ControlRegister = 0x30;
 constexpr std::uint8_t PageRegister = 0x7F;
 constexpr std::uint8_t RssiRegister = 0x1B;
@@ -78,7 +89,6 @@ constexpr std::uint8_t FrequencyHigh = 0x29;
 constexpr std::uint8_t FrequencyLow = 0x2A;
 constexpr std::uint8_t SquelchRegister = 0x49;
 constexpr std::uint8_t NoiseSquelchRegister = 0x48;
-constexpr std::uint8_t FiltersRegister = 0x58;
 constexpr std::uint8_t DeviationRegister = 0x59;
 constexpr std::uint8_t Ctcss1Register = 0x4A;
 constexpr std::uint8_t ToneModeRegister = 0x4E;
@@ -93,40 +103,6 @@ constexpr std::uint16_t TransmitOn = 1u << 6;
 constexpr std::uint16_t CalibrateA = 0x40A4;
 constexpr std::uint16_t CalibrateB = 0x40A6;
 
-// Receive levels. 0x0A: the chip maker's narrow-channel value. 0x40: FM
-// paths. 0x44: receive volume step 9 of 15, full DAC gain, transmit gain 9.
-constexpr Setting Board[] = {
-    {0x0A, 0x4380},
-    {0x40, 0x0030},
-    {0x44, 0x09F9},
-};
-constexpr Setting ReceiveLevels[] = {
-    {0x0A, 0x4380},
-    {0x44, 0x09F9},
-};
-
-// Transmit levels. 0x0A: driver step 7 (bits 14:11), the drive the power
-// calibration is made at, and microphone amplifier gain 14. 0x41: voice
-// digital gain. 0x44: transmit gain 9, full DAC gain and volume.
-constexpr Setting TransmitLevels[] = {
-    {0x0A, 0x3BA0},
-    {0x41, 0x070F},
-    {0x44, 0x09FF},
-};
-
-// Filters: in receive the baseband chip does the de-emphasis, so the
-// transceiver's own is bypassed; transmit keeps its pre-emphasis. Both use
-// the 250 Hz tone filter.
-constexpr std::uint16_t ReceiveFilters = 0x8085;
-constexpr std::uint16_t TransmitFilters = 0x8405;
-
-// Band register: normal, or the setting for the few frequencies where the
-// 26 MHz reference's harmonics fall (136.5, 409.5 and 455 MHz).
-constexpr std::uint16_t BandNormal = 0x8763;
-constexpr std::uint16_t BandSpecial = 0x8543;
-constexpr std::uint32_t SpecialHz[] = {136'500'000, 409'500'000, 455'000'000};
-constexpr std::uint32_t SpecialWindowHz = 1'000'000;
-
 // Tone mode: no tone, or CTCSS from the chip (bits 10:9 = 11), no phase
 // shift at the end.
 constexpr std::uint16_t ToneModeOff = 0x2002;
@@ -136,9 +112,32 @@ constexpr int RssiOffsetDb = 137;
 
 } // namespace
 
-Rda1846::Rda1846(hal::RegisterBus &bus)
-    : m_bus(bus)
+const Rda1846::Tuning &Rda1846::makerTuning()
 {
+    return Maker;
+}
+
+Rda1846::Rda1846(hal::RegisterBus &bus, const Tuning &tuning)
+    : m_bus(bus), m_tuning(&tuning)
+{
+}
+
+void Rda1846::write(std::span<const Setting> settings, void (*sleepMs)(unsigned))
+{
+    for (const Setting &s : settings) {
+        m_bus.write(s.reg, s.value);
+        if (s.sleepMs != 0) {
+            sleepMs(s.sleepMs);
+        }
+    }
+}
+
+void Rda1846::write(std::span<const WidthSetting> settings)
+{
+    const bool wide = m_bandwidth == Bandwidth::Wide;
+    for (const WidthSetting &s : settings) {
+        m_bus.write(s.reg, wide ? s.wide : s.narrow);
+    }
 }
 
 bool Rda1846::present()
@@ -167,18 +166,14 @@ bool Rda1846::start(void (*sleepMs)(unsigned), std::uint16_t gpio)
     sleepMs(50);
     m_bus.write(ControlRegister, 0x0004); // power on
     m_bus.write(GpioRegister, gpio);
-    for (const Setting &s : StartUp) {
-        m_bus.write(s.reg, s.value);
-    }
-    for (const Setting &s : Board) {
-        m_bus.write(s.reg, s.value);
-    }
+    write(m_tuning->startUp, sleepMs);
     m_bus.write(ControlRegister, CalibrateA);
     sleepMs(50);
     m_bus.write(ControlRegister, CalibrateB);
     sleepMs(100);
     m_bus.write(ControlRegister, ControlNarrow);
     sleepMs(10);
+    write(m_tuning->afterCalibration, sleepMs);
     m_mode = Mode::Idle;
     setBandwidth(Bandwidth::Narrow);
     return true;
@@ -191,12 +186,15 @@ std::uint32_t Rda1846::frequencyWord(std::uint32_t hz)
 
 void Rda1846::setFrequency(std::uint32_t hz)
 {
-    bool special = false;
-    for (std::uint32_t s : SpecialHz) {
-        const std::uint32_t d = hz > s ? hz - s : s - hz;
-        special = special || d <= SpecialWindowHz;
+    m_hz = hz;
+    std::uint16_t band = m_tuning->normalBand;
+    for (const BandWord &b : m_tuning->bandWords) {
+        if (hz >= b.lowHz && hz <= b.highHz) {
+            band = b.value;
+            break;
+        }
     }
-    m_bus.write(BandRegister, special ? BandSpecial : BandNormal);
+    m_bus.write(BandRegister, band);
     const std::uint32_t word = frequencyWord(hz);
     m_bus.write(FrequencyHigh, static_cast<std::uint16_t>(word >> 16));
     m_bus.write(FrequencyLow, static_cast<std::uint16_t>(word));
@@ -205,15 +203,16 @@ void Rda1846::setFrequency(std::uint32_t hz)
 void Rda1846::setBandwidth(Bandwidth bandwidth)
 {
     m_bandwidth = bandwidth;
-    const bool wide = bandwidth == Bandwidth::Wide;
-    for (const WidthSetting &s : WidthPage0) {
-        m_bus.write(s.reg, wide ? s.wide : s.narrow);
-    }
+    write(m_tuning->width);
     m_bus.write(PageRegister, 1);
-    for (const WidthSetting &s : WidthPage1) {
-        m_bus.write(s.reg, wide ? s.wide : s.narrow);
-    }
+    write(m_tuning->widthPage1);
     m_bus.write(PageRegister, 0);
+    const bool wide = bandwidth == Bandwidth::Wide;
+    for (const RangeSetting &r : m_tuning->ranges) {
+        if (m_hz >= r.lowHz && m_hz <= r.highHz) {
+            m_bus.write(r.setting.reg, wide ? r.setting.wide : r.setting.narrow);
+        }
+    }
 }
 
 void Rda1846::setMode(Mode mode)
@@ -225,10 +224,7 @@ void Rda1846::setMode(Mode mode)
         return;
     }
     const bool transmit = mode == Mode::Transmit;
-    for (const Setting &s : transmit ? std::span<const Setting>(TransmitLevels) : std::span<const Setting>(ReceiveLevels)) {
-        m_bus.write(s.reg, s.value);
-    }
-    m_bus.write(FiltersRegister, transmit ? TransmitFilters : ReceiveFilters);
+    write(transmit ? m_tuning->transmit : m_tuning->receive);
     m_bus.write(ControlRegister, static_cast<std::uint16_t>(idle | (transmit ? TransmitOn : ReceiveOn)));
 }
 

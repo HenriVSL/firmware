@@ -26,7 +26,13 @@ public:
         std::uint32_t midLowHz;
     };
 
-    Rda1846Transceiver(drivers::radio::Rda1846 &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned));
+    /// Picks the chip's register values when it starts; may read storage.
+    using TuningSource = const drivers::radio::Rda1846::Tuning &(*)();
+
+    /// @p tuning: the board's register values, or nullptr to keep the
+    /// chip's own.
+    Rda1846Transceiver(drivers::radio::Rda1846 &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
+        TuningSource tuning = nullptr);
 
     bool present() override { return m_chip.present(); }
     bool start() override;
@@ -59,6 +65,7 @@ private:
     RfHardware &m_rf;
     Pins m_pins;
     void (*m_sleepMs)(unsigned);
+    TuningSource m_tuning;
     std::uint16_t m_power = 0;
     bool m_wide = false;
     std::uint32_t m_receiveHz = 0;
