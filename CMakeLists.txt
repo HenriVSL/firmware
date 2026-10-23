@@ -3,7 +3,7 @@
 
 cmake_minimum_required(VERSION 3.25)
 project(deltamm
-    VERSION 0.17.1
+    VERSION 0.17.2
     DESCRIPTION "Open firmware for DMR and FM handheld radios"
     LANGUAGES C CXX)
 
