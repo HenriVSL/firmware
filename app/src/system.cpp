@@ -40,7 +40,7 @@ std::atomic<os::Ticks> lastActivity{0};
 std::atomic<int> autoOffMinutes{0};
 std::atomic<bool> batteryReportWanted{false};
 
-services::BatteryMonitor battery(services::BatteryMonitor::TwoCellLiIon);
+services::BatteryMonitor battery;
 services::StockCalibration stockCalibration;
 std::atomic<bool> calibrationReady{false};
 bool batteryCalibrated = false;
@@ -202,6 +202,9 @@ void systemMain(void *)
     }
     logResetReport();
     platform->system.holdPower();
+    if (platform->battery != nullptr) {
+        battery.setThresholds(platform->battery->thresholds());
+    }
     loadCalibration();
 
     // A short red flash first shows the image runs, whatever happens next.
