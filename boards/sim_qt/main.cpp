@@ -6,6 +6,7 @@
 
 #include "dmm/app/app.h"
 #include "dmm/os/os.h"
+#include "dmm/services/d878uv2_calibration.h"
 #include "sim_audio.h"
 #include "sim_bridge.h"
 
@@ -31,7 +32,8 @@ int main(int argc, char *argv[])
 
     SimBridge *bridge = SimBridge::instance();
     static SimAudio audio;
-    static dmm::app::Platform platform{*bridge, *bridge, *bridge, "sim_qt", nullptr, &bridge->display(), &bridge->input(), &bridge->battery(), &bridge->storage(), nullptr, nullptr, nullptr, &audio};
+    static dmm::services::D878Uv2Calibration calibration;
+    static dmm::app::Platform platform{*bridge, *bridge, *bridge, "sim_qt", nullptr, &bridge->display(), &bridge->input(), &bridge->battery(), &bridge->storage(), nullptr, nullptr, nullptr, &audio, &calibration};
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);

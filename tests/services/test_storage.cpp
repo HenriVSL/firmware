@@ -2,17 +2,18 @@
 // Copyright (c) 2026 Tommi Tauriainen
 
 #include "../drivers/fake_spi_nand.h"
-#include "dmm/services/calibration.h"
+#include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/nand_storage.h"
 
 #include <doctest/doctest.h>
 
+#include <string_view>
 #include <vector>
 
 using namespace dmm;
 using dmm::drivers::storage::SpiNand;
+using dmm::services::D878Uv2Calibration;
 using dmm::services::NandStorage;
-using dmm::services::StockCalibration;
 using dmm::services::StorageResult;
 
 namespace {
@@ -116,27 +117,28 @@ TEST_CASE("calibration comes from the valid copy and gives the battery offset")
     copyA[0x15] = 'w';
     copyB = copyA;
     copyB[0x11] = 90; // -100 mV
-    chip.put(StockCalibration::CopyA, copyA);
-    chip.put(StockCalibration::CopyB, copyB);
-    chip.put(StockCalibration::CopyA + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    chip.put(D878Uv2Calibration::CopyA, copyA);
+    chip.put(D878Uv2Calibration::CopyB, copyB);
+    chip.put(D878Uv2Calibration::CopyA + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
     SpiNand nand(chip, noDelay);
     NandStorage storage(nand);
     storage.start();
 
-    StockCalibration cal;
+    D878Uv2Calibration cal;
     REQUIRE(cal.load(storage));
     CHECK(cal.copy() == 0);
     CHECK(cal.present());
     CHECK(cal.batteryOffsetMv() == 120);
 
     // A superseded copy A: copy B is used.
-    chip.put(StockCalibration::CopyA + 0x1FFF8, {0xAA, 0xAA, 0x55, 0x55});
+    chip.put(D878Uv2Calibration::CopyA + 0x1FFF8, {0xAA, 0xAA, 0x55, 0x55});
     REQUIRE(cal.load(storage));
     CHECK(cal.copy() == 1);
+    CHECK(std::string_view(cal.source()) == "copy B");
     CHECK(cal.batteryOffsetMv() == -100);
 
     // Never calibrated: no offset.
-    chip.put(StockCalibration::CopyB + 0x14, {0, 0});
+    chip.put(D878Uv2Calibration::CopyB + 0x14, {0, 0});
     REQUIRE(cal.load(storage));
     CHECK_FALSE(cal.present());
     CHECK_FALSE(cal.batteryOffsetMv().has_value());
@@ -149,17 +151,18 @@ TEST_CASE("calibration pages the flash flags as uncorrectable are still used")
     copyA[0x11] = 105; // +50 mV
     copyA[0x14] = 'w';
     copyA[0x15] = 'w';
-    chip.put(StockCalibration::CopyA, copyA);
-    chip.put(StockCalibration::CopyA + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
-    chip.eccStatus[StockCalibration::CopyA / 2048] = 0x20;
-    chip.eccStatus[(StockCalibration::CopyA + 0x1FFF8) / 2048] = 0x20;
+    chip.put(D878Uv2Calibration::CopyA, copyA);
+    chip.put(D878Uv2Calibration::CopyA + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    chip.eccStatus[D878Uv2Calibration::CopyA / 2048] = 0x20;
+    chip.eccStatus[(D878Uv2Calibration::CopyA + 0x1FFF8) / 2048] = 0x20;
     SpiNand nand(chip, noDelay);
     NandStorage storage(nand);
     storage.start();
 
-    StockCalibration cal;
+    D878Uv2Calibration cal;
     REQUIRE(cal.load(storage));
     CHECK(cal.copy() == 0);
     CHECK(cal.flagged());
+    CHECK(std::string_view(cal.source()).starts_with("copy A (flash check failed"));
     CHECK(cal.batteryOffsetMv() == 50);
 }

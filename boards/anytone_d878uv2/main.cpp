@@ -32,6 +32,7 @@
 #include "dmm/hal/gd32f30x/usbd.h"
 #include "dmm/hal/gd32f30x/watchdog.h"
 #include "dmm/os/os.h"
+#include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/log.h"
 #include "dmm/services/nand_storage.h"
 #include "dmm/services/rda1846_transceiver.h"
@@ -291,6 +292,7 @@ void hal::boardMain()
     static dmm::drivers::storage::SpiNand flash{flashBus, delayUs};
     static dmm::services::NandStorage storage{flash};
     storage.start();
+    static dmm::services::D878Uv2Calibration calibration;
 
     adc().start();
     static BoardInput input;
@@ -317,7 +319,7 @@ void hal::boardMain()
     usbDevice.start();
     static dmm::app::Platform platform{leds, logSink, system, "anytone_d878uv2",
         clock == ClockSource::Crystal ? "clock 120 MHz from crystal" : "crystal did not start, clock 120 MHz from internal RC",
-        &display, &input, &battery, &storage, &dataChannel, &baseband, &fm, &audio};
+        &display, &input, &battery, &storage, &dataChannel, &baseband, &fm, &audio, &calibration};
     dmm::app::start(platform);
     dmm::os::runScheduler();
     for (;;) {
