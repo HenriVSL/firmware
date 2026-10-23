@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Tommi Tauriainen
 
 #include "../drivers/fake_spi_nand.h"
-#include "dmm/services/codeplug.h"
+#include "dmm/services/d878uv2_codeplug.h"
 #include "dmm/services/nand_storage.h"
 
 #include <doctest/doctest.h>
@@ -15,9 +15,9 @@
 using dmm::drivers::storage::SpiNand;
 using dmm::services::Channel;
 using dmm::services::ChannelMode;
+using dmm::services::D878Uv2Codeplug;
 using dmm::services::NandStorage;
 using dmm::services::PowerLevel;
-using dmm::services::StockCodeplug;
 using dmm::services::Tone;
 
 namespace {
@@ -161,7 +161,7 @@ TEST_CASE("the codeplug reads channels and zones from the valid copy of each blo
     SpiNand nand(chip, noDelay);
     NandStorage storage(nand);
     storage.start();
-    StockCodeplug cp(storage);
+    D878Uv2Codeplug cp(storage);
 
     const auto c0 = cp.channel(0);
     REQUIRE(c0.has_value());
@@ -177,7 +177,7 @@ TEST_CASE("the codeplug reads channels and zones from the valid copy of each blo
     std::array<std::uint8_t, 4> used{};
     REQUIRE(cp.zonesInUse(used) == 1);
     CHECK(used[0] == 0);
-    std::array<char, StockCodeplug::ZoneNameBytes + 1> name{};
+    std::array<char, D878Uv2Codeplug::ZoneNameBytes + 1> name{};
     REQUIRE(cp.zoneName(0, name));
     CHECK(std::string(name.data()) == "Repeaters");
     std::array<std::uint16_t, 8> list{};

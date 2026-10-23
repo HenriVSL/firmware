@@ -8,6 +8,7 @@
 #include "dmm/services/battery.h"
 #include "dmm/services/byte_channel.h"
 #include "dmm/services/calibration.h"
+#include "dmm/services/codeplug.h"
 #include "dmm/services/display.h"
 #include "dmm/services/fm_transceiver.h"
 #include "dmm/services/input.h"
@@ -45,6 +46,8 @@ struct Platform
     services::AudioHardware *audio = nullptr;
     /// The radio's calibration, read from storage at start, or nullptr.
     services::Calibration *calibration = nullptr;
+    /// The radio's channels, zones and settings, or nullptr.
+    services::CodeplugSource *codeplug = nullptr;
 };
 
 /// Creates the app's tasks. Called once, before os::runScheduler().
