@@ -416,7 +416,7 @@ void start(Platform &p)
 {
     platform = &p;
     if (p.display != nullptr) {
-        ui::start(*p.display, p.codeplug);
+        ui::start(*p.display, p.codeplug, p.input);
     }
     if (p.input != nullptr) {
         input::start(*p.input);

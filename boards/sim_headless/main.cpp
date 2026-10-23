@@ -155,7 +155,7 @@ int main(int argc, char *argv[])
         QTimer::singleShot(3500, &app, [names] {
             for (unsigned i = 0; i < static_cast<unsigned>(dmm::services::Key::Count); ++i) {
                 const auto key = static_cast<dmm::services::Key>(i);
-                const std::string_view n = dmm::services::keyName(key);
+                const std::string_view n = input.keyLabel(key);
                 if (names.contains(QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())), Qt::CaseInsensitive)) {
                     input.setKey(key, true);
                 }
