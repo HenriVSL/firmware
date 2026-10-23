@@ -107,10 +107,9 @@ void setSpeaker(bool open)
 }
 
 // The baseband's analog FM mode for the current channel, receiving.
-void basebandAnalogReceive(const services::Calibration &cal)
+void basebandAnalogReceive()
 {
-    const auto gains = cal.basebandAnalogGains();
-    const bool ok = gains && baseband->setAnalog(fmChannel.wide, *gains) &&
+    const bool ok = baseband->setAnalog(fmChannel.wide) &&
         baseband->setWorkMode(services::Baseband::WorkMode::Receive) && baseband->setCarrier(speakerOpen);
     if (!ok) {
         log::warning("baseband") << "analog receive set-up not accepted";
@@ -191,7 +190,7 @@ void fmReceive()
         log::error("fm") << "receive refused at " << mhz(fmChannel.receiveHz).view() << " MHz: " << problem;
         return;
     }
-    basebandAnalogReceive(*cal);
+    basebandAnalogReceive();
     const auto threshold = cal->squelchThreshold(fmChannel.receiveHz, level);
     log::info("fm") << "receiving " << mhz(fmChannel.receiveHz).view() << " MHz, " << (fmChannel.wide ? "25" : "12.5")
                     << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0)
@@ -362,15 +361,9 @@ void bringUp()
     if (speakerVolume >= 0) {
         baseband->setSpeakerVolume(speakerVolume);
     }
-    // A restart forgets the analog set-up and the codec trims.
-    const services::Calibration *cal = system::calibration();
-    if (cal != nullptr) {
-        if (const auto t = cal->codecTrims(); !t || !baseband->setCodecTrims(t->leftOut, t->rightOut, t->rightInput)) {
-            log::warning("baseband") << "codec trims not applied";
-        }
-    }
-    if (fm != nullptr && fm->receiving() && cal != nullptr) {
-        basebandAnalogReceive(*cal);
+    // A restart forgets the analog set-up.
+    if (fm != nullptr && fm->receiving() && system::calibration() != nullptr) {
+        basebandAnalogReceive();
     }
 }
 

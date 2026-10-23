@@ -5,6 +5,7 @@
 
 #include "dmm/services/calibration.h"
 
+#include <array>
 #include <span>
 
 namespace dmm::services {
@@ -24,10 +25,7 @@ namespace dmm::services {
 /// eight bits; there is no value when the result leaves 0..255. Front-end
 /// tuning is interpolated between the band's three calibration points.
 /// The squelch threshold is the band's base corrected by its flatness
-/// table. Deviation has one set for both bands. The codec trims are the
-/// left and right line-out gains and the right input amplifier volume;
-/// the baseband gains are big-endian words: transmit before and after the
-/// limiter, CTCSS, DCS and receive volume.
+/// table. Deviation has one set for both bands.
 class D878Uv2Calibration final : public Calibration
 {
 public:
@@ -56,8 +54,19 @@ public:
     std::optional<std::uint16_t> rxTune(std::uint32_t hz) const override;
     std::optional<int> squelchThreshold(std::uint32_t hz, int level) const override;
     std::optional<Deviation> deviation() const override;
-    std::optional<CodecTrims> codecTrims() const override;
-    std::optional<std::array<std::uint8_t, 10>> basebandAnalogGains() const override;
+
+    /// Audio codec trims: left and right line-out gain, right input
+    /// amplifier volume.
+    struct CodecTrims
+    {
+        std::uint8_t leftOut;
+        std::uint8_t rightOut;
+        std::uint8_t rightInput;
+    };
+    std::optional<CodecTrims> codecTrims() const;
+    /// The baseband chip's analog-mode gains, big-endian words: transmit
+    /// before and after the limiter, CTCSS, DCS and receive volume.
+    std::optional<std::array<std::uint8_t, 10>> basebandAnalogGains() const;
 
     const std::uint8_t *data() const { return m_data; }
 

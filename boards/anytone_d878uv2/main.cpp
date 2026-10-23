@@ -42,6 +42,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -304,7 +305,16 @@ void hal::boardMain()
     static BoardRf rf;
     rf.configure();
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
-    static dmm::services::Sct3258Baseband baseband{basebandChip, basebandBoard, dmm::baseband::bootBlob()};
+    // Read from the radio task once the app has the calibration.
+    static dmm::services::Sct3258Baseband baseband{basebandChip, basebandBoard, dmm::baseband::bootBlob(), basebandAudio(),
+        []() -> std::optional<dmm::services::Sct3258Baseband::Trims> {
+            const auto gains = calibration.basebandAnalogGains();
+            const auto codec = calibration.codecTrims();
+            if (!gains || !codec) {
+                return std::nullopt;
+            }
+            return dmm::services::Sct3258Baseband::Trims{*gains, {codec->leftOut, codec->rightOut, codec->rightInput}};
+        }};
     static dmm::drivers::radio::Rda1846 fmChip{fmBus};
     static dmm::services::Rda1846Transceiver fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); },
         []() -> const dmm::drivers::radio::Rda1846::Tuning & { return fmTuning(&storage); }};
