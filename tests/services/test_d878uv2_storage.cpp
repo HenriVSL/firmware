@@ -3,7 +3,7 @@
 
 #include "../drivers/fake_spi_nand.h"
 #include "dmm/services/d878uv2_calibration.h"
-#include "dmm/services/nand_storage.h"
+#include "dmm/services/d878uv2_storage.h"
 
 #include <doctest/doctest.h>
 
@@ -13,7 +13,7 @@
 using namespace dmm;
 using dmm::drivers::storage::SpiNand;
 using dmm::services::D878Uv2Calibration;
-using dmm::services::NandStorage;
+using dmm::services::D878Uv2Storage;
 using dmm::services::StorageResult;
 
 namespace {
@@ -46,7 +46,7 @@ TEST_CASE("the newest remap record is used for logical reads")
     chip.put(0x181 * 0x20000 + 5, {0xAB});
     chip.put(0x02F60000 + 5, {0x11});
     SpiNand nand(chip, noDelay);
-    NandStorage storage(nand);
+    D878Uv2Storage storage(nand);
     storage.start();
     CHECK(storage.info().present);
     CHECK(storage.info().remappedBlocks == 2);
@@ -69,7 +69,7 @@ TEST_CASE("reads cross pages and blocks; the worst result is reported")
     chip.put(3 * 0x20000, {0x02}); // first byte of block 1 = block 3
     chip.eccStatus[3 * 64] = 0x10; // first page of block 3: corrected
     SpiNand nand(chip, noDelay);
-    NandStorage storage(nand);
+    D878Uv2Storage storage(nand);
     storage.start();
     std::uint8_t two[2] = {};
     CHECK(storage.read(0x1FFFF, two) == StorageResult::Corrected);
@@ -83,7 +83,7 @@ TEST_CASE("no record, a broken count or no chip mean no remapping")
     {
         FakeSpiNand chip;
         SpiNand nand(chip, noDelay);
-        NandStorage storage(nand);
+        D878Uv2Storage storage(nand);
         storage.start();
         CHECK(storage.info().remappedBlocks == -1);
     }
@@ -92,7 +92,7 @@ TEST_CASE("no record, a broken count or no chip mean no remapping")
         putRecord(chip, 0, {});
         chip.put(0x1F6, {200});
         SpiNand nand(chip, noDelay);
-        NandStorage storage(nand);
+        D878Uv2Storage storage(nand);
         storage.start();
         CHECK(storage.info().remappedBlocks == -1);
     }
@@ -100,7 +100,7 @@ TEST_CASE("no record, a broken count or no chip mean no remapping")
         FakeSpiNand chip;
         chip.maker = 0x00;
         SpiNand nand(chip, noDelay);
-        NandStorage storage(nand);
+        D878Uv2Storage storage(nand);
         storage.start();
         CHECK_FALSE(storage.info().present);
         std::uint8_t b = 0;
@@ -121,7 +121,7 @@ TEST_CASE("calibration comes from the valid copy and gives the battery offset")
     chip.put(D878Uv2Calibration::CopyB, copyB);
     chip.put(D878Uv2Calibration::CopyA + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
     SpiNand nand(chip, noDelay);
-    NandStorage storage(nand);
+    D878Uv2Storage storage(nand);
     storage.start();
 
     D878Uv2Calibration cal;
@@ -156,7 +156,7 @@ TEST_CASE("calibration pages the flash flags as uncorrectable are still used")
     chip.eccStatus[D878Uv2Calibration::CopyA / 2048] = 0x20;
     chip.eccStatus[(D878Uv2Calibration::CopyA + 0x1FFF8) / 2048] = 0x20;
     SpiNand nand(chip, noDelay);
-    NandStorage storage(nand);
+    D878Uv2Storage storage(nand);
     storage.start();
 
     D878Uv2Calibration cal;
