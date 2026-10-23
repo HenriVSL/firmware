@@ -3,9 +3,9 @@
 
 add_library(dmm_services STATIC
     src/battery.cpp
-    src/calibration.cpp
     src/channel_selector.cpp
     src/codeplug.cpp
+    src/d878uv2_calibration.cpp
     src/data_link.cpp
     src/input.cpp
     src/key_lock.cpp

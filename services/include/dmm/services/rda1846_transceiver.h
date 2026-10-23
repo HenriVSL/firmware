@@ -36,9 +36,9 @@ public:
 
     bool present() override { return m_chip.present(); }
     bool start() override;
-    const char *receive(const FmChannel &channel, int squelchLevel, const StockCalibration &calibration) override;
+    const char *receive(const FmChannel &channel, int squelchLevel, const Calibration &calibration) override;
     const char *transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz,
-        const StockCalibration &calibration) override;
+        const Calibration &calibration) override;
     void endTransmit() override;
     std::uint16_t transmitPower() const override { return m_power; }
     void idle() override;

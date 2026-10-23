@@ -107,7 +107,7 @@ void setSpeaker(bool open)
 }
 
 // The baseband's analog FM mode for the current channel, receiving.
-void basebandAnalogReceive(const services::StockCalibration &cal)
+void basebandAnalogReceive(const services::Calibration &cal)
 {
     const auto gains = cal.basebandAnalogGains();
     const bool ok = gains && baseband->setAnalog(fmChannel.wide, *gains) &&
@@ -176,7 +176,7 @@ void startFm()
 
 void fmReceive()
 {
-    const services::StockCalibration *cal = system::calibration();
+    const services::Calibration *cal = system::calibration();
     if (cal == nullptr) {
         log::error("fm") << "receive refused: no calibration loaded";
         return;
@@ -228,7 +228,7 @@ int settledRssi()
 // range, then a fine pass around the strongest point.
 void fmSweep()
 {
-    const services::StockCalibration *cal = system::calibration();
+    const services::Calibration *cal = system::calibration();
     if (!fm->receiving() || cal == nullptr) {
         log::info("fm") << "sweep: not receiving";
         return;
@@ -291,7 +291,7 @@ void startTransmit()
     if (transmitting) {
         return;
     }
-    const services::StockCalibration *cal = system::calibration();
+    const services::Calibration *cal = system::calibration();
     if (fm == nullptr || !fm->receiving() || cal == nullptr) {
         log::info("fm") << "PTT: no FM channel set (fm rx first)";
         return;
@@ -363,7 +363,7 @@ void bringUp()
         baseband->setSpeakerVolume(speakerVolume);
     }
     // A restart forgets the analog set-up and the codec trims.
-    const services::StockCalibration *cal = system::calibration();
+    const services::Calibration *cal = system::calibration();
     if (cal != nullptr) {
         if (const auto t = cal->codecTrims(); !t || !baseband->setCodecTrims(t->leftOut, t->rightOut, t->rightInput)) {
             log::warning("baseband") << "codec trims not applied";
@@ -565,7 +565,7 @@ void handle(Message &message)
                        fmReceive();
                    },
                    [](const FmTune &t) {
-                       const services::StockCalibration *cal = system::calibration();
+                       const services::Calibration *cal = system::calibration();
                        if (!haveFm() || !fm->receiving() || cal == nullptr) {
                            log::info("fm") << "tune: not receiving";
                            return;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Tommi Tauriainen
 
+#include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/rda1846_transceiver.h"
 #include "dmm/services/squelch_gate.h"
 
@@ -12,10 +13,10 @@
 #include <vector>
 
 using dmm::drivers::radio::Rda1846;
+using dmm::services::D878Uv2Calibration;
 using dmm::services::FmChannel;
 using dmm::services::Rda1846Transceiver;
 using dmm::services::SquelchGate;
-using dmm::services::StockCalibration;
 
 namespace {
 
@@ -73,9 +74,9 @@ void noSleep(unsigned) {}
 
 constexpr Rda1846Transceiver::Pins BoardPins{3, 0, 4, 5, 7, 2, 300'000'000, 165'000'000};
 
-StockCalibration calibration()
+D878Uv2Calibration calibration()
 {
-    std::array<std::uint8_t, StockCalibration::Bytes> d{};
+    std::array<std::uint8_t, D878Uv2Calibration::Bytes> d{};
     d[0x14] = 'w';
     d[0x15] = 'w';
     d[0x00] = 0x12; // trim 0x0812
@@ -94,7 +95,7 @@ StockCalibration calibration()
     d[0x06] = 0x2A; // deviation: voice, CTCSS, DCS
     d[0x07] = 0x12;
     d[0x08] = 0x0C;
-    StockCalibration cal;
+    D878Uv2Calibration cal;
     cal.use(d);
     return cal;
 }
@@ -155,7 +156,7 @@ TEST_CASE("receive applies trim, tuning and squelch, then opens one front end")
     FakeRf rf;
     Rda1846Transceiver fm(chip, rf, BoardPins, noSleep);
     REQUIRE(fm.start());
-    const StockCalibration cal = calibration();
+    const D878Uv2Calibration cal = calibration();
 
     CHECK(fm.receive(FmChannel{433'500'000, 0, false}, 1, cal) == nullptr);
     CHECK(fm.receiving());
@@ -195,7 +196,7 @@ TEST_CASE("a sleeping receiver keeps its tuning and wakes on the same front end"
     FakeRf rf;
     Rda1846Transceiver fm(chip, rf, BoardPins, noSleep);
     REQUIRE(fm.start());
-    const StockCalibration cal = calibration();
+    const D878Uv2Calibration cal = calibration();
 
     fm.sleepReceiver(); // not receiving: nothing to do
     CHECK_FALSE(fm.receiverAsleep());
@@ -233,10 +234,10 @@ TEST_CASE("receive refuses frequencies the calibration does not cover")
     FakeRf rf;
     Rda1846Transceiver fm(chip, rf, BoardPins, noSleep);
     REQUIRE(fm.start());
-    const StockCalibration cal = calibration();
+    const D878Uv2Calibration cal = calibration();
     CHECK(fm.receive(FmChannel{250'000'000, 0, false}, 1, cal) != nullptr);
     CHECK_FALSE(fm.receiving());
-    StockCalibration none;
+    D878Uv2Calibration none;
     CHECK(std::string(fm.receive(FmChannel{433'500'000, 0, false}, 1, none)) == "no calibration");
 }
 
@@ -302,7 +303,7 @@ TEST_CASE("transmit: band switches and transceiver first, power amplifier last")
     rf.events = &bus.events;
     Rda1846Transceiver fm(chip, rf, BoardPins, noSleep, transmitTuning);
     REQUIRE(fm.start());
-    const StockCalibration cal = calibration();
+    const D878Uv2Calibration cal = calibration();
     REQUIRE(fm.receive(FmChannel{433'500'000, 433'500'000, false}, 1, cal) == nullptr);
     bus.events.clear();
 
@@ -361,7 +362,7 @@ TEST_CASE("transmit picks the mid-VHF filter and refuses what the calibration do
     FakeRf rf;
     Rda1846Transceiver fm(chip, rf, BoardPins, noSleep);
     REQUIRE(fm.start());
-    const StockCalibration cal = calibration();
+    const D878Uv2Calibration cal = calibration();
 
     REQUIRE(fm.transmit(FmChannel{170'000'000, 170'000'000, true}, PowerLevel::Low, 0, cal) == nullptr);
     CHECK(gpioField(bus.registers[0x1F], 7) == 3);
@@ -375,7 +376,7 @@ TEST_CASE("transmit picks the mid-VHF filter and refuses what the calibration do
     CHECK_FALSE(fm.transmitting());
     CHECK_FALSE(rf.amplifier);
     CHECK(rf.power == 0);
-    StockCalibration none;
+    D878Uv2Calibration none;
     CHECK(fm.transmit(FmChannel{433'500'000, 433'500'000, false}, PowerLevel::Low, 0, none) != nullptr);
     CHECK_FALSE(rf.amplifier);
 }

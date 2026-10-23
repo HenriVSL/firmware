@@ -61,7 +61,7 @@ bool Rda1846Transceiver::start()
     return m_chip.start(m_sleepMs, startGpio());
 }
 
-const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLevel, const StockCalibration &calibration)
+const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLevel, const Calibration &calibration)
 {
     const std::uint32_t hz = channel.receiveHz;
     const auto trim = calibration.referenceTrim();
@@ -90,7 +90,7 @@ const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLev
 }
 
 const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz,
-    const StockCalibration &calibration)
+    const Calibration &calibration)
 {
     const std::uint32_t hz = channel.transmitHz;
     const auto trim = calibration.referenceTrim();

@@ -6,6 +6,7 @@
 
 #include "dmm/app/app.h"
 #include "dmm/os/os.h"
+#include "dmm/services/d878uv2_calibration.h"
 
 #include "sim_audio.h"
 #include "sim_battery.h"
@@ -141,8 +142,9 @@ int main(int argc, char *argv[])
         battery.setMillivolts(parser.value(batteryOption).toInt());
     }
     static SimStorage storage;
+    static dmm::services::D878Uv2Calibration calibration;
     static SimAudio audio;
-    static dmm::app::Platform platform{leds, logSink, system, "sim_headless", nullptr, &display, &input, &battery, &storage, nullptr, nullptr, nullptr, &audio};
+    static dmm::app::Platform platform{leds, logSink, system, "sim_headless", nullptr, &display, &input, &battery, &storage, nullptr, nullptr, nullptr, &audio, &calibration};
     dmm::app::start(platform);
     dmm::os::runScheduler();
 
