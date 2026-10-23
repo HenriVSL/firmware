@@ -41,11 +41,9 @@ public:
     virtual bool playTone(std::uint16_t hz, std::uint16_t ms, std::uint8_t amplitude) = 0;
 
     /// Analog FM: the chip filters and levels the audio in both directions,
-    /// with pre- and de-emphasis, and the 3 kHz audio low-pass on @p wide
-    /// channels. @p gains are the radio's calibrated analog gains (transmit
-    /// before and after the limiter, CTCSS, DCS, receive volume; big-endian
-    /// words).
-    virtual bool setAnalog(bool wide, std::span<const std::uint8_t, 10> gains) = 0;
+    /// with pre- and de-emphasis, for a @p wide or narrow channel, at the
+    /// radio's calibrated levels. False without a calibration.
+    virtual bool setAnalog(bool wide) = 0;
 
     enum class WorkMode : std::uint8_t
     {
@@ -62,9 +60,6 @@ public:
     /// Connects the microphone for transmit (true) or disconnects it and
     /// restores the receive audio levels.
     virtual bool setMicrophone(bool on) = 0;
-    /// The radio's calibrated codec trims: the two line-out gains and the
-    /// right input amplifier, in the codec's own units.
-    virtual bool setCodecTrims(std::uint8_t leftOut, std::uint8_t rightOut, std::uint8_t rightInput) = 0;
 
     /// Writes one audio codec register (page, register, value), for
     /// experiments from the console.

@@ -12,7 +12,6 @@ namespace {
 using drivers::baseband::Sct3258;
 namespace log = services::log;
 
-constexpr std::uint8_t CodecTlv320aic3204 = 1;
 constexpr std::uint8_t VocoderAmbePlus2 = 0x04;
 constexpr std::uint8_t VocoderAnalog = 0x10;
 constexpr std::uint8_t ProcessAnalog = 0x80;
@@ -26,37 +25,6 @@ constexpr std::uint8_t AnalogWide = AnalogNarrow | 0x02;
 // Reply times from the packet interface document, with margin.
 constexpr unsigned CodecSelectMs = 1500;
 constexpr unsigned VocoderSelectMs = 3500;
-
-// TLV320AIC3204 registers (page, register).
-constexpr std::uint8_t HplPage = 1;
-constexpr std::uint8_t HplRegister = 16; // headphone-left driver gain, 6-bit dB
-constexpr std::uint8_t HplMuted = 0x40;
-constexpr std::uint8_t DacVolumePage = 0;
-constexpr std::uint8_t LeftDacVolume = 65; // signed, 0.5 dB steps
-constexpr std::uint8_t MicRoutingPage = 1;
-constexpr std::uint8_t LeftMicPositiveRouting = 52; // 0: microphone not connected
-
-// The speaker is loud: the DAC is turned down by 22 dB, and the driver gain
-// then spans -6 to +23 dB over the volume steps, more finely at the bottom.
-constexpr std::uint8_t DacVolumeMinus22Db = static_cast<std::uint8_t>(-44);
-constexpr std::uint8_t DacVolume0Db = 0;
-
-// Transmit microphone path: left input through 20 kOhm, input amplifier
-// +16 dB, left AGC on with the same target, as the board is set up for.
-constexpr std::uint8_t MicIn1Left20k = 0x80;
-constexpr std::uint8_t LeftMicPgaVolume = 59;
-constexpr std::uint8_t MicGain16Db = 32;
-constexpr std::uint8_t AgcPage = 0;
-constexpr std::uint8_t LeftAgcControl = 86;
-constexpr std::uint8_t LeftAgcMaxGain = 88;
-constexpr std::uint8_t AgcOn = 0x80;
-
-// Calibrated trims: line-out drivers and the right input amplifier.
-constexpr std::uint8_t TrimPage = 1;
-constexpr std::uint8_t LeftOutGain = 18;
-constexpr std::uint8_t RightOutGain = 19;
-constexpr std::uint8_t RightMicPgaVolume = 60;
-constexpr std::int8_t StepDb[Baseband::VolumeSteps] = {-6, -4, -1, 2, 6, 8, 10, 12, 13, 15, 16, 18, 20, 22, 23};
 
 const char *bootProblem(Sct3258::BootResult r)
 {
@@ -77,8 +45,9 @@ const char *bootProblem(Sct3258::BootResult r)
 
 } // namespace
 
-Sct3258Baseband::Sct3258Baseband(Sct3258 &chip, BasebandBoard &board, std::span<const std::uint8_t> bootBlob)
-    : m_chip(chip), m_board(board), m_blob(bootBlob)
+Sct3258Baseband::Sct3258Baseband(Sct3258 &chip, BasebandBoard &board, std::span<const std::uint8_t> bootBlob,
+    const Audio &audio, TrimsSource trims)
+    : m_chip(chip), m_board(board), m_blob(bootBlob), m_audio(audio), m_trims(trims)
 {
 }
 
@@ -106,7 +75,7 @@ bool Sct3258Baseband::start()
     m_chip.queryText(Sct3258::QueryHardware, m_info.hardware, sizeof m_info.hardware);
     m_chip.queryText(Sct3258::QuerySoftware, m_info.software, sizeof m_info.software);
 
-    const std::uint8_t codec[] = {Sct3258::CodecSelect, CodecTlv320aic3204};
+    const std::uint8_t codec[] = {Sct3258::CodecSelect, m_audio.codec};
     const int codecStatus = m_chip.control(codec, CodecSelectMs);
     if (codecStatus != 0) {
         log::warning("baseband") << "codec selection answered " << codecStatus;
@@ -120,9 +89,8 @@ bool Sct3258Baseband::start()
         }
     }
     m_info.running = true;
-    // Receive level, microphone disconnected.
-    const bool audioSet = m_chip.codecWrite(DacVolumePage, LeftDacVolume, DacVolumeMinus22Db) && m_chip.codecWrite(MicRoutingPage, LeftMicPositiveRouting, 0x00);
-    if (!audioSet) {
+    m_trimsWritten = false;
+    if (!write(m_audio.receive)) {
         log::warning("baseband") << "codec did not take the audio set-up";
     }
     return true;
@@ -135,15 +103,15 @@ BasebandInfo Sct3258Baseband::info()
     return i;
 }
 
-std::uint8_t Sct3258Baseband::volumeRegister(int step)
+std::uint8_t Sct3258Baseband::volumeRegister(int step) const
 {
     if (step <= 0) {
-        return HplMuted;
+        return m_audio.speakerMuted;
     }
     if (step > VolumeSteps) {
         step = VolumeSteps;
     }
-    return static_cast<std::uint8_t>(StepDb[step - 1] & 0x3F);
+    return m_audio.speakerSteps[static_cast<std::size_t>(step - 1)];
 }
 
 bool Sct3258Baseband::setSpeakerVolume(int step)
@@ -151,7 +119,7 @@ bool Sct3258Baseband::setSpeakerVolume(int step)
     if (!m_info.running) {
         return false;
     }
-    return m_chip.codecWrite(HplPage, HplRegister, volumeRegister(step));
+    return m_chip.codecWrite(m_audio.speakerPage, m_audio.speakerRegister, volumeRegister(step));
 }
 
 bool Sct3258Baseband::playTone(std::uint16_t hz, std::uint16_t ms, std::uint8_t amplitude)
@@ -165,15 +133,29 @@ bool Sct3258Baseband::playTone(std::uint16_t hz, std::uint16_t ms, std::uint8_t 
     return m_chip.control(tone) == 0;
 }
 
-bool Sct3258Baseband::setAnalog(bool wide, std::span<const std::uint8_t, 10> gains)
+bool Sct3258Baseband::setAnalog(bool wide)
 {
     if (!m_info.running) {
         return false;
     }
+    const std::optional<Trims> trims = m_trims != nullptr ? m_trims() : std::nullopt;
+    if (!trims) {
+        return false;
+    }
+    if (!m_trimsWritten) {
+        for (std::size_t i = 0; i < trims->codec.size(); ++i) {
+            const CodecWrite &at = m_audio.trims[i];
+            if (!m_chip.codecWrite(at.page, at.reg, trims->codec[i])) {
+                log::warning("baseband") << "codec trims not applied";
+                break;
+            }
+        }
+        m_trimsWritten = true;
+    }
     const std::uint8_t process[] = {Sct3258::ProcessMode, ProcessAnalog};
     std::uint8_t config[2 + 10] = {Sct3258::AnalogConfig, wide ? AnalogWide : AnalogNarrow};
-    for (std::size_t i = 0; i < gains.size(); ++i) {
-        config[2 + i] = gains[i];
+    for (std::size_t i = 0; i < trims->analogGains.size(); ++i) {
+        config[2 + i] = trims->analogGains[i];
     }
     return m_chip.control(process) == 0 && m_chip.control(config) == 0;
 }
@@ -195,22 +177,17 @@ bool Sct3258Baseband::setMicrophone(bool on)
     if (!m_info.running) {
         return false;
     }
-    if (!on) {
-        return m_chip.codecWrite(MicRoutingPage, LeftMicPositiveRouting, 0x00) &&
-            m_chip.codecWrite(DacVolumePage, LeftDacVolume, DacVolumeMinus22Db);
-    }
-    return m_chip.codecWrite(DacVolumePage, LeftDacVolume, DacVolume0Db) &&
-        m_chip.codecWrite(MicRoutingPage, LeftMicPgaVolume, MicGain16Db) &&
-        m_chip.codecWrite(AgcPage, LeftAgcControl, AgcOn | MicGain16Db) &&
-        m_chip.codecWrite(AgcPage, LeftAgcMaxGain, MicGain16Db) &&
-        m_chip.codecWrite(MicRoutingPage, LeftMicPositiveRouting, MicIn1Left20k);
+    return write(on ? m_audio.transmit : m_audio.receive);
 }
 
-bool Sct3258Baseband::setCodecTrims(std::uint8_t leftOut, std::uint8_t rightOut, std::uint8_t rightInput)
+bool Sct3258Baseband::write(std::span<const CodecWrite> writes)
 {
-    return m_info.running && m_chip.codecWrite(TrimPage, LeftOutGain, leftOut) &&
-        m_chip.codecWrite(TrimPage, RightOutGain, rightOut) &&
-        m_chip.codecWrite(TrimPage, RightMicPgaVolume, rightInput);
+    for (const CodecWrite &w : writes) {
+        if (!m_chip.codecWrite(w.page, w.reg, w.value)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool Sct3258Baseband::codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8_t value)

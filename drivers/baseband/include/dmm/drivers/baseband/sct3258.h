@@ -67,6 +67,9 @@ public:
     static constexpr std::uint8_t QueryHardware = 0x31;
     static constexpr std::uint8_t QuerySoftware = 0x32;
 
+    // CodecSelect codes.
+    static constexpr std::uint8_t CodecTlv320aic3204 = 1;
+
     // ACK_MESSAGE codes.
     static constexpr std::uint8_t AckReady = 0x01;
     static constexpr std::uint8_t AckReadyNoFirmware = 0x00;

@@ -220,7 +220,7 @@ std::optional<std::array<std::uint8_t, 10>> D878Uv2Calibration::basebandAnalogGa
     return g;
 }
 
-std::optional<Calibration::CodecTrims> D878Uv2Calibration::codecTrims() const
+std::optional<D878Uv2Calibration::CodecTrims> D878Uv2Calibration::codecTrims() const
 {
     if (!present()) {
         return std::nullopt;

@@ -5,7 +5,6 @@
 
 #include "dmm/services/storage.h"
 
-#include <array>
 #include <cstdint>
 #include <optional>
 
@@ -34,14 +33,6 @@ public:
         std::uint8_t dcs;
     };
 
-    /// Audio path trims, for Baseband::setCodecTrims().
-    struct CodecTrims
-    {
-        std::uint8_t leftOut;
-        std::uint8_t rightOut;
-        std::uint8_t rightInput;
-    };
-
     /// Reads the calibration. False when storage could not be read.
     virtual bool load(Storage &storage) = 0;
     /// Read, and the radio has been calibrated.
@@ -61,9 +52,6 @@ public:
     /// @p level (1..5; higher is tighter).
     virtual std::optional<int> squelchThreshold(std::uint32_t hz, int level) const = 0;
     virtual std::optional<Deviation> deviation() const = 0;
-    virtual std::optional<CodecTrims> codecTrims() const = 0;
-    /// The baseband's analog-mode gains, for Baseband::setAnalog().
-    virtual std::optional<std::array<std::uint8_t, 10>> basebandAnalogGains() const = 0;
 
 protected:
     ~Calibration() = default;
