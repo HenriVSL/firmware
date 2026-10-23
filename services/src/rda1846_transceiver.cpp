@@ -28,8 +28,9 @@ constexpr unsigned PowerStepMs = 1;
 
 } // namespace
 
-Rda1846Transceiver::Rda1846Transceiver(Chip &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned))
-    : m_chip(chip), m_rf(rf), m_pins(pins), m_sleepMs(sleepMs)
+Rda1846Transceiver::Rda1846Transceiver(Chip &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
+    TuningSource tuning)
+    : m_chip(chip), m_rf(rf), m_pins(pins), m_sleepMs(sleepMs), m_tuning(tuning)
 {
 }
 
@@ -54,6 +55,9 @@ bool Rda1846Transceiver::start()
     m_rf.setPowerControl(0);
     m_rf.setPowerAmplifier(false);
     m_rf.setTransmitPath(false);
+    if (m_tuning != nullptr) {
+        m_chip.setTuning(m_tuning());
+    }
     return m_chip.start(m_sleepMs, startGpio());
 }
 

@@ -107,21 +107,104 @@ TEST_CASE("start resets, restores the GPIO pins before calibrating, and leaves t
     CHECK(none.log.empty());
 }
 
+namespace {
+
+// A small tuning that exercises every list the driver walks.
+constexpr Rda1846::Setting TestStartUp[] = {{0x04, 0x0FD0}, {0x47, 0x7F2F}};
+constexpr Rda1846::Setting TestAfterCalibration[] = {{0x27, 0x74A4, 5}, {0x27, 0x6CA4}};
+constexpr Rda1846::WidthSetting TestWidth[] = {{0x32, 0x4495, 0x75E3}};
+constexpr Rda1846::WidthSetting TestWidthPage1[] = {{0x06, 0x0014, 0x0024}};
+constexpr Rda1846::RangeSetting TestRanges[] = {{200'000'000, 299'999'999, {0x34, 0x2B8E, 0x2B8B}}};
+constexpr Rda1846::WidthSetting TestReceive[] = {{0x0A, 0x4380, 0x43A0}, {0x58, 0x8085, 0x8085}};
+constexpr Rda1846::WidthSetting TestTransmit[] = {{0x0A, 0x3BA0, 0x3BA0}, {0x58, 0x8405, 0x8405}};
+constexpr Rda1846::BandWord TestBandWords[] = {
+    {145'000'000, 145'000'000, 0x8643},
+    {144'000'000, 146'000'000, 0x8543},
+    {145'000'000, 145'000'000, 0x1111}, // never reached: the first match wins
+};
+constexpr Rda1846::Tuning TestTuning{
+    .startUp = TestStartUp,
+    .afterCalibration = TestAfterCalibration,
+    .width = TestWidth,
+    .widthPage1 = TestWidthPage1,
+    .ranges = TestRanges,
+    .receive = TestReceive,
+    .transmit = TestTransmit,
+    .bandWords = TestBandWords,
+    .normalBand = 0x8763,
+};
+
+} // namespace
+
 TEST_CASE("receive and transmit always pass through idle")
 {
     LoggingBus bus;
-    Rda1846 chip(bus);
-    chip.setMode(Rda1846::Mode::Receive);
-    CHECK(bus.log ==
-        std::vector<Write>{{0x30, 0x4006}, {0x0A, 0x4380}, {0x44, 0x09F9}, {0x58, 0x8085}, {0x30, 0x4026}});
+    Rda1846 maker(bus);
+    maker.setMode(Rda1846::Mode::Receive);
+    CHECK(bus.log == std::vector<Write>{{0x30, 0x4006}, {0x30, 0x4026}});
     bus.log.clear();
+
+    Rda1846 chip(bus, TestTuning);
+    chip.setMode(Rda1846::Mode::Receive);
+    CHECK(bus.log == std::vector<Write>{{0x30, 0x4006}, {0x0A, 0x4380}, {0x58, 0x8085}, {0x30, 0x4026}});
     chip.setBandwidth(Rda1846::Bandwidth::Wide);
     bus.log.clear();
+    chip.setMode(Rda1846::Mode::Receive);
+    CHECK(bus.log == std::vector<Write>{{0x30, 0x7006}, {0x0A, 0x43A0}, {0x58, 0x8085}, {0x30, 0x7026}});
+    bus.log.clear();
     chip.setMode(Rda1846::Mode::Transmit);
-    CHECK(bus.log == std::vector<Write>{{0x30, 0x7006}, {0x0A, 0x3BA0}, {0x41, 0x070F}, {0x44, 0x09FF}, {0x58, 0x8405}, {0x30, 0x7046}});
+    CHECK(bus.log == std::vector<Write>{{0x30, 0x7006}, {0x0A, 0x3BA0}, {0x58, 0x8405}, {0x30, 0x7046}});
     bus.log.clear();
     chip.setMode(Rda1846::Mode::Idle);
     CHECK(bus.log == std::vector<Write>{{0x30, 0x7006}});
+}
+
+TEST_CASE("start writes the tuning's lists around the calibration run, with their waits")
+{
+    LoggingBus bus;
+    bus.registers[0x00] = 0x1846;
+    Rda1846 chip(bus, TestTuning);
+    sleptMs = 0;
+    REQUIRE(chip.start(sleep, 0));
+    CHECK(sleptMs == 215);
+    CHECK(bus.registers[0x47] == 0x7F2F);
+    std::vector<Write> calibrated;
+    for (std::size_t i = 0; i < bus.log.size(); ++i) {
+        if (bus.log[i] == Write{0x30, 0x40A6}) {
+            calibrated.assign(bus.log.begin() + static_cast<std::ptrdiff_t>(i) + 1, bus.log.end());
+        }
+    }
+    REQUIRE(calibrated.size() >= 3);
+    CHECK(calibrated[0] == Write{0x30, 0x4006});
+    CHECK(calibrated[1] == Write{0x27, 0x74A4});
+    CHECK(calibrated[2] == Write{0x27, 0x6CA4});
+    CHECK(bus.registers[0x32] == 0x4495); // narrow after start
+}
+
+TEST_CASE("width settings for a frequency range follow the width settings")
+{
+    LoggingBus bus;
+    Rda1846 chip(bus, TestTuning);
+    chip.setFrequency(220'000'000);
+    bus.log.clear();
+    chip.setBandwidth(Rda1846::Bandwidth::Wide);
+    CHECK(bus.log == std::vector<Write>{{0x32, 0x75E3}, {0x7F, 1}, {0x06, 0x0024}, {0x7F, 0}, {0x34, 0x2B8B}});
+    chip.setFrequency(145'500'000);
+    bus.log.clear();
+    chip.setBandwidth(Rda1846::Bandwidth::Narrow);
+    CHECK(bus.log == std::vector<Write>{{0x32, 0x4495}, {0x7F, 1}, {0x06, 0x0014}, {0x7F, 0}});
+}
+
+TEST_CASE("the first band word whose range holds the frequency wins")
+{
+    LoggingBus bus;
+    Rda1846 chip(bus, TestTuning);
+    chip.setFrequency(145'000'000);
+    CHECK(bus.registers[0x05] == 0x8643);
+    chip.setFrequency(145'500'000);
+    CHECK(bus.registers[0x05] == 0x8543);
+    chip.setFrequency(146'000'001);
+    CHECK(bus.registers[0x05] == 0x8763);
 }
 
 TEST_CASE("tuning picks the band setting near the reference harmonics")
