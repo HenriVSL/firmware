@@ -65,15 +65,21 @@ public:
     bool start() override;
     BasebandInfo info() override;
     bool setSpeakerVolume(int step) override;
-    bool playTone(std::uint16_t hz, std::uint16_t ms, std::uint8_t amplitude) override;
+    bool playTone(std::uint16_t hz, std::uint16_t ms, int percent) override;
     /// Also writes the codec trims, the first time after start().
     bool setAnalog(bool wide) override;
     bool setWorkMode(WorkMode mode) override;
     bool setCarrier(bool present) override;
     bool setMicrophone(bool on) override;
-    bool codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8_t value) override;
-    void exchange(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned waitMs,
-        lib::FnRef<void(std::uint8_t type, std::span<const std::uint8_t> fields)> onPacket) override;
+    /// "codec <page> <reg> <value>", "packet <type> <bytes>" (hex).
+    bool debugCommand(std::string_view command) override;
+    const char *debugHelp() const override;
+
+    /// Writes one codec register; false unless running and accepted.
+    bool codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8_t value);
+    /// Sends one raw packet, then logs every packet the chip sends within
+    /// @p waitMs (at most four); returns how many.
+    int exchange(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned waitMs);
 
     /// The speaker register value for a volume step.
     std::uint8_t volumeRegister(int step) const;

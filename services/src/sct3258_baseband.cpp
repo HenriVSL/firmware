@@ -3,6 +3,8 @@
 
 #include "dmm/services/sct3258_baseband.h"
 
+#include "dmm/lib/format.h"
+#include "dmm/lib/strings.h"
 #include "dmm/services/log.h"
 
 namespace dmm::services {
@@ -122,8 +124,12 @@ bool Sct3258Baseband::setSpeakerVolume(int step)
     return m_chip.codecWrite(m_audio.speakerPage, m_audio.speakerRegister, volumeRegister(step));
 }
 
-bool Sct3258Baseband::playTone(std::uint16_t hz, std::uint16_t ms, std::uint8_t amplitude)
+bool Sct3258Baseband::playTone(std::uint16_t hz, std::uint16_t ms, int percent)
 {
+    // The tone amplitude: 0..64 for 0..1 of full scale.
+    const auto amplitude = static_cast<std::uint8_t>((percent < 0 ? 0 : percent > 100 ? 100
+                                                                                      : percent) *
+        64 / 100);
     if (!m_info.running) {
         return false;
     }
@@ -162,7 +168,9 @@ bool Sct3258Baseband::setAnalog(bool wide)
 
 bool Sct3258Baseband::setWorkMode(WorkMode mode)
 {
-    const std::uint8_t work[] = {Sct3258::WorkMode, static_cast<std::uint8_t>(mode), 0, 0};
+    const std::uint8_t code = mode == WorkMode::Receive ? Sct3258::WorkReceive : mode == WorkMode::Transmit ? Sct3258::WorkTransmit
+                                                                                                            : Sct3258::WorkIdle;
+    const std::uint8_t work[] = {Sct3258::WorkMode, code, 0, 0};
     return m_info.running && m_chip.control(work) == 0;
 }
 
@@ -195,18 +203,76 @@ bool Sct3258Baseband::codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8
     return m_info.running && m_chip.codecWrite(page, reg, value);
 }
 
-void Sct3258Baseband::exchange(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned waitMs,
-    lib::FnRef<void(std::uint8_t type, std::span<const std::uint8_t> fields)> onPacket)
+int Sct3258Baseband::exchange(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned waitMs)
 {
     m_chip.send(type, fields);
     drivers::baseband::Packet p;
-    int left = 4;
-    for (unsigned waited = 0; waited < waitMs && left > 0; ++waited) {
+    int replies = 0;
+    for (unsigned waited = 0; waited < waitMs && replies < 4; ++waited) {
         if (m_chip.receive(p, 1)) {
-            onPacket(p.type, {p.fields, p.length});
-            --left;
+            ++replies;
+            log::info("baseband") << "reply type " << lib::hex(p.type, 2) << ", " << p.length << " bytes";
+            // 24 bytes per line.
+            for (std::size_t at = 0; at < p.length; at += 24) {
+                lib::StaticString<24 * 3 + 2> line("  ");
+                for (std::size_t i = at; i < p.length && i < at + 24; ++i) {
+                    line << lib::hex(p.fields[i], 2) << ' ';
+                }
+                log::info("baseband") << line.view();
+            }
         }
     }
+    return replies;
+}
+
+bool Sct3258Baseband::debugCommand(std::string_view command)
+{
+    std::string_view rest = command;
+    const std::string_view verb = lib::takeWord(rest);
+    if (verb == "codec") {
+        std::int32_t n[3] = {};
+        for (std::int32_t &v : n) {
+            const auto value = lib::parseNumber(lib::takeWord(rest), 16);
+            if (!value || *value > 0xFF) {
+                return false;
+            }
+            v = *value;
+        }
+        if (!rest.empty() || n[1] > 0x7F) {
+            return false;
+        }
+        const bool ok = codecWrite(static_cast<std::uint8_t>(n[0]), static_cast<std::uint8_t>(n[1]), static_cast<std::uint8_t>(n[2]));
+        log::info("baseband") << "codec page " << n[0] << " register " << lib::hex(static_cast<std::uint32_t>(n[1]), 2) << " = "
+                              << lib::hex(static_cast<std::uint32_t>(n[2]), 2) << ": " << (ok ? "accepted" : "refused");
+        return true;
+    }
+    if (verb == "packet") {
+        const auto type = lib::parseNumber(lib::takeWord(rest), 16);
+        if (!type || *type > 0xFF) {
+            return false;
+        }
+        std::uint8_t fields[16];
+        std::size_t count = 0;
+        while (!rest.empty()) {
+            const auto value = lib::parseNumber(lib::takeWord(rest), 16);
+            if (!value || *value > 0xFF || count == sizeof fields) {
+                return false;
+            }
+            fields[count++] = static_cast<std::uint8_t>(*value);
+        }
+        log::info("baseband") << "sending type " << lib::hex(static_cast<std::uint32_t>(*type), 2) << ", " << count
+                              << " field bytes";
+        if (exchange(static_cast<std::uint8_t>(*type), {fields, count}, 1000) == 0) {
+            log::info("baseband") << "no reply within 1 s";
+        }
+        return true;
+    }
+    return false;
+}
+
+const char *Sct3258Baseband::debugHelp() const
+{
+    return "bb codec <page> <reg> <value>, bb packet <type> <bytes> (hex)";
 }
 
 } // namespace dmm::services

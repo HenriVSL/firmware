@@ -84,7 +84,7 @@ TEST_CASE("without a boot program or an answer the baseband reports why and stay
         CHECK(board.powerUps == 0);
         CHECK(baseband.info().problem != nullptr);
         CHECK_FALSE(baseband.setSpeakerVolume(5));
-        CHECK_FALSE(baseband.playTone(1000, 100, 0x20));
+        CHECK_FALSE(baseband.playTone(1000, 100, 50));
     }
     {
         FakeSct3258 chip;
@@ -121,7 +121,7 @@ TEST_CASE("volume, tone, codec writes and audio pins after start")
     chip.packets.clear();
 
     CHECK(baseband.setSpeakerVolume(15));
-    CHECK(baseband.playTone(1000, 300, 0x20));
+    CHECK(baseband.playTone(1000, 300, 50));
     CHECK(baseband.codecWrite(1, 0x12, 0x04));
     REQUIRE(chip.packets.size() == 3);
     CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x10, 0x17, 0x00, 0x00});
@@ -186,4 +186,25 @@ TEST_CASE("microphone path")
     CHECK(baseband.setMicrophone(false));
     REQUIRE(chip.packets.size() == 2);
     CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x34, 0x00, 0x00, 0x00});
+}
+
+TEST_CASE("the chip's console commands write codec registers and send raw packets")
+{
+    FakeSct3258 chip;
+    FakeBoard board;
+    Sct3258 sct(chip, noDelay);
+    Sct3258Baseband baseband(sct, board, Blob, TestAudio, testTrims);
+    REQUIRE(baseband.start());
+    chip.packets.clear();
+
+    CHECK(baseband.debugCommand("codec 1 12 4"));
+    REQUIRE(chip.packets.size() == 1);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x12, 0x04, 0x00, 0x00});
+    CHECK(baseband.debugCommand("packet 20 30"));
+    REQUIRE(chip.packets.size() == 2);
+    CHECK(chip.packets[1] == std::vector<std::uint8_t>{0x20, 0x30});
+    CHECK_FALSE(baseband.debugCommand("codec 1 80 4")); // register out of range
+    CHECK_FALSE(baseband.debugCommand("codec 1 12"));
+    CHECK_FALSE(baseband.debugCommand("packet"));
+    CHECK_FALSE(baseband.debugCommand("restart"));
 }

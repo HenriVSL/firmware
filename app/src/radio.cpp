@@ -33,7 +33,7 @@ os::Queue<Message, 8> inbox;
 int speakerVolume = -1;
 
 // Half of full scale: loud enough to hear, short of clipping.
-constexpr std::uint8_t ChipToneAmplitude = 0x20;
+constexpr int ChipTonePercent = 50;
 
 // FM receive: the channel, the squelch level and the speaker gate.
 constexpr os::Ticks FmPollMs = 10;
@@ -139,24 +139,6 @@ void report()
                           << radioTask.unusedStackWords();
 }
 
-// One received packet as hex, 24 bytes per line.
-void logPacket(std::uint8_t type, std::span<const std::uint8_t> fields)
-{
-    log::info("baseband") << "reply type " << lib::hex(type, 2) << ", " << fields.size() << " bytes";
-    for (std::size_t at = 0; at < fields.size(); at += 24) {
-        char text[24 * 3 + 1];
-        std::size_t n = 0;
-        for (std::size_t i = at; i < fields.size() && i < at + 24; ++i) {
-            constexpr char Digits[] = "0123456789abcdef";
-            text[n++] = Digits[fields[i] >> 4];
-            text[n++] = Digits[fields[i] & 0xF];
-            text[n++] = ' ';
-        }
-        text[n] = '\0';
-        log::info("baseband") << "  " << text;
-    }
-}
-
 // Resets the FM transceiver: idle, microphone muted (it reaches the
 // speaker otherwise), every RF switch off.
 void startFm()
@@ -164,13 +146,11 @@ void startFm()
     if (fm == nullptr) {
         return;
     }
-    const std::uint16_t before = fm->readRegister(0x1F);
     if (!fm->start()) {
-        log::error("fm") << "no answer from the FM transceiver (id " << lib::hex(fm->readRegister(0), 4) << ")";
+        log::error("fm") << "no answer from the FM transceiver";
         return;
     }
-    log::info("fm") << "transceiver found; microphone muted, idle (pins " << lib::hex(before, 4) << " -> "
-                    << lib::hex(fm->readRegister(0x1F), 4) << ")";
+    log::info("fm") << "transceiver found; microphone muted, idle";
 }
 
 void fmReceive()
@@ -193,8 +173,7 @@ void fmReceive()
     basebandAnalogReceive();
     const auto threshold = cal->squelchThreshold(fmChannel.receiveHz, level);
     log::info("fm") << "receiving " << mhz(fmChannel.receiveHz).view() << " MHz, " << (fmChannel.wide ? "25" : "12.5")
-                    << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0)
-                    << " dBm and noise " << services::squelchOpenNoiseDb(fmChannel.wide, level) << " dB)";
+                    << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0) << " dBm)";
     setSpeaker(gate.open());
 }
 
@@ -205,61 +184,10 @@ void fmStatus()
         return;
     }
     const services::FmReceiveStatus s = fm->status();
-    log::info("fm") << mhz(fmChannel.receiveHz).view() << " MHz, RSSI " << s.rssiDbm << " dBm, noise " << s.noiseDb
-                    << " dB, quality " << s.quality << ", carrier " << (s.carrier ? "yes" : "no") << ", speaker "
-                    << (speakerOpen ? "open" : "closed");
-}
-
-// Mean signal strength over a few reads, after the receiver has settled.
-int settledRssi()
-{
-    constexpr int Reads = 4;
-    os::sleepMs(25);
-    int sum = 0;
-    for (int i = 0; i < Reads; ++i) {
-        sum += fm->status().rssiDbm;
-        os::sleepMs(5);
-    }
-    return sum / Reads;
-}
-
-// Front-end tuning against signal strength: a coarse pass over the whole
-// range, then a fine pass around the strongest point.
-void fmSweep()
-{
-    const services::Calibration *cal = system::calibration();
-    if (!fm->receiving() || cal == nullptr) {
-        log::info("fm") << "sweep: not receiving";
-        return;
-    }
-    constexpr int Max = 0xFFF;
-    const auto calibrated = cal->rxTune(fmChannel.receiveHz);
-    log::info("fm") << "sweep at " << mhz(fmChannel.receiveHz).view() << " MHz, calibrated tune "
-                    << (calibrated ? *calibrated : 0);
-    int best = 0;
-    int bestRssi = -200;
-    auto measure = [&](int v) {
-        fm->setReceiveTune(static_cast<std::uint16_t>(v));
-        const int rssi = settledRssi();
-        log::info("fm") << "tune " << v << ": " << rssi << " dBm";
-        if (rssi > bestRssi) {
-            bestRssi = rssi;
-            best = v;
-        }
-    };
-    for (int v = 0; v <= Max; v += 128) {
-        measure(v);
-    }
-    measure(Max);
-    const int from = best - 112 < 0 ? 0 : best - 112;
-    const int to = best + 112 > Max ? Max : best + 112;
-    for (int v = from; v <= to; v += 16) {
-        measure(v);
-    }
-    fm->setReceiveTune(calibrated ? *calibrated : 0);
-    const int atCalibrated = settledRssi();
-    log::info("fm") << "sweep: strongest " << bestRssi << " dBm at tune " << best << "; calibrated "
-                    << (calibrated ? *calibrated : 0) << " gives " << atCalibrated << " dBm (put back)";
+    lib::StaticString<64> what;
+    what << mhz(fmChannel.receiveHz).view() << " MHz, carrier " << (s.carrier ? "yes" : "no") << ", speaker "
+         << (speakerOpen ? "open" : "closed");
+    fm->logStatus(what.view());
 }
 
 // One squelch poll while receiving.
@@ -268,8 +196,7 @@ void pollFm()
     const services::FmReceiveStatus s = fm->status();
     const bool open = gate.update(s.carrier);
     if (open != speakerOpen) {
-        log::info("fm") << "squelch " << (open ? "open" : "closed") << ", RSSI " << s.rssiDbm << " dBm, noise " << s.noiseDb
-                        << " dB, quality " << s.quality;
+        fm->logStatus(open ? "squelch open" : "squelch closed");
         setSpeaker(open);
     }
 }
@@ -324,7 +251,7 @@ void startTransmit()
     ui::post(ui::Transmitting{true});
     transmitStarted = os::nowMs();
     log::info("fm") << "transmitting " << mhz(channel.transmitHz).view() << " MHz, power " << powerName(powerLevel)
-                    << " (control " << fm->transmitPower() << "), " << ctcssText().view() << ", timeout " << timeoutS << " s, audio "
+                    << ", " << ctcssText().view() << ", timeout " << timeoutS << " s, audio "
                     << routeName(transmitAudio);
 }
 
@@ -435,44 +362,13 @@ void handle(Message &message)
                    [](const Info &) { report(); },
                    [](const Restart &) { bringUp(); },
                    [](const ChipTone &t) {
-                       const bool ok = baseband->playTone(t.hz, t.ms, ChipToneAmplitude);
+                       const bool ok = baseband->playTone(t.hz, t.ms, ChipTonePercent);
                        log::info("baseband") << "tone " << t.hz << " Hz, " << t.ms << " ms: " << (ok ? "accepted" : "refused");
                    },
                    [](const SpeakerVolume &v) {
                        speakerVolume = v.step;
                        const bool ok = baseband->setSpeakerVolume(v.step);
                        log::info("baseband") << "speaker volume " << v.step << ": " << (ok ? "set" : "refused");
-                   },
-                   [](const CodecWrite &c) {
-                       const bool ok = baseband->codecWrite(c.page, c.reg, c.value);
-                       log::info("baseband") << "codec page " << c.page << " register " << lib::hex(c.reg, 2) << " = "
-                                             << lib::hex(c.value, 2) << ": " << (ok ? "accepted" : "refused");
-                   },
-                   [](const RawPacket &p) {
-                       log::info("baseband") << "sending type " << lib::hex(p.type, 2) << ", " << p.count << " field bytes";
-                       int replies = 0;
-                       baseband->exchange(p.type, {p.fields, p.count}, 1000,
-                           [&replies](std::uint8_t type, std::span<const std::uint8_t> fields) {
-                               ++replies;
-                               logPacket(type, fields);
-                           });
-                       if (replies == 0) {
-                           log::info("baseband") << "no reply within 1 s";
-                       }
-                   },
-                   [](const FmRead &r) {
-                       if (fm == nullptr) {
-                           log::info("fm") << "no FM transceiver";
-                           return;
-                       }
-                       log::info("fm") << "register " << lib::hex(r.reg, 2) << " = " << lib::hex(fm->readRegister(r.reg), 4);
-                   },
-                   [](const FmWrite &w) {
-                       if (haveFm()) {
-                           fm->writeRegister(w.reg, w.value);
-                           log::info("fm") << "register " << lib::hex(w.reg, 2) << " = " << lib::hex(w.value, 4)
-                                           << ", reads back " << lib::hex(fm->readRegister(w.reg), 4);
-                       }
                    },
                    [](const FmReceive &r) {
                        if (haveFm()) {
@@ -499,11 +395,6 @@ void handle(Message &message)
                    [](const FmStatus &) {
                        if (haveFm()) {
                            fmStatus();
-                       }
-                   },
-                   [](const FmSweep &) {
-                       if (haveFm()) {
-                           fmSweep();
                        }
                    },
                    [](const Ptt &p) {
@@ -557,18 +448,6 @@ void handle(Message &message)
                        squelchLevel = u.squelch;
                        fmReceive();
                    },
-                   [](const FmTune &t) {
-                       const services::Calibration *cal = system::calibration();
-                       if (!haveFm() || !fm->receiving() || cal == nullptr) {
-                           log::info("fm") << "tune: not receiving";
-                           return;
-                       }
-                       const auto calibrated = cal->rxTune(fmChannel.receiveHz);
-                       const int v = t.value >= 0 ? t.value : (calibrated ? *calibrated : 0);
-                       fm->setReceiveTune(static_cast<std::uint16_t>(v));
-                       log::info("fm") << "tune " << v << (t.value >= 0 ? " (held)" : " (calibrated)") << ": "
-                                       << settledRssi() << " dBm";
-                   },
                    [](const BatterySave &s) {
                        saver.setMode(s.mode);
                        log::info("power") << "battery save " << saveModeText(saver.mode());
@@ -579,8 +458,18 @@ void handle(Message &message)
                            log::info("fm") << "no FM transceiver";
                            return;
                        }
-                       const std::uint16_t pins = fm->setMicrophoneMuted(!m.on);
-                       log::info("fm") << "microphone " << (m.on ? "on" : "muted") << " (pins " << lib::hex(pins, 4) << ")";
+                       fm->setMicrophoneMuted(!m.on);
+                       log::info("fm") << "microphone " << (m.on ? "on" : "muted");
+                   },
+                   [](const ChipCommand &c) {
+                       const bool isFm = c.chip == ChipCommand::Chip::Fm;
+                       if (isFm && fm == nullptr) {
+                           log::info("fm") << "no FM transceiver";
+                           return;
+                       }
+                       if (!(isFm ? fm->debugCommand(c.text.view()) : baseband->debugCommand(c.text.view()))) {
+                           log::info("console") << "unknown command";
+                       }
                    },
                },
         message);
