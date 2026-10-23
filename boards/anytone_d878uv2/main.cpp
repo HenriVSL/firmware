@@ -34,8 +34,8 @@
 #include "dmm/os/os.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_codeplug.h"
+#include "dmm/services/d878uv2_storage.h"
 #include "dmm/services/log.h"
-#include "dmm/services/nand_storage.h"
 #include "dmm/services/rda1846_transceiver.h"
 #include "dmm/services/sct3258_baseband.h"
 #include "dmm/services/usb_channel.h"
@@ -292,7 +292,7 @@ void hal::boardMain()
     static BitBangSpiNandBus flashBus{FlashPins};
     flashBus.configurePins();
     static dmm::drivers::storage::SpiNand flash{flashBus, delayUs};
-    static dmm::services::NandStorage storage{flash};
+    static dmm::services::D878Uv2Storage storage{flash};
     storage.start();
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{storage};

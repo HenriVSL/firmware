@@ -3,7 +3,7 @@
 
 #include "../drivers/fake_spi_nand.h"
 #include "dmm/services/d878uv2_codeplug.h"
-#include "dmm/services/nand_storage.h"
+#include "dmm/services/d878uv2_storage.h"
 
 #include <doctest/doctest.h>
 
@@ -16,7 +16,7 @@ using dmm::drivers::storage::SpiNand;
 using dmm::services::Channel;
 using dmm::services::ChannelMode;
 using dmm::services::D878Uv2Codeplug;
-using dmm::services::NandStorage;
+using dmm::services::D878Uv2Storage;
 using dmm::services::PowerLevel;
 using dmm::services::Tone;
 
@@ -159,7 +159,7 @@ TEST_CASE("the codeplug reads channels and zones from the valid copy of each blo
     chip.put(0x02500100, {0x02, 0x00});
 
     SpiNand nand(chip, noDelay);
-    NandStorage storage(nand);
+    D878Uv2Storage storage(nand);
     storage.start();
     D878Uv2Codeplug cp(storage);
 
