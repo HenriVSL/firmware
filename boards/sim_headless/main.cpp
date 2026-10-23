@@ -7,6 +7,7 @@
 #include "dmm/app/app.h"
 #include "dmm/os/os.h"
 #include "dmm/services/d878uv2_calibration.h"
+#include "dmm/services/d878uv2_codeplug.h"
 
 #include "sim_audio.h"
 #include "sim_battery.h"
@@ -143,8 +144,9 @@ int main(int argc, char *argv[])
     }
     static SimStorage storage;
     static dmm::services::D878Uv2Calibration calibration;
+    static dmm::services::D878Uv2Codeplug codeplug{storage};
     static SimAudio audio;
-    static dmm::app::Platform platform{leds, logSink, system, "sim_headless", nullptr, &display, &input, &battery, &storage, nullptr, nullptr, nullptr, &audio, &calibration};
+    static dmm::app::Platform platform{leds, logSink, system, "sim_headless", nullptr, &display, &input, &battery, &storage, nullptr, nullptr, nullptr, &audio, &calibration, &codeplug};
     dmm::app::start(platform);
     dmm::os::runScheduler();
 

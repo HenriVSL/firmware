@@ -30,7 +30,7 @@ namespace log = services::log;
 os::Task<640> uiTask;
 os::Queue<Message, 16> inbox;
 Display *display = nullptr;
-Storage *storage = nullptr;
+CodeplugSource *codeplug = nullptr;
 
 // The header band's colour: black on the development views, the status
 // bar's grey on the radio's own screens.
@@ -368,7 +368,7 @@ bool menuAtGroups = true;
 // returns there.
 bool menuQuick = false;
 int backlightLevel = DefaultBacklight;
-// Backlight time choices, as the codeplug numbers them.
+// Backlight time choices, in seconds.
 constexpr std::uint16_t BacklightTimes[] = {0, 5, 10, 15, 20, 25, 30, 60, 120, 180, 240, 300, 900, 1800, 2700, 3600};
 std::uint16_t backlightS = 0; // 0 = always on
 bool backlightLit = true;
@@ -527,9 +527,8 @@ void uiMain(void *)
     log::info("ui") << "display " << d.width() << " x " << d.height();
 
     // The codeplug: settings, and the channel the radio starts on.
-    if (storage != nullptr) {
-        static StockCodeplug codeplug(*storage);
-        static ChannelSelector selector(codeplug);
+    if (codeplug != nullptr) {
+        static ChannelSelector selector(*codeplug);
         selector.load();
         if (selector.current()) {
             channels = &selector;
@@ -1172,10 +1171,10 @@ void uiMain(void *)
 
 } // namespace
 
-void start(Display &d, Storage *s)
+void start(Display &d, CodeplugSource *c)
 {
     display = &d;
-    storage = s;
+    codeplug = c;
     log::setTap(onLogLine);
     uiTask.start("ui", 4, uiMain, nullptr);
 }
