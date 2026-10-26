@@ -49,6 +49,8 @@ struct StandbyState
     /// Volume step 0..15, or -1 when unknown.
     int volume = -1;
     GpsState gps;
+    /// Local time "HH:MM", or empty while the time is unknown.
+    std::string_view clock;
 };
 
 /// The radio's main screen: status bar, zone, channel name, frequency,

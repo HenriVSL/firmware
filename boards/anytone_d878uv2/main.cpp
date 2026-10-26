@@ -12,6 +12,7 @@
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
+#include "dmm/board/board_rtc.h"
 #include "panel_bus.h"
 #include "pins.h"
 
@@ -313,6 +314,7 @@ void hal::boardMain()
     static BoardRf rf;
     rf.configure();
     static BoardGps gps;
+    static BoardRtc rtc;
     gps.configure();
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
     // Called from the radio task; empty until the system task has read the
@@ -378,6 +380,7 @@ void hal::boardMain()
         .calibration = &calibration,
         .codeplug = &codeplug,
         .gps = &gps,
+        .rtc = &rtc,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

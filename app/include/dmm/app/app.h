@@ -50,6 +50,8 @@ struct Platform
     services::CodeplugSource *codeplug = nullptr;
     /// The GPS receiver's serial link, or nullptr.
     board::Gps *gps = nullptr;
+    /// The real-time clock, or nullptr.
+    board::Rtc *rtc = nullptr;
 };
 
 /// The board has a baseband processor.

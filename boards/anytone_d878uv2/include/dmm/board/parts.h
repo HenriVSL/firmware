@@ -8,6 +8,7 @@
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
+#include "dmm/board/board_rtc.h"
 #include "dmm/services/casic_receiver.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/rda1846_transceiver.h"
@@ -24,6 +25,7 @@ using Battery = ::board::BoardBattery;
 using DataChannel = services::UsbChannel;
 using GpsReceiver = services::CasicReceiver;
 using Gps = ::board::BoardGps;
+using Rtc = ::board::BoardRtc;
 
 static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Baseband<Baseband>);
@@ -33,5 +35,6 @@ static_assert(services::BatterySensor<Battery>);
 static_assert(services::ByteChannel<DataChannel>);
 static_assert(services::GpsPort<Gps>);
 static_assert(services::GpsReceiver<GpsReceiver>);
+static_assert(services::RealTimeClock<Rtc>);
 
 } // namespace dmm::board

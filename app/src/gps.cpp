@@ -4,13 +4,17 @@
 #include "gps.h"
 
 #include "radio.h"
+#include "system.h"
 #include "ui.h"
 
 #include "dmm/lib/format.h"
 #include "dmm/lib/variant.h"
 #include "dmm/os/os.h"
+#include "dmm/services/clock.h"
 #include "dmm/services/log.h"
 #include "dmm/services/nmea.h"
+
+#include <cstdlib>
 
 namespace dmm::app::gps {
 
@@ -28,6 +32,28 @@ os::Queue<Message, 4> inbox;
 constexpr os::Ticks PollMs = 50;
 // Silence after power-on, or between sentences, that counts as no data.
 constexpr os::Ticks SilentMs = 5000;
+// The clock follows GPS time when it is this far off, at most this often.
+constexpr std::int64_t ClockToleranceS = 2;
+constexpr os::Ticks ClockSetEveryMs = 60'000;
+
+// Sets the clock from a fix's UTC time and date when it is off.
+void followGpsTime(const GpsFix &f, os::Ticks &lastSet, bool &everSet)
+{
+    if (!f.valid || !f.timeValid || !f.dateValid) {
+        return;
+    }
+    if (everSet && os::nowMs() - lastSet < ClockSetEveryMs) {
+        return;
+    }
+    const std::uint32_t utc = services::secondsSince1970({f.year, f.month, f.day, f.hour, f.minute, f.second});
+    const auto now = system::utcNow();
+    if (now && std::abs(static_cast<std::int64_t>(*now) - utc) < ClockToleranceS) {
+        return;
+    }
+    system::setClock(utc, "GPS");
+    lastSet = os::nowMs();
+    everSet = true;
+}
 
 void logFix(const GpsFix &f, std::string_view what)
 {
@@ -57,6 +83,8 @@ void gpsMain(void *)
     std::uint32_t bytes = 0;
     std::uint32_t sentences = 0;
     os::Ticks lastData = 0;
+    os::Ticks clockSetAt = 0;
+    bool clockEverSet = false;
     std::uint8_t systems = services::gps_systems::Gps | services::gps_systems::Beidou;
     // The receiver is set up once it answers after power-on.
     bool configured = false;
@@ -173,6 +201,9 @@ void gpsMain(void *)
                 if (s == NmeaParser::Sentence::Rmc && parser.fix().valid != hadFix) {
                     hadFix = parser.fix().valid;
                     fixChangePending = true;
+                }
+                if (s == NmeaParser::Sentence::Rmc) {
+                    followGpsTime(parser.fix(), clockSetAt, clockEverSet);
                 }
                 tellUi();
             }
