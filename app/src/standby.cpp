@@ -6,6 +6,8 @@
 #include "dmm/lib/format.h"
 #include "dmm/services/font.h"
 
+#include <iterator>
+
 namespace dmm::app::ui {
 
 namespace {
@@ -210,12 +212,21 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     drawText(d, Small, 3, h - HintH + 2, hints, p::Dim, p::Ground);
 }
 
-void drawGpsScreen(Display &d, const GpsState &gps)
+void drawGpsScreen(Display &d, const GpsState &gps, bool full)
 {
     const int w = d.width();
     const int h = d.height();
     const int top = StandbyScreen::StatusH;
-    d.fillRect(0, top, w, h - top, p::Ground);
+    constexpr const char *Labels[] = {"Lat", "Lon", "Alt", "Sats", "Speed", "UTC"};
+    const int firstRow = top + Medium.height + 5;
+    if (full) {
+        d.fillRect(0, top, w, h - top, p::Ground);
+        drawText(d, Medium, 4, top + 2, "GPS", p::Text, p::Ground);
+        for (int i = 0; i < static_cast<int>(std::size(Labels)); ++i) {
+            drawText(d, Body, 4, firstRow + i * (Body.height + 1), Labels[i], p::Dim, p::Ground);
+        }
+        d.fillRect(0, h - StandbyScreen::HintH, w, 1, p::Rule);
+    }
 
     const services::GpsFix &f = gps.fix;
     std::string_view state = "Off";
@@ -229,40 +240,45 @@ void drawGpsScreen(Display &d, const GpsState &gps)
         state = "No data";
         stateInk = p::Warn;
     }
-    drawText(d, Medium, 4, top + 2, "GPS", p::Text, p::Ground);
-    drawText(d, Medium, w - 4 - textWidth(Medium, state), top + 2, state, stateInk, p::Ground);
+    // Right-aligned in a field as wide as the longest state, so the spaces
+    // cover a longer word drawn before.
+    constexpr std::size_t StateChars = 9;
+    lib::StaticString<StateChars + 1> padded;
+    for (std::size_t i = state.size(); i < StateChars; ++i) {
+        padded << ' ';
+    }
+    padded << state;
+    drawText(d, Medium, w - 4 - textWidth(Medium, padded.view()), top + 2, padded.view(), stateInk, p::Ground);
 
-    // Label and value rows.
-    int y = top + Medium.height + 5;
-    auto row = [&](std::string_view label, std::string_view value) {
-        drawText(d, Body, 4, y, label, p::Dim, p::Ground);
-        line(d, Body, 46, y, w - 50, value, p::Text);
+    int y = firstRow;
+    auto value = [&](std::string_view text) {
+        line(d, Body, 46, y, w - 50, text, p::Text);
         y += Body.height + 1;
     };
     const bool position = gps.on && f.valid;
-    row("Lat", position ? latitudeText(f.latitudeE7).view() : "-");
-    row("Lon", position ? longitudeText(f.longitudeE7).view() : "-");
+    value(position ? latitudeText(f.latitudeE7).view() : "-");
+    value(position ? longitudeText(f.longitudeE7).view() : "-");
     lib::StaticString<24> v;
     if (position) {
         v << f.altitudeDm / 10 << " m";
     } else {
         v << "-";
     }
-    row("Alt", v.view());
+    value(v.view());
     v.clear();
     if (gps.on) {
         v << f.satellitesUsed << " of " << f.satellitesInView;
     } else {
         v << "-";
     }
-    row("Sats", v.view());
+    value(v.view());
     v.clear();
     if (position) {
         v << f.speedDeciKmh / 10 << '.' << f.speedDeciKmh % 10 << " km/h " << f.courseDeciDeg / 10 << " deg";
     } else {
         v << "-";
     }
-    row("Speed", v.view());
+    value(v.view());
     v.clear();
     if (gps.on && f.timeValid) {
         v << lib::zeroPadded(f.hour, 2) << ':' << lib::zeroPadded(f.minute, 2) << ':' << lib::zeroPadded(f.second, 2);
@@ -272,11 +288,9 @@ void drawGpsScreen(Display &d, const GpsState &gps)
     } else {
         v << "-";
     }
-    row("UTC", v.view());
+    value(v.view());
 
-    d.fillRect(0, h - StandbyScreen::HintH, w, 1, p::Rule);
-    drawText(d, Small, 3, h - StandbyScreen::HintH + 2, gps.on ? "Menu: GPS off  Exit: back" : "Menu: GPS on  Exit: back",
-        p::Dim, p::Ground);
+    line(d, Small, 3, h - StandbyScreen::HintH + 2, w - 6, gps.on ? "Menu: GPS off  Exit: back" : "Menu: GPS on  Exit: back", p::Dim);
 }
 
 void ListPicker::open(std::string_view title)

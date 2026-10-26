@@ -68,8 +68,10 @@ public:
 };
 
 /// The GPS screen: the receiver's state, position, altitude, satellites,
-/// speed and UTC time, between the status bar and a hint bar.
-void drawGpsScreen(services::Display &d, const GpsState &gps);
+/// speed and UTC time, between the status bar and a hint bar. @p full
+/// draws the labels and rules too; otherwise only the values change,
+/// drawn over the old ones.
+void drawGpsScreen(services::Display &d, const GpsState &gps, bool full);
 
 /// A list to pick one item from, drawn over the screen body: a title bar
 /// and up to Rows rows, the chosen one inverted.

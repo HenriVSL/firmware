@@ -612,7 +612,7 @@ void uiMain(void *)
         } else if (view == View::Gps) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
-            drawGpsScreen(d, gpsState);
+            drawGpsScreen(d, gpsState, true);
         } else if (view == View::ZonePicker || view == View::Menu || view == View::MenuValue) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1188,7 +1188,7 @@ void uiMain(void *)
                                        drawBattery(d);
                                    }
                                    if (!noticeShown) {
-                                       drawGpsScreen(d, gpsState);
+                                       drawGpsScreen(d, gpsState, false);
                                    }
                                } else if (tagChanged) {
                                    refreshLockMark();
