@@ -36,3 +36,8 @@ describes the protocol.
   program holds the port.
 
 ## Results
+
+2026-10-26: all steps pass. Steps 1 to 7 with several DeltaMM builds
+(transfer about 9 s); step 8 takes about 80 s; step 9 checked with a
+quick backup over the factory programming link (calibration and radio
+information unchanged) and a look at the zones and channels.
