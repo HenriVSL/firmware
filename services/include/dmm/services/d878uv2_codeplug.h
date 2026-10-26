@@ -27,6 +27,9 @@ ChannelLinks channelLinks(std::span<const std::uint8_t, 64> record);
 
 /// Decodes the start of the D878UVII general settings block (at least 0xC0 bytes).
 CodeplugSettings decodeSettings(std::span<const std::uint8_t> block);
+/// Adds what the extended general settings block holds (at least 0x40
+/// bytes): the GPS satellite systems.
+void decodeSettingsExtension(std::span<const std::uint8_t> block, CodeplugSettings &settings);
 
 /// The D878UVII's codeplug on its data flash, read only. Every 128 KB
 /// block is kept twice, in the block itself and the one after it; reads
