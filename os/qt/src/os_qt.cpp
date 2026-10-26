@@ -102,6 +102,11 @@ const char *currentTaskName()
 
 void setFatalHandler(FatalHandler) {}
 
+TaskStack taskStack(std::size_t)
+{
+    return {};
+}
+
 namespace detail {
 
 void startTask(TaskControl &t, const char *name, unsigned, void (*entry)(void *), void *arg, StackWord *, std::size_t)
