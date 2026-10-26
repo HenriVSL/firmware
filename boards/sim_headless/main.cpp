@@ -128,8 +128,12 @@ int main(int argc, char *argv[])
     parser.addOption(commandAtOption);
     const QCommandLineOption holdOption(QStringLiteral("hold"), QStringLiteral("Hold the keys named in <list> (comma-separated, as on the key test) from 3.5 s on, turn the knob 3 clicks."), QStringLiteral("list"));
     const QCommandLineOption batteryOption(QStringLiteral("battery"), QStringLiteral("Battery voltage in millivolts (default 7800)."), QStringLiteral("mv"));
+    const QCommandLineOption pressOption(QStringLiteral("press"),
+        QStringLiteral("Press the keys named in <list> (comma-separated, as on the key test) one after another from 3.5 s on, 0.8 s apart."),
+        QStringLiteral("list"));
     parser.addOption(frameOption);
     parser.addOption(holdOption);
+    parser.addOption(pressOption);
     parser.addOption(batteryOption);
     parser.process(app);
 
@@ -177,6 +181,21 @@ int main(int argc, char *argv[])
             input.turn(3);
             input.setVolume(734);
         });
+    }
+    if (parser.isSet(pressOption)) {
+        const QStringList names = parser.value(pressOption).split(QLatin1Char(','), Qt::SkipEmptyParts);
+        int at = 3500;
+        for (const QString &name : names) {
+            for (unsigned i = 0; i < static_cast<unsigned>(dmm::services::Key::Count); ++i) {
+                const auto key = static_cast<dmm::services::Key>(i);
+                const std::string_view n = dmm::services::keyName(key);
+                if (name.compare(QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())), Qt::CaseInsensitive) == 0) {
+                    QTimer::singleShot(at, Qt::PreciseTimer, &app, [key] { input.setKey(key, true); });
+                    QTimer::singleShot(at + 300, Qt::PreciseTimer, &app, [key] { input.setKey(key, false); });
+                }
+            }
+            at += 800;
+        }
     }
     const QStringList commands = parser.values(commandOption);
     if (!commands.isEmpty()) {
