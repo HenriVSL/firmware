@@ -108,13 +108,20 @@ void setSpeaker(bool open)
     audio::post(audio::ReceiveAudio{open});
 }
 
+// Log lines of the receive set-up are built in their own frames, kept out
+// of the deep path down to the chips.
+[[gnu::noinline, gnu::cold]] void logAnalogRefused()
+{
+    log::warning("baseband") << "analog receive set-up not accepted";
+}
+
 // The baseband's analog FM mode for the current channel, receiving.
 void basebandAnalogReceive()
 {
     const bool ok = baseband->setAnalog(fmChannel.wide) &&
         baseband->setWorkMode(services::Baseband::WorkMode::Receive) && baseband->setCarrier(speakerOpen);
     if (!ok) {
-        log::warning("baseband") << "analog receive set-up not accepted";
+        logAnalogRefused();
     }
 }
 
@@ -155,6 +162,18 @@ void startFm()
     log::info("fm") << "transceiver found; microphone muted, idle";
 }
 
+[[gnu::noinline, gnu::cold]] void logReceiveRefused(const char *problem)
+{
+    log::error("fm") << "receive refused at " << mhz(fmChannel.receiveHz).view() << " MHz: " << problem;
+}
+
+[[gnu::noinline]] void logReceiving(int level)
+{
+    const auto threshold = system::calibration()->squelchThreshold(fmChannel.receiveHz, level);
+    log::info("fm") << "receiving " << mhz(fmChannel.receiveHz).view() << " MHz, " << (fmChannel.wide ? "25" : "12.5")
+                    << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0) << " dBm)";
+}
+
 void fmReceive()
 {
     const services::Calibration *cal = system::calibration();
@@ -169,13 +188,11 @@ void fmReceive()
     gate.setForcedOpen(squelchLevel == 0);
     if (problem != nullptr) {
         setSpeaker(false);
-        log::error("fm") << "receive refused at " << mhz(fmChannel.receiveHz).view() << " MHz: " << problem;
+        logReceiveRefused(problem);
         return;
     }
     basebandAnalogReceive();
-    const auto threshold = cal->squelchThreshold(fmChannel.receiveHz, level);
-    log::info("fm") << "receiving " << mhz(fmChannel.receiveHz).view() << " MHz, " << (fmChannel.wide ? "25" : "12.5")
-                    << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0) << " dBm)";
+    logReceiving(level);
     setSpeaker(gate.open());
 }
 
