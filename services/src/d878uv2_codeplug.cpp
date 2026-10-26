@@ -158,6 +158,8 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     constexpr std::uint16_t BacklightTimes[] = {0, 5, 10, 15, 20, 25, 30, 60, 120, 180, 240, 300, 900, 1800, 2700, 3600};
     s.backlightS = b[0x27] < std::size(BacklightTimes) ? BacklightTimes[b[0x27]] : 0;
     s.gps = b[0x28] != 0;
+    // The GPS mode 0..6 is one less than the systems' bits.
+    s.gpsSystems = b[0x35] <= 6 ? static_cast<std::uint8_t>(b[0x35] + 1) : 3;
     return s;
 }
 
