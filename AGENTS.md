@@ -60,6 +60,16 @@ in `ARM_GNU_TOOLCHAIN`.
 - Debug access is the chip service's own: it parses its console commands;
   the app only forwards the text.
 
+## Virtual only with a reason
+
+- A virtual interface only where one image holds several implementations
+  at once, or shared code is tested against stand-ins. Otherwise the board
+  names the concrete type in `dmm/board/parts.h` and the shared header
+  describes it as a concept (see ARCHITECTURE.md).
+- A radio builds only the parts it has: optional hardware such as the DMR
+  baseband is reached through a helper that drops the code when the board
+  names none.
+
 ## Never in the repository
 
 - Vendor firmware bytes, vendor tools, or code or names taken from
