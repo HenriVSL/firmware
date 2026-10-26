@@ -47,6 +47,10 @@ from the menu, using the satellite systems the codeplug or the menu
 chooses (GPS, BeiDou, GLONASS). A GPS screen with position, altitude,
 satellites, speed and UTC time, and a GPS mark in the status bar.
 
+**Clock.** The radio's real-time clock keeps UTC while the radio is off; a
+GPS fix corrects it. The status bar shows the local time from the
+codeplug's time zone.
+
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
@@ -145,11 +149,12 @@ checklist in `docs/hw-tests/`.
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens |
 
-Menu, GPS holds the receiver's on/off setting, its satellite systems and
-its status; choosing Status opens the GPS screen, and Exit or Menu goes
-back to the list. The console's `gps raw on` logs every sentence the
-receiver sends; `gps query`, `gps restart` and `gps send` talk to the
-receiver itself.
+Menu, GPS and time holds the receiver's on/off setting, its satellite
+systems, its status and the time zone; choosing Status opens the GPS
+screen, and Exit or Menu goes back to the list. The console's `gps raw on`
+logs every sentence the receiver sends; `gps query`, `gps restart` and
+`gps send` talk to the receiver itself. `time` logs the clock, and
+`time set YYYY-MM-DD HH:MM:SS` sets it (UTC).
 
 ## Log and console
 
