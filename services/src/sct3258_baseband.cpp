@@ -143,8 +143,8 @@ std::uint8_t Sct3258Baseband::volumeRegister(int step) const
     if (step <= 0) {
         return m_audio.speakerMuted;
     }
-    if (step > VolumeSteps) {
-        step = VolumeSteps;
+    if (step > SpeakerVolumeSteps) {
+        step = SpeakerVolumeSteps;
     }
     return m_audio.speakerSteps[static_cast<std::size_t>(step - 1)];
 }
@@ -192,10 +192,10 @@ bool Sct3258Baseband::setAnalog(bool wide)
     return m_chip.control(process) == 0 && m_chip.control(config) == 0;
 }
 
-bool Sct3258Baseband::setWorkMode(WorkMode mode)
+bool Sct3258Baseband::setWorkMode(BasebandWorkMode mode)
 {
-    const std::uint8_t code = mode == WorkMode::Receive ? Sct3258::WorkReceive : mode == WorkMode::Transmit ? Sct3258::WorkTransmit
-                                                                                                            : Sct3258::WorkIdle;
+    const std::uint8_t code = mode == BasebandWorkMode::Receive ? Sct3258::WorkReceive : mode == BasebandWorkMode::Transmit ? Sct3258::WorkTransmit
+                                                                                                                            : Sct3258::WorkIdle;
     const std::uint8_t work[] = {Sct3258::WorkMode, code, 0, 0};
     return m_info.running && m_chip.control(work) == 0;
 }
@@ -304,5 +304,7 @@ const char *Sct3258Baseband::debugHelp() const
 {
     return "bb codec <page> <reg> <value>, bb packet <type> <bytes> (hex)";
 }
+
+static_assert(Baseband<Sct3258Baseband>);
 
 } // namespace dmm::services

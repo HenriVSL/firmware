@@ -41,6 +41,11 @@ constexpr unsigned PowerStepMs = 1;
     log::debug("fm") << what << ", pin register " << lib::hex(before, 4) << " -> " << lib::hex(after, 4);
 }
 
+[[gnu::noinline]] void logSquelch(int openDbm, int noiseOpenDb)
+{
+    log::info("fm") << "squelch opens at " << openDbm << " dBm and noise below " << noiseOpenDb << " dB";
+}
+
 [[gnu::noinline]] void logNumber(const char *what, int value, const char *unit)
 {
     log::info("fm") << what << ' ' << value << unit;
@@ -49,8 +54,8 @@ constexpr unsigned PowerStepMs = 1;
 } // namespace
 
 Rda1846Transceiver::Rda1846Transceiver(Chip &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
-    TuningSource tuning)
-    : m_chip(chip), m_rf(rf), m_pins(pins), m_sleepMs(sleepMs), m_tuning(tuning)
+    TrimsSource trims, TuningSource tuning)
+    : m_chip(chip), m_rf(rf), m_pins(pins), m_sleepMs(sleepMs), m_trims(trims), m_tuning(tuning)
 {
 }
 
@@ -87,58 +92,54 @@ bool Rda1846Transceiver::start()
     return true;
 }
 
-const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLevel, const Calibration &calibration)
+const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLevel)
 {
     const std::uint32_t hz = channel.receiveHz;
-    const auto trim = calibration.referenceTrim();
-    const auto tune = calibration.rxTune(hz);
-    const auto threshold = calibration.squelchThreshold(hz, squelchLevel);
-    if (!trim || !tune || !threshold) {
-        return calibration.present() ? "frequency outside the calibrated bands" : "no calibration";
+    const auto trims = m_trims.receive != nullptr ? m_trims.receive(hz, squelchLevel) : std::nullopt;
+    if (!trims) {
+        return "no calibrated values for this frequency";
     }
     idle();
     // Front ends off while tuning, as on every band change.
     setPin(m_pins.receiveHighBand, false);
     setPin(m_pins.receiveLowBand, false);
     setPin(m_pins.transmitMidBand, false);
-    m_rf.setReferenceTrim(*trim);
-    m_rf.setReceiveTune(*tune);
-    m_tune = *tune;
+    m_rf.setReferenceTrim(trims->referenceTrim);
+    m_rf.setReceiveTune(trims->frontEndTune);
+    m_tune = trims->frontEndTune;
     m_chip.setFrequency(hz);
     m_chip.setBandwidth(channel.wide ? Chip::Bandwidth::Wide : Chip::Bandwidth::Narrow);
     m_wide = channel.wide;
-    m_chip.setSquelch(-*threshold, -*threshold - SquelchHysteresisDb);
+    m_chip.setSquelch(trims->squelchOpenDbm, trims->squelchOpenDbm - SquelchHysteresisDb);
     const int noiseOpen = squelchOpenNoiseDb(channel.wide, squelchLevel);
     m_chip.setNoiseSquelch(noiseOpen, noiseOpen - SquelchHysteresisDb);
-    logNumber("noise squelch opens below", noiseOpen, " dB");
+    logSquelch(trims->squelchOpenDbm, noiseOpen);
     m_chip.setMode(Chip::Mode::Receive);
     m_receiveHz = hz;
     setPin(frontEnd(), true);
     return nullptr;
 }
 
-const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz,
-    const Calibration &calibration)
+const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz)
 {
     const std::uint32_t hz = channel.transmitHz;
-    const auto trim = calibration.referenceTrim();
-    const auto power = calibration.txPower(hz, level);
-    const auto deviation = calibration.deviation();
-    if (!trim || !power || !deviation) {
-        return calibration.present() ? "frequency outside the calibrated bands" : "no calibration";
+    const auto trims = m_trims.transmit != nullptr ? m_trims.transmit(hz, level) : std::nullopt;
+    if (!trims) {
+        return "no calibrated values for this frequency";
     }
+    const std::uint16_t power = trims->powerControl;
     idle();
     // Band switches before RF: receive front ends off, the transmit filter
     // for the band.
     setPin(m_pins.receiveHighBand, false);
     setPin(m_pins.receiveLowBand, false);
     setPin(m_pins.transmitMidBand, hz >= m_pins.midLowHz && hz <= m_pins.splitHz);
-    m_rf.setReferenceTrim(*trim);
+    m_rf.setReferenceTrim(trims->referenceTrim);
     m_rf.setTransmitPath(true);
     muteMicrophone(false);
     m_chip.setFrequency(hz);
     m_chip.setBandwidth(channel.wide ? Chip::Bandwidth::Wide : Chip::Bandwidth::Narrow);
-    m_chip.setDeviation(deviation->voice, ctcssCentiHz != 0 ? deviation->ctcss : 0);
+    m_chip.setDeviation(trims->voiceDeviation, ctcssCentiHz != 0 ? trims->ctcssDeviation : 0);
     m_chip.setTransmitTone(ctcssCentiHz);
     m_chip.setMode(Chip::Mode::Transmit);
     setPin(m_pins.transmitHighBand, hz > m_pins.splitHz);
@@ -146,12 +147,12 @@ const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel le
     m_sleepMs(TransmitSettleMs);
     m_rf.setPowerAmplifier(true);
     m_sleepMs(AmplifierSettleMs);
-    m_rf.setPowerControl(static_cast<std::uint16_t>(*power / 3));
+    m_rf.setPowerControl(static_cast<std::uint16_t>(power / 3));
     m_sleepMs(PowerStepMs);
-    m_rf.setPowerControl(static_cast<std::uint16_t>(*power * 2 / 3));
+    m_rf.setPowerControl(static_cast<std::uint16_t>(power * 2 / 3));
     m_sleepMs(PowerStepMs);
-    m_rf.setPowerControl(*power);
-    m_power = *power;
+    m_rf.setPowerControl(power);
+    m_power = power;
     logNumber("power control", m_power, "");
     return nullptr;
 }
@@ -320,5 +321,7 @@ const char *Rda1846Transceiver::debugHelp() const
 {
     return "fm <reg> [value] (hex), fm tune <value>|auto, fm sweep";
 }
+
+static_assert(FmTransceiver<Rda1846Transceiver>);
 
 } // namespace dmm::services

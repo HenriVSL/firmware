@@ -3,28 +3,32 @@
 
 #pragma once
 
+#include "dmm/board/parts.h"
 #include "dmm/services/audio.h"
 #include "dmm/services/baseband.h"
 #include "dmm/services/battery.h"
 #include "dmm/services/byte_channel.h"
-#include "dmm/services/calibration.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/display.h"
-#include "dmm/services/fm_transceiver.h"
 #include "dmm/services/input.h"
 #include "dmm/services/leds.h"
 #include "dmm/services/log_sink.h"
 #include "dmm/services/storage.h"
 #include "dmm/services/system_control.h"
 
+#include <type_traits>
+
 namespace dmm::app {
 
-/// What a board hands the app: its service interfaces and a name for the log.
+/// What a board hands the app: its parts and a name for the log. The
+/// board's parts header names the types of the concrete ones (board::...).
 struct Platform
 {
     services::Leds &leds;
     services::LogSink &logSink;
     services::SystemControl &system;
+    /// The analog FM transceiver.
+    board::Fm &fm;
     const char *boardName;
     /// A line the board wants logged at start, or nullptr.
     const char *bootReport = nullptr;
@@ -38,17 +42,31 @@ struct Platform
     services::Storage *storage = nullptr;
     /// The PC data port (DeltaMM's own protocol), or nullptr.
     services::ByteChannel *dataChannel = nullptr;
-    /// The baseband processor and the codec behind it, or nullptr.
-    services::Baseband *baseband = nullptr;
-    /// The analog FM transceiver, or nullptr.
-    services::FmTransceiver *fm = nullptr;
+    /// The baseband processor and the codec behind it; nullptr on a board
+    /// whose parts name NoBaseband.
+    board::Baseband *baseband = nullptr;
     /// Speaker amplifier, its receive-audio switch and beep tones, or nullptr.
     services::AudioHardware *audio = nullptr;
     /// The radio's calibration, read from storage at start, or nullptr.
-    services::Calibration *calibration = nullptr;
+    board::Calibration *calibration = nullptr;
     /// The radio's channels, zones and settings, or nullptr.
     services::CodeplugSource *codeplug = nullptr;
 };
+
+/// The board has a baseband processor.
+inline constexpr bool HasBaseband = !std::is_same_v<board::Baseband, services::NoBaseband>;
+
+/// Runs @p f with @p baseband on boards that have one; elsewhere the call
+/// is not built at all. @p f takes the baseband as auto &.
+template <class F>
+void withBaseband(board::Baseband *baseband, F &&f)
+{
+    if constexpr (HasBaseband) {
+        if (baseband != nullptr) {
+            f(*baseband);
+        }
+    }
+}
 
 /// Creates the app's tasks. Called once, before os::runScheduler().
 void start(Platform &platform);

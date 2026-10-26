@@ -4,6 +4,7 @@
 #pragma once
 
 #include "dmm/services/calibration.h"
+#include "dmm/services/power_level.h"
 
 #include <array>
 #include <atomic>
@@ -27,7 +28,7 @@ namespace dmm::services {
 /// tuning is interpolated between the band's three calibration points.
 /// The squelch threshold is the band's base corrected by its flatness
 /// table. Deviation has one set for both bands.
-class D878Uv2Calibration final : public Calibration
+class D878Uv2Calibration
 {
 public:
     static constexpr std::uint32_t CopyA = 0x02F60000;
@@ -40,14 +41,14 @@ public:
     explicit D878Uv2Calibration(std::span<const std::uint8_t, Bytes> bytes);
 
     /// Call once, before any task reads values.
-    bool load(Storage &storage) override;
+    bool load(Storage &storage);
     /// Read, and the factory's first-run marker is set. Once true, every
     /// value may be read from any task.
-    bool present() const override
+    bool present() const
     {
         return m_loaded.load(std::memory_order_acquire) && m_data[0x14] == 'w' && m_data[0x15] == 'w';
     }
-    const char *source() const override;
+    const char *source() const;
 
     bool loaded() const { return m_loaded.load(std::memory_order_acquire); }
     /// Which copy was read: 0 = first, 1 = second.
@@ -55,12 +56,23 @@ public:
     /// The flash flagged the copy as uncorrectable.
     bool flagged() const { return m_flagged; }
 
-    std::optional<int> batteryOffsetMv() const override;
-    std::optional<std::uint16_t> referenceTrim() const override;
-    std::optional<std::uint16_t> txPower(std::uint32_t hz, PowerLevel level) const override;
-    std::optional<std::uint16_t> rxTune(std::uint32_t hz) const override;
-    std::optional<int> squelchThreshold(std::uint32_t hz, int level) const override;
-    std::optional<Deviation> deviation() const override;
+    std::optional<int> batteryOffsetMv() const;
+
+    // RF values in the board's hardware units, for the board to hand to
+    // the FM transceiver.
+
+    /// FM transmit deviation settings: voice (with tones), CTCSS and DCS.
+    struct Deviation
+    {
+        std::uint8_t voice;
+        std::uint8_t ctcss;
+        std::uint8_t dcs;
+    };
+    std::optional<std::uint16_t> referenceTrim() const;
+    std::optional<std::uint16_t> txPower(std::uint32_t hz, PowerLevel level) const;
+    std::optional<std::uint16_t> rxTune(std::uint32_t hz) const;
+    std::optional<int> squelchThreshold(std::uint32_t hz, int level) const;
+    std::optional<Deviation> deviation() const;
 
     /// Audio codec trims: left and right line-out gain, right input
     /// amplifier volume.

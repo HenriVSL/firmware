@@ -12,11 +12,12 @@
 
 namespace dmm::services {
 
-/// The SCT3258 with an audio codec behind it, reached through the chip.
+/// The SCT3258 with an audio codec behind it, reached through the chip; a
+/// Baseband.
 /// The chip sets the codec up once told which one it has; the board says
 /// which, and which codec registers carry the speaker volume, the
 /// microphone and the calibrated trims.
-class Sct3258Baseband final : public Baseband
+class Sct3258Baseband
 {
 public:
     /// One codec register: page and register.
@@ -44,11 +45,11 @@ public:
         /// Connects the microphone for transmit, in order.
         std::span<const CodecWrite> transmit;
         /// The speaker volume register, its muted value and its value for
-        /// each step 1..VolumeSteps.
+        /// each step 1..SpeakerVolumeSteps.
         std::uint8_t speakerPage;
         std::uint8_t speakerRegister;
         std::uint8_t speakerMuted;
-        std::array<std::uint8_t, VolumeSteps> speakerSteps;
+        std::array<std::uint8_t, SpeakerVolumeSteps> speakerSteps;
         /// The registers the calibrated codec trims go to.
         std::array<CodecRegister, 3> trims;
     };
@@ -68,18 +69,18 @@ public:
         const Audio &audio, TrimsSource trims);
 
     /// Also writes the codec trims if the calibration has been read.
-    bool start() override;
-    BasebandInfo info() override;
-    bool setSpeakerVolume(int step) override;
-    bool playTone(std::uint16_t hz, std::uint16_t ms, int percent) override;
+    bool start();
+    BasebandInfo info();
+    bool setSpeakerVolume(int step);
+    bool playTone(std::uint16_t hz, std::uint16_t ms, int percent);
     /// Also writes the codec trims if start() could not.
-    bool setAnalog(bool wide) override;
-    bool setWorkMode(WorkMode mode) override;
-    bool setCarrier(bool present) override;
-    bool setMicrophone(bool on) override;
+    bool setAnalog(bool wide);
+    bool setWorkMode(BasebandWorkMode mode);
+    bool setCarrier(bool present);
+    bool setMicrophone(bool on);
     /// "codec <page> <reg> <value>", "packet <type> <bytes>" (hex).
-    bool debugCommand(std::string_view command) override;
-    const char *debugHelp() const override;
+    bool debugCommand(std::string_view command);
+    const char *debugHelp() const;
 
     /// Writes one codec register; false unless running and accepted.
     bool codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8_t value);

@@ -8,7 +8,6 @@
 #include "dmm/lib/format.h"
 #include "dmm/os/os.h"
 #include "dmm/services/battery.h"
-#include "dmm/services/calibration.h"
 #include "dmm/services/log.h"
 #include "dmm/services/power.h"
 #include "dmm/version.h"
@@ -156,7 +155,7 @@ void loadCalibration()
                          << info.sizeBytes / (1024 * 1024) << " MB, "
                          << (info.remappedBlocks < 0 ? "no remap table" : "remapped blocks: ")
                          << (info.remappedBlocks < 0 ? 0 : info.remappedBlocks);
-    services::Calibration *cal = platform->calibration;
+    board::Calibration *cal = platform->calibration;
     if (cal == nullptr) {
         return;
     }
@@ -317,7 +316,7 @@ void reportBattery()
     batteryReportWanted.store(true, std::memory_order_relaxed);
 }
 
-const services::Calibration *calibration()
+const board::Calibration *calibration()
 {
     return calibrationReady.load(std::memory_order_acquire) ? platform->calibration : nullptr;
 }
