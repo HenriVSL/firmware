@@ -34,7 +34,10 @@ time. A battery monitor and auto power-off.
 **GPS.** The built-in receiver, on or off with the codeplug's setting or
 from the menu, using the satellite systems the codeplug or the menu
 chooses (GPS, BeiDou, GLONASS). A GPS screen with position, altitude,
-satellites, speed and UTC time, and a GPS mark in the status bar.
+satellites, speed and UTC time, and a GPS mark in the status bar. With
+battery save on, the receiver sleeps between fixes and wakes in time for
+the next one the clock or the GPS screen needs; the mark is amber while
+it sleeps.
 
 **Clock.** The radio's real-time clock keeps UTC while the radio is off; a
 GPS fix corrects it. The status bar shows the local time from the
@@ -135,8 +138,18 @@ Menu, GPS and time holds the receiver's on/off setting, its satellite
 systems, its status and the time zone; choosing Status opens the GPS
 screen, and Exit or Menu goes back to the list. The console's `gps raw on`
 logs every sentence the receiver sends; `gps query`, `gps restart` and
-`gps send` talk to the receiver itself. `time` logs the clock, and
+`gps send` talk to the receiver itself; `gps need <s>` asks for a
+position every so many seconds (0: none). `time` logs the clock, and
 `time set YYYY-MM-DD HH:MM:SS` sets it (UTC).
+
+The GPS mark in the status bar, shown while the GPS is on:
+
+| Colour | Receiver |
+| --- | --- |
+| Green | has a fix |
+| Grey | is searching for satellites |
+| Amber | sleeps between fixes (battery save on) |
+| Red | sends no data |
 
 ## Log and console
 
