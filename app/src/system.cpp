@@ -40,7 +40,14 @@ std::atomic<os::Ticks> lastActivity{0};
 std::atomic<int> autoOffMinutes{0};
 std::atomic<bool> batteryReportWanted{false};
 
-services::BatteryMonitor battery;
+// The system task's battery monitor, with the board's levels; without a
+// battery sense no level is ever low or empty.
+services::BatteryMonitor &battery()
+{
+    static services::BatteryMonitor monitor(
+        platform->battery != nullptr ? platform->battery->thresholds() : services::BatteryThresholds{});
+    return monitor;
+}
 std::atomic<bool> calibrationReady{false};
 bool batteryCalibrated = false;
 
@@ -76,8 +83,8 @@ lib::StaticString<12> volts(int millivolts)
 
 void logBattery(const char *what)
 {
-    log::info("battery") << what << volts(battery.millivolts()).view() << ", level " << battery.level()
-                         << (battery.low() ? ", low" : "") << (batteryCalibrated ? "" : " (uncalibrated)");
+    log::info("battery") << what << volts(battery().millivolts()).view() << ", level " << battery().level()
+                         << (battery().low() ? ", low" : "") << (batteryCalibrated ? "" : " (uncalibrated)");
 }
 
 // Waits until the power switch is turned off, then lets go of the power
@@ -163,7 +170,7 @@ void loadCalibration()
         log::warning("calibration") << cal->source() << " read, but the radio does not look calibrated";
         return;
     }
-    battery.setOffset(*offset);
+    battery().setOffset(*offset);
     batteryCalibrated = true;
     log::info("calibration") << cal->source() << ", battery offset " << (*offset < 0 ? "-" : "+")
                              << (*offset < 0 ? -*offset : *offset) << " mV";
@@ -174,25 +181,25 @@ void sampleBattery(os::Ticks now)
     if (platform->battery == nullptr) {
         return;
     }
-    const int levelBefore = battery.level();
-    const bool lowBefore = battery.low();
-    const bool validBefore = battery.valid();
-    battery.update(platform->battery->readMillivolts(), now);
-    if (!battery.valid()) {
+    const int levelBefore = battery().level();
+    const bool lowBefore = battery().low();
+    const bool validBefore = battery().valid();
+    battery().update(platform->battery->readMillivolts(), now);
+    if (!battery().valid()) {
         return;
     }
     if (!validBefore) {
         logBattery("");
-    } else if (battery.low() != lowBefore) {
-        if (battery.low()) {
-            log::warning("battery") << "low, please charge: " << volts(battery.millivolts()).view();
+    } else if (battery().low() != lowBefore) {
+        if (battery().low()) {
+            log::warning("battery") << "low, please charge: " << volts(battery().millivolts()).view();
         } else {
             logBattery("no longer low: ");
         }
-    } else if (battery.level() != levelBefore) {
+    } else if (battery().level() != levelBefore) {
         logBattery("");
     }
-    ui::post(ui::Battery{static_cast<std::uint16_t>(battery.millivolts()), static_cast<std::uint8_t>(battery.level()), battery.low()});
+    ui::post(ui::Battery{static_cast<std::uint16_t>(battery().millivolts()), static_cast<std::uint8_t>(battery().level()), battery().low()});
 }
 
 void systemMain(void *)
@@ -203,9 +210,6 @@ void systemMain(void *)
     }
     logResetReport();
     platform->system.holdPower();
-    if (platform->battery != nullptr) {
-        battery.setThresholds(platform->battery->thresholds());
-    }
     loadCalibration();
 
     // A short red flash first shows the image runs, whatever happens next.
@@ -239,7 +243,7 @@ void systemMain(void *)
         if (sinceBattery >= BatteryEveryMs) {
             sinceBattery = 0;
             sampleBattery(now);
-            if (battery.empty() && !emptyReported) {
+            if (battery().empty() && !emptyReported) {
                 emptyReported = true;
                 if (batteryCalibrated) {
                     softOff("battery empty");
@@ -249,7 +253,7 @@ void systemMain(void *)
             }
         }
         if (batteryReportWanted.exchange(false)) {
-            if (battery.valid()) {
+            if (battery().valid()) {
                 logBattery("");
             } else {
                 log::info("battery") << "no reading";
@@ -265,7 +269,7 @@ void systemMain(void *)
         // Green heartbeat once a second; while the battery is low the red
         // LED blinks as well.
         platform->leds.set(Leds::Led::Green, phase < HeartbeatOnMs);
-        platform->leds.set(Leds::Led::Red, battery.low() && now % (2 * LowBatteryBlinkMs) < LowBatteryBlinkMs);
+        platform->leds.set(Leds::Led::Red, battery().low() && now % (2 * LowBatteryBlinkMs) < LowBatteryBlinkMs);
 
         os::sleepUntil(wake, StepMs);
         phase = (phase + StepMs) % HeartbeatPeriodMs;

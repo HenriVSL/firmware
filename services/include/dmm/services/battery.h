@@ -44,12 +44,7 @@ public:
     /// Readings averaged for the steady voltage.
     static constexpr int Window = 8;
 
-    BatteryMonitor() = default;
     explicit BatteryMonitor(const BatteryThresholds &thresholds);
-
-    /// Levels for the readings from now on. Until set, no level is low or
-    /// empty.
-    void setThresholds(const BatteryThresholds &thresholds) { m_t = thresholds; }
 
     /// Calibration offset added to every reading.
     void setOffset(int millivolts) { m_offset = millivolts; }
@@ -68,7 +63,7 @@ public:
 private:
     int targetLevel(int mv) const;
 
-    BatteryThresholds m_t{};
+    BatteryThresholds m_t;
     int m_offset = 0;
     int m_samples[Window]{};
     int m_count = 0;
