@@ -39,12 +39,19 @@ constexpr Sct3258Baseband::Audio TestAudio{
     .speakerRegister = 0x10,
     .speakerMuted = 0x40,
     .speakerSteps = {0x3A, 0x3C, 0x3F, 2, 6, 8, 10, 12, 13, 15, 16, 18, 20, 22, 23},
-    .trims = {{{1, 0x12, 0}, {1, 0x13, 0}, {1, 0x3C, 0}}},
+    .trims = {{{1, 0x12}, {1, 0x13}, {1, 0x3C}}},
 };
 
 std::optional<Sct3258Baseband::Trims> testTrims()
 {
     return Sct3258Baseband::Trims{{0x46, 0x50, 0x05, 0x78, 0x09, 0xC4, 0x05, 0xDC, 0x01, 0x0E}, {4, 8, 12}};
+}
+
+// Trims that appear once the calibration has been read.
+bool calibrationRead = false;
+std::optional<Sct3258Baseband::Trims> laterTrims()
+{
+    return calibrationRead ? testTrims() : std::nullopt;
 }
 
 } // namespace
@@ -65,12 +72,15 @@ TEST_CASE("start boots the chip, reads its versions, picks the codec and leaves 
     CHECK(std::strcmp(info.product, "CT3258F") == 0);
     CHECK(std::strcmp(info.software, "V2.01.07") == 0);
 
-    REQUIRE(chip.packets.size() == 8);
+    REQUIRE(chip.packets.size() == 11);
     CHECK(chip.packets[3] == std::vector<std::uint8_t>{0x00, 0x2D, 0x01});
     CHECK(chip.packets[4] == std::vector<std::uint8_t>{0x00, 0x10, 0x04});
     CHECK(chip.packets[5] == std::vector<std::uint8_t>{0x00, 0x10, 0x10});
     CHECK(chip.packets[6] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 52, 0x00, 0x00, 0x00}); // mic off
     CHECK(chip.packets[7] == std::vector<std::uint8_t>{0x40, 0x00, 0x00, 65, 0xD4, 0x00, 0x00}); // DAC -22 dB
+    // The calibrated codec trims.
+    CHECK(chip.packets[8] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x12, 0x04, 0x00, 0x00});
+    CHECK(chip.packets[10] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x3C, 0x0C, 0x00, 0x00});
 }
 
 TEST_CASE("without a boot program or an answer the baseband reports why and stays off")
@@ -142,15 +152,13 @@ TEST_CASE("analog mode, work mode and carrier packets")
     CHECK(baseband.setAnalog(true));
     CHECK(baseband.setWorkMode(dmm::services::Baseband::WorkMode::Receive));
     CHECK(baseband.setCarrier(true));
-    // The codec trims go first, once after start.
-    REQUIRE(chip.packets.size() == 7);
-    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x12, 0x04, 0x00, 0x00});
-    CHECK(chip.packets[2] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x3C, 0x0C, 0x00, 0x00});
-    CHECK(chip.packets[3] == std::vector<std::uint8_t>{0x00, 0x1A, 0x80});
-    CHECK(chip.packets[4] ==
+    // The codec trims went in at start.
+    REQUIRE(chip.packets.size() == 4);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x00, 0x1A, 0x80});
+    CHECK(chip.packets[1] ==
         std::vector<std::uint8_t>{0x00, 0x3C, 0xC2, 0x46, 0x50, 0x05, 0x78, 0x09, 0xC4, 0x05, 0xDC, 0x01, 0x0E});
-    CHECK(chip.packets[5] == std::vector<std::uint8_t>{0x00, 0x18, 0x01, 0x00, 0x00});
-    CHECK(chip.packets[6] == std::vector<std::uint8_t>{0x00, 0x19, 0x01});
+    CHECK(chip.packets[2] == std::vector<std::uint8_t>{0x00, 0x18, 0x01, 0x00, 0x00});
+    CHECK(chip.packets[3] == std::vector<std::uint8_t>{0x00, 0x19, 0x01});
     chip.packets.clear();
     CHECK(baseband.setAnalog(false));
     CHECK(chip.packets.size() == 2);
@@ -166,6 +174,26 @@ TEST_CASE("analog mode needs the calibrated values")
     chip.packets.clear();
     CHECK_FALSE(baseband.setAnalog(true));
     CHECK(chip.packets.empty());
+}
+
+TEST_CASE("codec trims read after start go in with the first analog set-up, once")
+{
+    FakeSct3258 chip;
+    FakeBoard board;
+    Sct3258 sct(chip, noDelay);
+    calibrationRead = false;
+    Sct3258Baseband baseband(sct, board, Blob, TestAudio, laterTrims);
+    REQUIRE(baseband.start());
+    CHECK(chip.packets.size() == 8);
+    chip.packets.clear();
+
+    calibrationRead = true;
+    CHECK(baseband.setAnalog(false));
+    REQUIRE(chip.packets.size() == 5);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 0x12, 0x04, 0x00, 0x00});
+    chip.packets.clear();
+    CHECK(baseband.setAnalog(false));
+    CHECK(chip.packets.size() == 2);
 }
 
 TEST_CASE("microphone path")

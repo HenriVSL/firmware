@@ -19,6 +19,12 @@ namespace dmm::services {
 class Sct3258Baseband final : public Baseband
 {
 public:
+    /// One codec register: page and register.
+    struct CodecRegister
+    {
+        std::uint8_t page;
+        std::uint8_t reg;
+    };
     /// One codec register write: page, register, value.
     struct CodecWrite
     {
@@ -43,9 +49,8 @@ public:
         std::uint8_t speakerRegister;
         std::uint8_t speakerMuted;
         std::array<std::uint8_t, VolumeSteps> speakerSteps;
-        /// The registers the calibrated codec trims go to; the values here
-        /// are not used.
-        std::array<CodecWrite, 3> trims;
+        /// The registers the calibrated codec trims go to.
+        std::array<CodecRegister, 3> trims;
     };
 
     /// The radio's calibrated values for the chip and codec.
@@ -56,17 +61,18 @@ public:
         /// Values for Audio::trims.
         std::array<std::uint8_t, 3> codec;
     };
-    /// The calibrated values, or nothing without a calibration.
+    /// The calibrated values, or nothing until a calibration has been read.
     using TrimsSource = std::optional<Trims> (*)();
 
     Sct3258Baseband(drivers::baseband::Sct3258 &chip, BasebandBoard &board, std::span<const std::uint8_t> bootBlob,
         const Audio &audio, TrimsSource trims);
 
+    /// Also writes the codec trims if the calibration has been read.
     bool start() override;
     BasebandInfo info() override;
     bool setSpeakerVolume(int step) override;
     bool playTone(std::uint16_t hz, std::uint16_t ms, int percent) override;
-    /// Also writes the codec trims, the first time after start().
+    /// Also writes the codec trims if start() could not.
     bool setAnalog(bool wide) override;
     bool setWorkMode(WorkMode mode) override;
     bool setCarrier(bool present) override;
@@ -87,6 +93,7 @@ public:
 private:
     bool fail(const char *problem);
     bool write(std::span<const CodecWrite> writes);
+    void writeTrims(const Trims &trims);
 
     drivers::baseband::Sct3258 &m_chip;
     BasebandBoard &m_board;
