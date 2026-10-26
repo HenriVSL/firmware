@@ -5,6 +5,6 @@
 
 namespace dmm {
 
-inline constexpr char Version[] = "@PROJECT_VERSION@";
+inline constexpr char Version[] = "@DMM_VERSION@";
 
 } // namespace dmm

@@ -7,6 +7,16 @@ project(deltamm
     DESCRIPTION "Open firmware for DMR and FM handheld radios"
     LANGUAGES C CXX)
 
+# Preview builds of upstream with the open pull requests merged:
+# <upstream version>-PR-<build>, counted from 1 for each upstream version.
+set(DMM_PREVIEW_BASE 0.22.0)
+set(DMM_PREVIEW_BUILD 1)
+if(NOT PROJECT_VERSION VERSION_EQUAL DMM_PREVIEW_BASE)
+    message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}: set DMM_PREVIEW_BASE to it and "
+                        "DMM_PREVIEW_BUILD to 1.")
+endif()
+set(DMM_VERSION "${PROJECT_VERSION}-PR-${DMM_PREVIEW_BUILD}")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

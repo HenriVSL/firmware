@@ -42,7 +42,7 @@ set(DMM_RADIO_TOOL "" CACHE FILEPATH "dmm-radio from a host build, for the updat
 if(DMM_RADIO_TOOL AND DMM_STOCK_FIRMWARE)
     add_custom_target(update-files
         COMMAND ${DMM_RADIO_TOOL} prepare $<TARGET_FILE_DIR:deltamm>/deltamm.bin ${DMM_STOCK_FIRMWARE}
-                $<TARGET_FILE_DIR:deltamm>/package --name DeltaMM_${PROJECT_VERSION}
+                $<TARGET_FILE_DIR:deltamm>/package --name DeltaMM_${DMM_VERSION}
         DEPENDS deltamm
         USES_TERMINAL)
 endif()
