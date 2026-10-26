@@ -392,6 +392,7 @@ void runCommand(std::string_view command)
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
         log::info("console") << "gps: gps, gps on|off, gps raw on|off";
+        log::info("console") << "GPS receiver: " << gps::debugHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
@@ -430,15 +431,18 @@ void runCommand(std::string_view command)
         ui::post(ui::ShowKeyTest{});
     } else if (command == "panel on" || command == "panel off") {
         ui::post(ui::PanelPower{command == "panel on"});
-    } else if (command == "gps" || command == "gps on" || command == "gps off" || command == "gps raw on" ||
-        command == "gps raw off") {
+    } else if (command == "gps" || lib::startsWith(command, "gps ")) {
         bool posted = false;
         if (command == "gps") {
             posted = gps::post(gps::Report{});
         } else if (command == "gps on" || command == "gps off") {
             posted = gps::post(gps::Power{command == "gps on"});
-        } else {
+        } else if (command == "gps raw on" || command == "gps raw off") {
             posted = gps::post(gps::Raw{command == "gps raw on"});
+        } else {
+            gps::ChipCommand c;
+            c.text << std::string_view(command.data() + 4, command.size() - 4);
+            posted = gps::post(c);
         }
         if (!posted) {
             log::info("console") << "no GPS receiver";

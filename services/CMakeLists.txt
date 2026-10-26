@@ -13,6 +13,7 @@ add_library(dmm_services STATIC
     src/key_lock.cpp
     src/log.cpp
     src/nmea.cpp
+    src/casic_receiver.cpp
     src/power.cpp
     src/audio.cpp
     src/rda1846_transceiver.cpp

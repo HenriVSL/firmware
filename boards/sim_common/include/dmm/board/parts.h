@@ -12,6 +12,7 @@
 #include "sim_input.h"
 
 #include "dmm/services/baseband.h"
+#include "dmm/services/casic_receiver.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/usb_channel.h"
 
@@ -24,6 +25,7 @@ using Input = SimInput;
 using Battery = SimBattery;
 // No data port: the platform's pointer stays empty.
 using DataChannel = services::UsbChannel;
+using GpsReceiver = services::CasicReceiver;
 using Gps = SimGps;
 
 static_assert(services::FmTransceiver<Fm>);
@@ -31,5 +33,6 @@ static_assert(services::Calibration<Calibration>);
 static_assert(services::InputDevices<Input>);
 static_assert(services::BatterySensor<Battery>);
 static_assert(services::GpsPort<Gps>);
+static_assert(services::GpsReceiver<GpsReceiver>);
 
 } // namespace dmm::board
