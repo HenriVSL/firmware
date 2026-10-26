@@ -70,7 +70,7 @@ constexpr dmm::services::Sct3258Baseband::Audio Audio{
     .speakerMuted = HplMuted,
     .speakerSteps = {hplDb(-6), hplDb(-4), hplDb(-1), hplDb(2), hplDb(6), hplDb(8), hplDb(10), hplDb(12), hplDb(13),
         hplDb(15), hplDb(16), hplDb(18), hplDb(20), hplDb(22), hplDb(23)},
-    .trims = {{{Page1, LeftOutGain, 0}, {Page1, RightOutGain, 0}, {Page1, RightMicPgaVolume, 0}}},
+    .trims = {{{Page1, LeftOutGain}, {Page1, RightOutGain}, {Page1, RightMicPgaVolume}}},
 };
 
 void outputLow(Pin pin)

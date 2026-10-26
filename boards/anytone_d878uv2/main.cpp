@@ -307,7 +307,8 @@ void hal::boardMain()
     static BoardRf rf;
     rf.configure();
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
-    // Read from the radio task once the app has the calibration.
+    // Called from the radio task; empty until the system task has read the
+    // calibration.
     static dmm::services::Sct3258Baseband baseband{basebandChip, basebandBoard, dmm::baseband::bootBlob(), basebandAudio(),
         []() -> std::optional<dmm::services::Sct3258Baseband::Trims> {
             const auto gains = calibration.basebandAnalogGains();
