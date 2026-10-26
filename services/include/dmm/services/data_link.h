@@ -16,7 +16,9 @@ namespace dmm::services {
 
 /// DeltaMM's own PC protocol, on the data port.
 ///
-/// Every request starts with 0xDD; bytes before it are skipped.
+/// Every request starts with 0xDD; bytes before it are skipped. The data
+/// port may also carry the radio's own programming protocol, so the start
+/// byte must be one that protocol never begins a command with.
 ///   0xDD 'i'                          information
 ///   0xDD 'r' address:u32 length:u16   read storage, remapped
 ///   0xDD 'p' address:u32 length:u16   read storage without bad-block remapping
