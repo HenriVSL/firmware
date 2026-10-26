@@ -5,16 +5,33 @@
 
 #include "dmm/board/parts.h"
 #include "dmm/lib/format.h"
+#include "dmm/services/gps_schedule.h"
 
 #include <cstdint>
 #include <variant>
 
 namespace dmm::app::gps {
 
-/// Switches the receiver and its link on or off.
+/// Enables or disables the GPS. While enabled, the receiver runs whenever
+/// a client needs positions often, and sleeps between fixes otherwise.
 struct Power
 {
     bool on;
+};
+/// Off: the receiver stays on whenever the GPS is enabled (battery save off).
+struct PowerSave
+{
+    bool on;
+};
+/// How often @c client needs a fresh position, in milliseconds; 0 = none.
+/// Needs of three minutes or less keep the receiver on; longer ones let it
+/// sleep and wake in time for the next fix. A client sends a new need
+/// whenever it wants positions more or less often; a shorter one takes
+/// effect at once, also while the receiver sleeps.
+struct Need
+{
+    services::GpsSchedule::Client client;
+    std::uint32_t intervalMs;
 };
 /// Logs the receiver's state and the latest fix.
 struct Report
@@ -36,7 +53,7 @@ struct ChipCommand
     lib::StaticString<64> text;
 };
 
-using Message = std::variant<Power, Report, Raw, Systems, ChipCommand>;
+using Message = std::variant<Power, PowerSave, Need, Report, Raw, Systems, ChipCommand>;
 
 /// Starts the gps task, which owns @p port. The receiver stays off until
 /// a Power message.
