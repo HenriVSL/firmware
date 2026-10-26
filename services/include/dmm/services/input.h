@@ -12,8 +12,7 @@
 namespace dmm::services {
 
 /// Every key a radio may have. A board without some of them never reports
-/// them. The set is fixed for now; later the board could name its own keys
-/// at compile time, so the count follows the radio.
+/// them.
 enum class Key : std::uint8_t
 {
     Digit0,
