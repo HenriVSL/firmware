@@ -7,6 +7,7 @@ add_library(dmm_hal_gd32f30x STATIC
     src/clock.cpp
     src/exti.cpp
     src/usart.cpp
+    src/rtc.cpp
     src/gpio.cpp
     src/parallel_host_port.cpp
     src/three_wire_bus.cpp

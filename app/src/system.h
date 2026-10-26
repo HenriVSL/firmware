@@ -5,6 +5,9 @@
 
 #include "dmm/app/app.h"
 
+#include <cstdint>
+#include <optional>
+
 namespace dmm::app::system {
 
 /// Starts the system task: power, watchdog, battery, auto power-off.
@@ -21,6 +24,17 @@ void stopFeedingWatchdog();
 
 /// Logs the battery state now.
 void reportBattery();
+
+/// UTC seconds since 1970-01-01 from the real-time clock, or nothing while
+/// the time is unknown or there is no clock. From any task.
+std::optional<std::uint32_t> utcNow();
+
+/// Sets the clock to @p utc; the system task applies it within a few
+/// milliseconds and logs it, naming @p source (a string literal).
+void setClock(std::uint32_t utc, const char *source);
+
+/// Logs the clock's state now.
+void reportClock();
 
 /// The radio's calibration once it has been read and looks valid, else
 /// nullptr. Read-only after that, from any task.

@@ -13,6 +13,7 @@
 #include "dmm/lib/format.h"
 #include "dmm/lib/strings.h"
 #include "dmm/os/os.h"
+#include "dmm/services/clock.h"
 #include "dmm/services/data_link.h"
 #include "dmm/services/log.h"
 #include "dmm/version.h"
@@ -265,6 +266,45 @@ void peek(std::uint32_t address)
     line << " (" << services::resultName(r) << ")";
 }
 
+// "YYYY-MM-DD HH:MM:SS" as UTC seconds since 1970, or nothing.
+std::optional<std::uint32_t> parseDateTime(std::string_view text)
+{
+    constexpr std::string_view Shape = "0000-00-00 00:00:00";
+    if (text.size() != Shape.size()) {
+        return std::nullopt;
+    }
+    for (std::size_t i = 0; i < Shape.size(); ++i) {
+        const bool digit = text[i] >= '0' && text[i] <= '9';
+        if (Shape[i] == '0' ? !digit : text[i] != Shape[i]) {
+            return std::nullopt;
+        }
+    }
+    auto number = [&](std::size_t at, std::size_t length) {
+        unsigned v = 0;
+        for (std::size_t i = at; i < at + length; ++i) {
+            v = v * 10 + static_cast<unsigned>(text[i] - '0');
+        }
+        return v;
+    };
+    services::DateTime t;
+    t.year = static_cast<std::uint16_t>(number(0, 4));
+    t.month = static_cast<std::uint8_t>(number(5, 2));
+    t.day = static_cast<std::uint8_t>(number(8, 2));
+    t.hour = static_cast<std::uint8_t>(number(11, 2));
+    t.minute = static_cast<std::uint8_t>(number(14, 2));
+    t.second = static_cast<std::uint8_t>(number(17, 2));
+    if (t.year < 1970 || t.year > 2105 || t.month < 1 || t.month > 12 || t.day < 1 || t.day > 31 || t.hour > 23 || t.minute > 59 ||
+        t.second > 59) {
+        return std::nullopt;
+    }
+    const std::uint32_t s = services::secondsSince1970(t);
+    // A day past the month's end comes back as another date.
+    if (services::dateTime(s) != t) {
+        return std::nullopt;
+    }
+    return s;
+}
+
 void runCommand(std::string_view command)
 {
     log::info("console") << "> " << command;
@@ -275,7 +315,7 @@ void runCommand(std::string_view command)
                                 "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
-        log::info("console") << "gps: gps, gps on|off, gps raw on|off";
+        log::info("console") << "gps: gps, gps on|off, gps raw on|off; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
@@ -315,6 +355,15 @@ void runCommand(std::string_view command)
         ui::post(ui::ShowKeyTest{});
     } else if (command == "panel on" || command == "panel off") {
         ui::post(ui::PanelPower{command == "panel on"});
+    } else if (command == "time") {
+        system::reportClock();
+    } else if (lib::startsWith(command, "time set ")) {
+        const auto utc = parseDateTime(std::string_view(command.data() + 9, command.size() - 9));
+        if (utc) {
+            system::setClock(*utc, "the console");
+        } else {
+            log::info("console") << "time set YYYY-MM-DD HH:MM:SS (UTC)";
+        }
     } else if (command == "gps" || lib::startsWith(command, "gps ")) {
         bool posted = false;
         if (command == "gps") {

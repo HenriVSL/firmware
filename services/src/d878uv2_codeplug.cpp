@@ -160,6 +160,8 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     s.gps = b[0x28] != 0;
     // The GPS mode 0..6 is one less than the systems' bits.
     s.gpsSystems = b[0x35] <= 6 ? static_cast<std::uint8_t>(b[0x35] + 1) : 3;
+    // The time zone in half hours from UTC-12:00 (0) through UTC (24).
+    s.timeZoneMinutes = b[0x30] <= 52 ? static_cast<std::int16_t>((b[0x30] - 24) * 30) : 0;
     return s;
 }
 

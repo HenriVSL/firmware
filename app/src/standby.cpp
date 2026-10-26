@@ -128,11 +128,17 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
         }
     }
     // Volume, left of the battery: a speaker mark and the step.
+    int right = batteryX(d);
     if (s.volume >= 0) {
         lib::StaticString<8> v;
         v << "VOL " << s.volume;
-        const int vx = batteryX(d) - textWidth(Small, v.view()) - 4;
-        drawText(d, Small, vx, 2, v.view(), s.volume == 0 ? p::Warn : p::Dim, p::Ground);
+        right -= textWidth(Small, v.view()) + 4;
+        drawText(d, Small, right, 2, v.view(), s.volume == 0 ? p::Warn : p::Dim, p::Ground);
+    }
+    // The local time, left of the volume.
+    if (!s.clock.empty()) {
+        right -= textWidth(Small, s.clock) + 6;
+        drawText(d, Small, right, 2, s.clock, p::Text, p::Ground);
     }
 }
 
