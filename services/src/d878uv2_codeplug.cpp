@@ -215,6 +215,7 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     constexpr std::uint16_t BacklightTimes[] = {0, 5, 10, 15, 20, 25, 30, 60, 120, 180, 240, 300, 900, 1800, 2700, 3600};
     s.backlightS = b[0x27] < std::size(BacklightTimes) ? BacklightTimes[b[0x27]] : 0;
     s.voiceEnhancement = b[0x57] == 1;
+    s.gps = b[0x28] != 0;
     return s;
 }
 
