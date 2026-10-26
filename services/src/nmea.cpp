@@ -247,6 +247,9 @@ NmeaParser::Sentence NmeaParser::finish()
         parseGsv(talker, fields);
         return Sentence::Gsv;
     }
+    if (type == "TXT") {
+        return Sentence::Txt;
+    }
     return Sentence::Other;
 }
 
