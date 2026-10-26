@@ -119,6 +119,13 @@ port speaks DeltaMM's own binary protocol (`services/data_link.h`):
 requests start with 0xDD, which no command of the radio's programming
 protocol starts with.
 
+## Update mode
+
+The vendor boot loader rewrites the firmware image when the radio is
+switched on holding PTT and PF3. `tools/dmm_radio` speaks its protocol
+(`dmm-radio flash`). The boot loader itself is never written.
+`docs/update-mode.md` describes update mode.
+
 ## Data on the radio
 
 Settings, codeplug and calibration are kept in the radio's existing
