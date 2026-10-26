@@ -63,6 +63,7 @@ public:
         Rmc,         // position, speed, course, time and date
         Gga,         // fix quality, satellites used, altitude
         Gsv,         // satellites in view
+        Txt,         // a text message from the receiver
         Other,       // a valid sentence of another type
         BadChecksum, // a sentence whose checksum did not match
     };
