@@ -84,10 +84,11 @@ urgent.
 
 | Prio | Task | Owns |
 | --- | --- | --- |
-| 7 | radio | FM transceiver, DMR baseband, PA power, RF switches, transmit timeout |
+| 7 | radio | FM transceiver, DMR baseband, PA power, RF switches, GPS supply, transmit timeout |
 | 6 | audio | speaker amplifier and routing, beeps |
 | 5 | input | keypad, side keys, PTT, channel knob, volume knob (every 10 ms) |
 | 4 | ui | screens, menus, key lock, codeplug reading, display, backlight |
+| 3 | gps | GPS receiver's serial link: NMEA sentences, fix |
 | 2 | link | USB: data protocol, log console |
 | 1 | system | power latch, battery, watchdog, calibration |
 
@@ -160,6 +161,9 @@ the SCT3258 are built when the option is given.
 - Speaker: an MCU pin switches the amplifier on, a second one connects the
   codec's receive audio to it. Beeps are an MCU PWM tone mixed in before the
   amplifier, so they need neither the codec nor the baseband.
+- GPS: a receiver sending NMEA at 9600 baud, 8N1, on USART1 (PA3 in, PA2
+  out). Its supply is the FM transceiver's GPIO2, so the radio task
+  switches it; the gps task owns the serial link.
 - Display: 160 × 128 colour panel on an 8-bit parallel bus.
 - Storage: SPI NAND flash.
 - USB: full-speed device on PA11/PA12, clocked from the crystal PLL; a
