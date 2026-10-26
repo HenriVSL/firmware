@@ -10,6 +10,7 @@
 #include "dmm/hal/gd32f30x/parallel_host_port.h"
 #include "dmm/hal/gd32f30x/parallel_lcd_bus.h"
 #include "dmm/hal/gd32f30x/three_wire_bus.h"
+#include "dmm/hal/gd32f30x/usart.h"
 #include "dmm/services/rda1846_transceiver.h"
 
 #include <cstdint>
@@ -151,5 +152,14 @@ inline constexpr unsigned BasebandResetLowMs = 500;
 // The receive front-end tuning is a 12-bit PWM value.
 inline constexpr dmm::hal::gd32f30x::ThreeWireBus::Pins FmTransceiverBus{{Port::B, 5}, {Port::B, 3}, {Port::B, 4}};
 inline constexpr dmm::services::Rda1846Transceiver::Pins FmPins{3, 0, 4, 5, 7, 2, 300'000'000, 165'000'000, 0xFFF};
+
+// GPS receiver: NMEA sentences at 9600 baud, 8N1, on USART1 (PA3 from the
+// receiver, PA2 to it). Its supply is the FM transceiver's GPIO2 (FmPins).
+// Both pins pull low while it is off, so they do not feed it.
+inline constexpr Pin GpsFromReceiver{Port::A, 3};
+inline constexpr Pin GpsToReceiver{Port::A, 2};
+inline constexpr dmm::hal::gd32f30x::UsartPort GpsUsart = dmm::hal::gd32f30x::UsartPort::Usart1;
+inline constexpr std::uint32_t GpsBaud = 9600;
+inline constexpr unsigned GpsIrqPriority = 8;
 
 } // namespace board

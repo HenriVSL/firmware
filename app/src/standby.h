@@ -5,6 +5,7 @@
 
 #include "dmm/services/channel_selector.h"
 #include "dmm/services/display.h"
+#include "dmm/services/nmea.h"
 
 #include <cstdint>
 #include <string_view>
@@ -24,6 +25,15 @@ inline constexpr services::Color Receive = services::rgb(40, 170, 60);
 inline constexpr services::Color Warn = services::rgb(230, 160, 0);
 } // namespace palette
 
+/// The GPS receiver as the screens show it.
+struct GpsState
+{
+    bool on = false;
+    /// Sentences are arriving.
+    bool receiving = false;
+    services::GpsFix fix;
+};
+
 /// What the standby screen shows besides the channel.
 struct StandbyState
 {
@@ -38,6 +48,7 @@ struct StandbyState
     std::string_view note;
     /// Volume step 0..15, or -1 when unknown.
     int volume = -1;
+    GpsState gps;
 };
 
 /// A DMR call for the call screen.
@@ -83,6 +94,10 @@ public:
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
 };
+
+/// The GPS screen: the receiver's state, position, altitude, satellites,
+/// speed and UTC time, between the status bar and a hint bar.
+void drawGpsScreen(services::Display &d, const GpsState &gps);
 
 /// A list to pick one item from, drawn over the screen body: a title bar
 /// and up to Rows rows, the chosen one inverted.
