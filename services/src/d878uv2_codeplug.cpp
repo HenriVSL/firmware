@@ -19,6 +19,9 @@ constexpr std::uint32_t ZoneChannels = 0x01000000;
 constexpr std::uint32_t ZoneChannelStride = 0x200;
 constexpr std::uint32_t Settings = 0x02500000;
 constexpr std::uint32_t SettingsBytes = 0x100;
+// The extended general settings, after the general settings.
+constexpr std::uint32_t SettingsExtension = 0x02501400;
+constexpr std::uint32_t SettingsExtensionBytes = 0x40;
 constexpr std::uint32_t ZoneSelections = 0x02500100; // u16 list position per zone, side A then B
 constexpr std::uint32_t ZoneSelectionSideB = 0x200;
 constexpr std::uint32_t ZoneNames = 0x02540000;
@@ -263,13 +266,24 @@ StorageResult D878Uv2Codeplug::read(std::uint32_t address, std::span<std::uint8_
     return worst;
 }
 
+void decodeSettingsExtension(std::span<const std::uint8_t> b, CodeplugSettings &s)
+{
+    // The GPS mode 0..6 is one less than the systems' bits.
+    s.gpsSystems = b[0x35] <= 6 ? static_cast<std::uint8_t>(b[0x35] + 1) : 3;
+}
+
 std::optional<CodeplugSettings> D878Uv2Codeplug::settings()
 {
     std::uint8_t b[SettingsBytes];
     if (!readable(read(Settings, b))) {
         return std::nullopt;
     }
-    return decodeSettings(b);
+    CodeplugSettings s = decodeSettings(b);
+    std::uint8_t e[SettingsExtensionBytes];
+    if (readable(read(SettingsExtension, e))) {
+        decodeSettingsExtension(e, s);
+    }
+    return s;
 }
 
 bool D878Uv2Codeplug::bitSet(std::uint32_t bitmap, unsigned index)
