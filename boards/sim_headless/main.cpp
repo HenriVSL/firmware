@@ -156,6 +156,7 @@ int main(int argc, char *argv[])
     static SimAudio audio;
     static SimFm fm;
     static SimGps gps;
+    static SimRtc rtc;
     static dmm::app::Platform platform{
         .leds = leds,
         .logSink = logSink,
@@ -170,6 +171,7 @@ int main(int argc, char *argv[])
         .calibration = &calibration,
         .codeplug = &codeplug,
         .gps = &gps,
+        .rtc = &rtc,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

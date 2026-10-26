@@ -7,10 +7,12 @@
 #include "gps.h"
 #include "radio.h"
 #include "standby.h"
+#include "system.h"
 
 #include "dmm/lib/variant.h"
 #include "dmm/os/os.h"
 #include "dmm/services/channel_selector.h"
+#include "dmm/services/clock.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/input.h"
 #include "dmm/services/log.h"
@@ -410,6 +412,7 @@ enum class MenuItem : std::uint8_t
     Gps,
     GpsSystems,
     GpsStatus, // opens the GPS screen
+    ClockZone,
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -436,7 +439,7 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus}, 3},
+    {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone}, 4},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -456,6 +459,32 @@ std::uint8_t batterySave = 0;
 GpsState gpsState;
 bool gpsAtStart = false;
 std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Beidou;
+// Local time minus UTC, from the codeplug, in half-hour steps.
+int timeZoneMinutes = 0;
+constexpr int ZoneSteps = 53; // UTC-12:00 to UTC+14:00
+
+// "UTC+3:00", "UTC-9:30", "UTC".
+lib::StaticString<10> zoneText(int minutes)
+{
+    lib::StaticString<10> s;
+    s << "UTC";
+    if (minutes != 0) {
+        const int m = minutes < 0 ? -minutes : minutes;
+        s << (minutes < 0 ? '-' : '+') << m / 60 << ':' << lib::zeroPadded(static_cast<std::uint32_t>(m % 60), 2);
+    }
+    return s;
+}
+
+// The local time as "HH:MM", or empty while the clock does not know it.
+lib::StaticString<6> localClockText()
+{
+    lib::StaticString<6> s;
+    if (const auto utc = system::utcNow()) {
+        const services::DateTime t = services::dateTime(static_cast<std::uint32_t>(static_cast<std::int64_t>(*utc) + timeZoneMinutes * 60));
+        s << lib::zeroPadded(t.hour, 2) << ':' << lib::zeroPadded(t.minute, 2);
+    }
+    return s;
+}
 // The volume step 0..15, -1 until the knob has been read.
 int volumeLevel = -1;
 bool receiving = false;
@@ -684,6 +713,7 @@ void uiMain(void *)
             }
             gpsAtStart = selector.settings().gps;
             gpsSystems = selector.settings().gpsSystems;
+            timeZoneMinutes = selector.settings().timeZoneMinutes;
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -727,6 +757,8 @@ void uiMain(void *)
         log::info("ui") << "key refused: the radio is not ready";
         notice("Please wait...");
     };
+    lib::StaticString<6> clockText;
+    os::Ticks lastClockMinute = 0;
     auto standbyState = [&] {
         StandbyState s;
         s.transmitting = transmitting;
@@ -736,6 +768,8 @@ void uiMain(void *)
         s.volume = volumeLevel;
         s.keys = quickKeys.view();
         s.gps = gpsState;
+        clockText = localClockText();
+        s.clock = clockText.view();
         return s;
     };
     auto callInfo = [&] {
@@ -874,6 +908,10 @@ void uiMain(void *)
             label = "Systems";
             value << services::gps_systems::name(gpsSystems);
             break;
+        case MenuItem::ClockZone:
+            label = "Zone";
+            value << zoneText(timeZoneMinutes).view();
+            break;
         case MenuItem::GpsStatus:
             label = "Status";
             value << (!gpsState.on ? "Off" : gpsState.fix.valid ? "Fix"
@@ -1003,6 +1041,13 @@ void uiMain(void *)
             menuValue.select(gpsSystems);
             break;
         }
+        case MenuItem::ClockZone:
+            menuValue.open("Zone");
+            for (int i = 0; i < ZoneSteps; ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), zoneText((i - 24) * 30).view());
+            }
+            menuValue.select(static_cast<std::uint8_t>(timeZoneMinutes / 30 + 24));
+            break;
         case MenuItem::GpsStatus:
             show(View::Gps);
             return;
@@ -1104,6 +1149,10 @@ void uiMain(void *)
         case MenuItem::GpsSystems:
             gpsSystems = v;
             gps::post(gps::Systems{v});
+            break;
+        case MenuItem::ClockZone:
+            timeZoneMinutes = (v - 24) * 30;
+            log::info("ui") << "time zone " << zoneText(timeZoneMinutes).view();
             break;
         case MenuItem::GpsStatus:
         case MenuItem::Count:
@@ -1507,6 +1556,16 @@ void uiMain(void *)
             backlightLit = false;
             d.setBacklight(0);
             services::power::release(services::power::AwakeReason::Display);
+        }
+        // The status bar's clock moves on each minute.
+        if (const auto utc = system::utcNow()) {
+            const os::Ticks minute = *utc / 60;
+            if (minute != lastClockMinute) {
+                lastClockMinute = minute;
+                if (!noticeShown) {
+                    refreshLockMark();
+                }
+            }
         }
         // The call screen: its time each second, back to standby a moment
         // after the call.
