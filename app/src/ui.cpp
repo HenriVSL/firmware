@@ -1086,9 +1086,7 @@ void uiMain(void *)
                                    return;
                                }
                                if (view == View::Gps) {
-                                   if (e.type == Type::Press && e.key == Key::Menu) {
-                                       gps::post(gps::Power{!gpsState.on});
-                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
+                                   if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
                                        openGroup(MenuGroup::Gps, false);
                                    }
                                    return;

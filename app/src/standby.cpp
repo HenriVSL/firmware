@@ -290,7 +290,7 @@ void drawGpsScreen(Display &d, const GpsState &gps, bool full)
     }
     value(v.view());
 
-    line(d, Small, 3, h - StandbyScreen::HintH + 2, w - 6, gps.on ? "Menu: GPS off  Exit: back" : "Menu: GPS on  Exit: back", p::Dim);
+    line(d, Small, 3, h - StandbyScreen::HintH + 2, w - 6, "Exit: back", p::Dim);
 }
 
 void ListPicker::open(std::string_view title)
