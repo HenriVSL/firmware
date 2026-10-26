@@ -63,11 +63,10 @@ std::uint16_t Rda1846Transceiver::startGpio() const
 {
     auto field = [](unsigned pin, Mode mode) { return static_cast<std::uint16_t>(static_cast<unsigned>(mode) << (2 * pin)); };
     std::uint16_t v = field(m_pins.microphoneMute, Mode::High);
-    for (unsigned pin : {m_pins.receiveHighBand, m_pins.receiveLowBand, m_pins.transmitHighBand, m_pins.transmitMidBand,
-             m_pins.gpsPower}) {
+    for (unsigned pin : {m_pins.receiveHighBand, m_pins.receiveLowBand, m_pins.transmitHighBand, m_pins.transmitMidBand}) {
         v = static_cast<std::uint16_t>(v | field(pin, Mode::Low));
     }
-    return v;
+    return static_cast<std::uint16_t>(v | field(m_pins.gpsPower, m_gpsOn ? Mode::High : Mode::Low));
 }
 
 void Rda1846Transceiver::setPin(unsigned pin, bool high)
@@ -221,6 +220,13 @@ void Rda1846Transceiver::setMicrophoneMuted(bool muted)
 {
     const std::uint16_t before = m_chip.readRegister(Chip::GpioRegister);
     logPins(muted ? "microphone muted" : "microphone on", before, muteMicrophone(muted));
+}
+
+void Rda1846Transceiver::setGpsPower(bool on)
+{
+    m_gpsOn = on;
+    const std::uint16_t before = m_chip.readRegister(Chip::GpioRegister);
+    logPins(on ? "GPS power on" : "GPS power off", before, m_chip.setGpio(m_pins.gpsPower, on ? Mode::High : Mode::Low));
 }
 
 std::uint16_t Rda1846Transceiver::muteMicrophone(bool muted)

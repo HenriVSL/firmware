@@ -48,6 +48,8 @@ struct Platform
     board::Calibration *calibration = nullptr;
     /// The radio's channels, zones and settings, or nullptr.
     services::CodeplugSource *codeplug = nullptr;
+    /// The GPS receiver's serial link, or nullptr.
+    board::Gps *gps = nullptr;
 };
 
 /// The board has a baseband processor.
