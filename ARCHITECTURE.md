@@ -2,7 +2,7 @@
 
 DeltaMM is layered firmware on a small real-time kernel. Every piece of
 hardware belongs to exactly one task, tasks talk through message queues,
-and the app sees hardware only through interfaces. The same app code
+and the app sees hardware only through abstract parts. The same app code
 therefore runs on a radio and in the desktop simulator.
 
 ## Layers
@@ -19,7 +19,7 @@ therefore runs on a radio and in the desktop simulator.
 Each layer is its own CMake library and links only to what the table
 allows, so a wrong include fails the build. `boards/<name>/` is the one
 place that sees every layer: it builds the peripherals and drivers as
-static objects and hands the services their interfaces.
+static objects and hands the services and the app their parts.
 
 A radio board folder keeps its pin list in `pins.h` and one file per
 board-level service (display, input, ...), with `main.cpp` wiring them up.
@@ -27,8 +27,29 @@ It also has a `board.cmake`, read before the layers are
 built: it names the MCU family and the kernel port and provides the
 kernel configuration.
 
-The simulator boards implement the service interfaces directly with Qt,
+The simulator boards implement the services' parts directly with Qt,
 so they replace the drivers and HAL, not the app.
+
+## Parts: virtual or chosen at build time
+
+A part the app or a service uses comes in one of two forms.
+
+- A virtual interface where it has a reason to be one: one image holds
+  several implementations at once (USB functions), or shared code is
+  tested against stand-ins (the buses under the chip drivers, the USB
+  controller, the display, audio hardware, storage, codeplug, log sink,
+  and the board hooks of the chip services). These calls are rare or move
+  whole blocks.
+- Otherwise a concrete type the board names in its parts header,
+  `boards/<name>/include/dmm/board/parts.h`, the one board header shared
+  code includes: `board::Fm`, `board::Baseband`, `board::Calibration`.
+  The shared header writes the part down as a C++20 concept, and the
+  board checks its type against it. Calls are direct.
+
+Every radio has an FM transceiver. A radio without a DMR baseband names
+`services::NoBaseband`; the app reaches the baseband only through
+`app::withBaseband`, so no baseband code is built into that radio. The
+simulators' parts are in `boards/sim_common/include`.
 
 The service interfaces are abstract: the app sees frequencies, levels and
 states, never a chip's registers or a radio's data formats. Code for one
