@@ -9,6 +9,7 @@
 #include "deltamm_client.h"
 #include "serial_transport.h"
 #include "stock_layout.h"
+#include "update_client.h"
 #include "update_files.h"
 
 #include "dmm/version.h"
@@ -229,6 +230,31 @@ QString sibling(const QString &cdd, const QString &suffix)
     return info.dir().filePath(info.completeBaseName() + suffix);
 }
 
+// True when a verified backup exists or the check is turned off.
+bool backupCheckPasses(const QString &radioId, const QString &root)
+{
+    if (!settings().value(QStringLiteral("backupBeforeFlash"), true).toBool()) {
+        out() << "Backup check turned off (dmm-radio config backup-before-flash off)." << Qt::endl;
+        return true;
+    }
+    QString error;
+    const QString folder = findVerifiedBackup(root, radioId, &error);
+    if (folder.isEmpty()) {
+        err() << "Refused: " << error << "." << Qt::endl
+              << "Run 'dmm-radio backup' with the radio still on factory firmware first." << Qt::endl;
+        return false;
+    }
+    out() << "Backup:   " << QDir::toNativeSeparators(folder) << " (verified)" << Qt::endl;
+    return true;
+}
+
+// Reads a .CDD file and the .spi and .CDI files next to it.
+bool readUpdateFiles(const QString &cddPath, UpdateFiles &files)
+{
+    return readFile(cddPath, files.image) && readFile(sibling(cddPath, QStringLiteral(".spi")), files.spi) &&
+        readFile(sibling(cddPath, QStringLiteral(".CDI")), files.cdi);
+}
+
 int commandPrepare(const QStringList &args, const QString &radioId, const QString &root, const QString &name)
 {
     if (args.size() != 3) {
@@ -239,23 +265,13 @@ int commandPrepare(const QStringList &args, const QString &radioId, const QStrin
     const QString &stockPath = args.at(1);
     const QString &outDir = args.at(2);
 
-    if (settings().value(QStringLiteral("backupBeforeFlash"), true).toBool()) {
-        QString error;
-        const QString folder = findVerifiedBackup(root, radioId, &error);
-        if (folder.isEmpty()) {
-            err() << "Refused: " << error << "." << Qt::endl
-                  << "Run 'dmm-radio backup' with the radio still on factory firmware first." << Qt::endl;
-            return 1;
-        }
-        out() << "Backup:   " << QDir::toNativeSeparators(folder) << " (verified)" << Qt::endl;
-    } else {
-        out() << "Backup check turned off (dmm-radio config backup-before-flash off)." << Qt::endl;
+    if (!backupCheckPasses(radioId, root)) {
+        return 1;
     }
 
     UpdateFiles stock;
     QByteArray image;
-    if (!readFile(stockPath, stock.image) || !readFile(sibling(stockPath, QStringLiteral(".spi")), stock.spi) ||
-        !readFile(sibling(stockPath, QStringLiteral(".CDI")), stock.cdi) || !readFile(imagePath, image)) {
+    if (!readUpdateFiles(stockPath, stock) || !readFile(imagePath, image)) {
         return 2;
     }
     QString problem = checkStockFiles(stock);
@@ -493,6 +509,73 @@ int commandCheckBackup(const QStringList &args, const QString &portRequest, cons
 
 } // namespace
 
+// Sends a firmware set (DeltaMM's or the factory's) to a radio in update
+// mode.
+int commandFlash(const QStringList &args, const QString &portRequest, const QString &radioId, const QString &root)
+{
+    if (args.size() != 1) {
+        err() << "Usage: dmm-radio flash <.CDD file> (with its .spi and .CDI next to it)" << Qt::endl;
+        return 2;
+    }
+    if (!backupCheckPasses(radioId, root)) {
+        return 1;
+    }
+    UpdateFiles files;
+    if (!readUpdateFiles(args.at(0), files)) {
+        return 2;
+    }
+    QString problem = checkStockFiles(files);
+    if (problem.isEmpty()) {
+        problem = checkImage(files.image);
+    }
+    if (!problem.isEmpty()) {
+        err() << "Error: " << problem << "." << Qt::endl;
+        return 2;
+    }
+
+    if (portRequest.isEmpty() && SerialTransport::findRadios().isEmpty() && !SerialTransport::findDeltaMmPorts().isEmpty()) {
+        err() << "The radio is running DeltaMM. Switch it off, then on while holding PTT and PF3, the top key (red LED blinking)." << Qt::endl;
+        return 2;
+    }
+    const QString port = pickPort(portRequest);
+    if (port.isEmpty()) {
+        return 2;
+    }
+    SerialTransport transport;
+    QString error;
+    if (!transport.open(port, &error)) {
+        err() << "Cannot open " << port << ": " << error << Qt::endl;
+        return 2;
+    }
+    UpdateClient client(transport);
+    if (!client.start(&error)) {
+        err() << "Error: " << error << "." << Qt::endl
+              << "Is the radio in update mode? Switch it off, then on while holding PTT and PF3, the top key (red LED blinking)." << Qt::endl;
+        return 2;
+    }
+    const auto identity = client.identify(&error);
+    if (!identity) {
+        err() << "Error: " << error << Qt::endl;
+        return 2;
+    }
+    if (layoutForModel(identity->model) == nullptr) {
+        err() << "Refused: the radio reports model " << identity->model << ", which dmm-radio does not know." << Qt::endl;
+        return 2;
+    }
+    out() << "Radio:    " << identity->model << " (boot loader " << identity->version << ") on " << port << Qt::endl;
+    out() << "Image:    " << files.image.size() << " bytes, SHA-256 "
+          << QCryptographicHash::hash(files.image, QCryptographicHash::Sha256).toHex() << Qt::endl;
+
+    if (!client.write(ImageLoadAddress, files.image, &error, printProgress) || !client.finish(&error)) {
+        err() << Qt::endl
+              << "Error: " << error << "." << Qt::endl
+              << "The radio stays in update mode: run flash again, with these files or the factory ones." << Qt::endl;
+        return 2;
+    }
+    out() << "Done. The radio starts the new firmware." << Qt::endl;
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -509,6 +592,8 @@ int main(int argc, char *argv[])
         "  list                  list saved backups\n"
         "  prepare <image.bin> <factory .CDD> <folder>\n"
         "                        make update files; needs a verified backup\n"
+        "On a radio in update mode (red LED blinking):\n"
+        "  flash <.CDD file>     send a firmware set (.CDD, .spi, .CDI)\n"
         "On a radio running DeltaMM:\n"
         "  info                  version and storage\n"
         "  dump <addr> <len> <file> [--physical]\n"
@@ -520,12 +605,12 @@ int main(int argc, char *argv[])
     const QCommandLineOption portOption(QStringLiteral("port"), QStringLiteral("Serial port of the radio."), QStringLiteral("name"));
     const QCommandLineOption quickOption(QStringLiteral("quick"), QStringLiteral("Back up calibration and radio info only (seconds instead of minutes)."));
     const QCommandLineOption dirOption(QStringLiteral("dir"), QStringLiteral("Backup folder (default: the user data folder)."), QStringLiteral("path"));
-    const QCommandLineOption radioOption(QStringLiteral("radio"), QStringLiteral("Radio id (backup folder name) for prepare."), QStringLiteral("id"));
+    const QCommandLineOption radioOption(QStringLiteral("radio"), QStringLiteral("Radio id (backup folder name) for prepare and flash."), QStringLiteral("id"));
     const QCommandLineOption physicalOption(QStringLiteral("physical"), QStringLiteral("dump: skip the bad-block remapping."));
     const QCommandLineOption nameOption(QStringLiteral("name"),
         QStringLiteral("prepare: file name without extension (default: DeltaMM_ and this tool's version)."), QStringLiteral("base"));
     parser.addOptions({portOption, quickOption, dirOption, radioOption, physicalOption, nameOption});
-    parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("ports, backup, verify, list, prepare, info, dump, check-backup or config"));
+    parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("ports, backup, verify, list, prepare, flash, info, dump, check-backup or config"));
     parser.process(app);
 
     const QStringList args = parser.positionalArguments();
@@ -548,6 +633,9 @@ int main(int argc, char *argv[])
     }
     if (command == QStringLiteral("prepare")) {
         return commandPrepare(args.mid(1), parser.value(radioOption), root, parser.value(nameOption));
+    }
+    if (command == QStringLiteral("flash")) {
+        return commandFlash(args.mid(1), parser.value(portOption), parser.value(radioOption), root);
     }
     if (command == QStringLiteral("info")) {
         return commandInfo(parser.value(portOption));
