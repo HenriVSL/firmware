@@ -43,10 +43,10 @@ A part the app or a service uses comes in one of two forms.
 - Otherwise a concrete type the board names in its parts header,
   `boards/<name>/include/dmm/board/parts.h`, the one board header shared
   code includes: `board::Fm`, `board::Baseband`, `board::Calibration`,
-  `board::Input`, `board::Battery`, `board::DataChannel`, `board::Gps`.
-  The shared header writes the part down as a C++20 concept, and the
-  board checks its type against it. Calls are direct. The headers in the
-  board's `include/dmm/board/` include no MCU headers.
+  `board::Input`, `board::Battery`, `board::DataChannel`, `board::Gps`,
+  `board::GpsReceiver`. The shared header writes the part down as a C++20
+  concept, and the board checks its type against it. Calls are direct.
+  The headers in the board's `include/dmm/board/` include no MCU headers.
 - LEDs, log output and system control stay virtual: the two simulators
   implement them differently and share one build of the app.
 
@@ -168,9 +168,11 @@ the SCT3258 are built when the option is given.
 - Speaker: an MCU pin switches the amplifier on, a second one connects the
   codec's receive audio to it. Beeps are an MCU PWM tone mixed in before the
   amplifier, so they need neither the codec nor the baseband.
-- GPS: a receiver sending NMEA at 9600 baud, 8N1, on USART1 (PA3 in, PA2
-  out). Its supply is the FM transceiver's GPIO2, so the radio task
-  switches it; the gps task owns the serial link.
+- GPS: an ATGM336H module (AT6558 chip, CASIC command set, as the
+  receiver reports itself) sending NMEA at 9600 baud, 8N1, on USART1 (PA3
+  in, PA2 out). Its supply is the FM transceiver's GPIO2, so the radio task
+  switches it; the gps task owns the serial link and sets the receiver up
+  through `casic_receiver`.
 - Display: 160 × 128 colour panel on an 8-bit parallel bus.
 - Storage: SPI NAND flash.
 - USB: full-speed device on PA11/PA12, clocked from the crystal PLL; a
