@@ -9,10 +9,10 @@
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_codeplug.h"
 
+#include "dmm/board/sim_battery.h"
+#include "dmm/board/sim_input.h"
 #include "sim_audio.h"
-#include "sim_battery.h"
 #include "sim_display.h"
-#include "sim_input.h"
 #include "sim_storage.h"
 
 #include <QCommandLineParser>

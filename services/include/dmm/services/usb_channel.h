@@ -9,7 +9,7 @@
 namespace dmm::services {
 
 /// A USB serial port as a byte channel.
-class UsbChannel final : public ByteChannel
+class UsbChannel
 {
 public:
     explicit UsbChannel(drivers::usb::CdcAcm &port)
@@ -17,12 +17,14 @@ public:
     {
     }
 
-    bool isOpen() override { return m_port.isOpen(); }
-    std::size_t write(std::span<const std::uint8_t> data) override { return m_port.write(data); }
-    std::size_t read(std::span<std::uint8_t> data) override { return m_port.read(data); }
+    bool isOpen() { return m_port.isOpen(); }
+    std::size_t write(std::span<const std::uint8_t> data) { return m_port.write(data); }
+    std::size_t read(std::span<std::uint8_t> data) { return m_port.read(data); }
 
 private:
     drivers::usb::CdcAcm &m_port;
 };
+
+static_assert(ByteChannel<UsbChannel>);
 
 } // namespace dmm::services

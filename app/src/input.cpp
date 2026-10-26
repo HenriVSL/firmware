@@ -17,7 +17,7 @@ using namespace services;
 namespace log = services::log;
 
 os::Task<384> inputTask;
-InputDevices *devices = nullptr;
+board::Input *devices = nullptr;
 
 constexpr os::Ticks StepMs = 10;
 constexpr os::Ticks VolumeEveryMs = 50;
@@ -66,7 +66,7 @@ private:
 
 void inputMain(void *)
 {
-    InputDevices &dev = *devices;
+    board::Input &dev = *devices;
     KeyDebouncer debouncer;
     Clicks clicks;
     const int perDetent = dev.encoderCountsPerDetent() > 0 ? dev.encoderCountsPerDetent() : 1;
@@ -120,7 +120,7 @@ void inputMain(void *)
 
 } // namespace
 
-void start(InputDevices &d)
+void start(board::Input &d)
 {
     devices = &d;
     inputTask.start("input", 5, inputMain, nullptr);

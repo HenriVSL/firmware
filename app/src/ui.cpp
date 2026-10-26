@@ -31,7 +31,7 @@ os::Task<640> uiTask;
 os::Queue<Message, 16> inbox;
 Display *display = nullptr;
 CodeplugSource *codeplug = nullptr;
-const services::InputDevices *input = nullptr;
+const board::Input *input = nullptr;
 
 // The label on @p key as the user sees it.
 std::string_view keyText(Key key)
@@ -1184,7 +1184,7 @@ void uiMain(void *)
 
 } // namespace
 
-void start(Display &d, CodeplugSource *c, const services::InputDevices *i)
+void start(Display &d, CodeplugSource *c, const board::Input *i)
 {
     display = &d;
     codeplug = c;

@@ -7,9 +7,9 @@
 #include "dmm/services/log_sink.h"
 #include "dmm/services/system_control.h"
 
-#include "sim_battery.h"
+#include "dmm/board/sim_battery.h"
+#include "dmm/board/sim_input.h"
 #include "sim_display.h"
-#include "sim_input.h"
 #include "sim_storage.h"
 
 #include <QByteArray>

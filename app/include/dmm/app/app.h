@@ -6,11 +6,8 @@
 #include "dmm/board/parts.h"
 #include "dmm/services/audio.h"
 #include "dmm/services/baseband.h"
-#include "dmm/services/battery.h"
-#include "dmm/services/byte_channel.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/display.h"
-#include "dmm/services/input.h"
 #include "dmm/services/leds.h"
 #include "dmm/services/log_sink.h"
 #include "dmm/services/storage.h"
@@ -35,13 +32,13 @@ struct Platform
     /// The display, or nullptr on a board without one.
     services::Display *display = nullptr;
     /// Keys and knobs, or nullptr on a board without them.
-    services::InputDevices *input = nullptr;
+    board::Input *input = nullptr;
     /// Battery voltage sense, or nullptr.
-    services::BatterySensor *battery = nullptr;
+    board::Battery *battery = nullptr;
     /// The radio's data flash (codeplug, calibration), or nullptr.
     services::Storage *storage = nullptr;
     /// The PC data port (DeltaMM's own protocol), or nullptr.
-    services::ByteChannel *dataChannel = nullptr;
+    board::DataChannel *dataChannel = nullptr;
     /// The baseband processor and the codec behind it; nullptr on a board
     /// whose parts name NoBaseband.
     board::Baseband *baseband = nullptr;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Tommi Tauriainen
 
-#include "board_input.h"
+#include "dmm/board/board_input.h"
 
 #include "board_adc.h"
 

@@ -10,7 +10,7 @@
 #include <string_view>
 
 /// Simulated keys and knobs, set from the GUI thread and read by the app.
-class SimInput final : public dmm::services::InputDevices
+class SimInput
 {
 public:
     void setKey(dmm::services::Key key, bool down);
@@ -19,12 +19,12 @@ public:
     /// 0..1000.
     void setVolume(int value);
 
-    dmm::services::KeyMask readKeys() override { return m_keys.load(); }
-    std::int32_t encoderPosition() override { return m_position.load(); }
-    int encoderCountsPerDetent() const override { return CountsPerDetent; }
-    int volumeKnob() override { return m_volume.load(); }
+    dmm::services::KeyMask readKeys() { return m_keys.load(); }
+    std::int32_t encoderPosition() { return m_position.load(); }
+    int encoderCountsPerDetent() const { return CountsPerDetent; }
+    int volumeKnob() { return m_volume.load(); }
     /// The simulated panel's labels.
-    std::string_view keyLabel(dmm::services::Key key) const override
+    std::string_view keyLabel(dmm::services::Key key) const
     {
         static constexpr std::string_view Labels[] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "#", "Menu",
             "Exit", "Up", "Down", "P1", "P2", "PF1", "PF2", "PF3", "PTT"};

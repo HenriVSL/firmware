@@ -5,6 +5,8 @@
 
 #include "dmm/os/os.h"
 
+#include <concepts>
+
 #include <cstdint>
 
 namespace dmm::services {
@@ -23,17 +25,16 @@ struct BatteryThresholds
     os::Ticks emptyAfterMs;
 };
 
-/// The board's battery voltage sense.
-class BatterySensor
-{
-public:
-    /// Pack voltage in millivolts before calibration, or -1 without a sense.
-    virtual int readMillivolts() = 0;
-    /// The levels for the board's battery pack.
-    virtual BatteryThresholds thresholds() const = 0;
-
-protected:
-    ~BatterySensor() = default;
+/// The board's battery voltage sense; the board names the type
+/// (dmm/board/parts.h).
+///
+/// - readMillivolts(): pack voltage before calibration, or -1 without a
+///   sense.
+/// - thresholds(): the levels for the board's battery pack.
+template <class T>
+concept BatterySensor = requires(T &sense, const T &pack) {
+    { sense.readMillivolts() } -> std::same_as<int>;
+    { pack.thresholds() } -> std::same_as<BatteryThresholds>;
 };
 
 /// Turns periodic voltage readings into a steady voltage, a bar level and
