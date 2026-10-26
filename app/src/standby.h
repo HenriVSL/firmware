@@ -125,7 +125,7 @@ private:
     char m_title[TextBytes] = {};
     std::uint8_t m_ids[MaxItems] = {};
     char m_text[MaxItems][TextBytes] = {};
-    static constexpr std::size_t ValueBytes = 9;
+    static constexpr std::size_t ValueBytes = 10;
     char m_value[MaxItems][ValueBytes] = {};
     std::size_t m_count = 0;
     std::size_t m_cursor = 0;
