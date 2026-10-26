@@ -11,6 +11,7 @@ add_library(dmm_services STATIC
     src/input.cpp
     src/key_lock.cpp
     src/log.cpp
+    src/nmea.cpp
     src/power.cpp
     src/audio.cpp
     src/rda1846_transceiver.cpp
