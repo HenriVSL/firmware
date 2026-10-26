@@ -34,8 +34,9 @@ time. A battery monitor and auto power-off.
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
-**Tools.** `dmm-radio` backs up the radio and prepares the update files.
-A desktop simulator runs the same firmware with a drawn radio face.
+**Tools.** `dmm-radio` backs up the radio, prepares the update files and
+flashes them. A desktop simulator runs the same firmware with a drawn
+radio face.
 
 ## Roadmap
 
@@ -96,8 +97,9 @@ marked verified once every check passes.
 ### 3. Flash
 
 DeltaMM is sent through the radio's own update mode (power on holding
-PF1 + PTT) as three update files. They are made from the DeltaMM image
-and your factory `.spi` and `.CDI` files, once a verified backup exists:
+PTT and PF3, the top key) as three update files. They are made from the
+DeltaMM image and your factory `.spi` and `.CDI` files, once a verified
+backup exists:
 
 ```sh
 cmake --preset fw-d878uv2-release -DDMM_STOCK_FIRMWARE=/path/to/firmware.CDD \
@@ -105,9 +107,21 @@ cmake --preset fw-d878uv2-release -DDMM_STOCK_FIRMWARE=/path/to/firmware.CDD \
 cmake --build --preset fw-d878uv2-release --target update-files
 ```
 
+Switch the radio on in update mode (red LED blinking) and send the files
+with `dmm-radio`, or with the vendor's programming software:
+
+```sh
+dmm-radio flash build/fw-d878uv2-release/boards/anytone_d878uv2/package/DeltaMM_<version>.CDD
+```
+
+With `--wait 600`, the tool waits up to ten minutes for the radio to be
+switched on in update mode. The radio starts the new firmware when the
+transfer ends.
+`docs/update-mode.md` describes update mode and its protocol.
+
 The radio's boot loader stays as it is, so the factory firmware can be
-flashed back the same way at any time. Each release has a hardware
-checklist in `docs/hw-tests/`.
+flashed back the same way at any time, `dmm-radio flash <factory .CDD>`
+included. Each release has a hardware checklist in `docs/hw-tests/`.
 
 ## Using the radio
 
@@ -143,6 +157,7 @@ for the console commands.
 | `tools/` | PC tools, `dmm-radio` among them |
 | `tests/` | Host unit tests |
 | `docs/hw-tests/` | One hardware checklist per release |
+| `docs/update-mode.md` | Flashing through the boot loader, and its protocol |
 
 `ARCHITECTURE.md` describes how the parts fit together, `AGENTS.md`
 lists the coding and commit rules, and `CREDITS.md` thanks the people who

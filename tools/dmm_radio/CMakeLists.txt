@@ -5,6 +5,7 @@ add_library(dmm_radio_lib STATIC
     transport.h
     cps_client.h cps_client.cpp
     backup.h backup.cpp
+    update_client.h update_client.cpp
     update_files.h update_files.cpp
     deltamm_client.h deltamm_client.cpp zlib_crc.h
     stock_layout.h stock_layout.cpp)
