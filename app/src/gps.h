@@ -30,9 +30,6 @@ using Message = std::variant<Power, Report, Raw>;
 /// a Power message.
 void start(board::Gps &port);
 
-/// There is a GPS receiver.
-bool available();
-
 /// Queues a message for the gps task; false when the queue is full or there
 /// is no receiver.
 bool post(const Message &message);

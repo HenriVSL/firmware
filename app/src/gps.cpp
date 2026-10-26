@@ -154,11 +154,6 @@ void start(board::Gps &p)
     gpsTask.start("gps", 3, gpsMain, nullptr);
 }
 
-bool available()
-{
-    return port != nullptr;
-}
-
 bool post(const Message &message)
 {
     if (port == nullptr) {
