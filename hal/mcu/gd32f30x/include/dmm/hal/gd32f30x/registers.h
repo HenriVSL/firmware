@@ -21,6 +21,7 @@ inline constexpr std::uintptr_t Ctl = Base + 0x00;
 inline constexpr std::uintptr_t Cfg0 = Base + 0x04;
 inline constexpr std::uintptr_t Apb2En = Base + 0x18;
 inline constexpr std::uintptr_t Apb1En = Base + 0x1C;
+inline constexpr std::uintptr_t Bdctl = Base + 0x20;       // RCU_BDCTL, backup domain
 inline constexpr std::uintptr_t ResetSource = Base + 0x24; // RCU_RSTSCK
 inline constexpr std::uintptr_t AddCtl = Base + 0xC0;      // RCU_ADDCTL
 
@@ -70,6 +71,8 @@ inline constexpr std::uint32_t Timer3Clock = 1u << 2;
 inline constexpr std::uint32_t Timer4Clock = 1u << 3;
 inline constexpr std::uint32_t Timer6Clock = 1u << 5;
 inline constexpr std::uint32_t Usart1Clock = 1u << 17;
+inline constexpr std::uint32_t BkpClock = 1u << 27;
+inline constexpr std::uint32_t PmuClock = 1u << 28;
 inline constexpr std::uint32_t UsbdClock = 1u << 23;
 inline constexpr std::uint32_t DacClock = 1u << 29;
 
@@ -150,6 +153,43 @@ inline constexpr std::uint32_t SwjMask = 7u << 24;
 inline constexpr std::uint32_t SwjAllOff = 4u << 24;
 inline constexpr std::uint32_t SwjSwdOnly = 2u << 24;
 } // namespace afio
+
+namespace bdctl {
+// RCU_BDCTL
+inline constexpr std::uint32_t LxtalOn = 1u << 0;
+inline constexpr std::uint32_t LxtalStable = 1u << 1;
+inline constexpr std::uint32_t RtcSourceMask = 3u << 8;
+inline constexpr std::uint32_t RtcSourceLxtal = 1u << 8;
+inline constexpr std::uint32_t RtcOn = 1u << 15;
+inline constexpr std::uint32_t BackupReset = 1u << 16;
+} // namespace bdctl
+
+namespace pmu {
+inline constexpr std::uintptr_t Ctl = 0x40007000;
+inline constexpr std::uint32_t BackupWriteEnable = 1u << 8; // PMU_CTL BKPWEN
+} // namespace pmu
+
+namespace bkp {
+/// Backup data registers 0..9: 16 bits each, kept with the RTC.
+constexpr std::uintptr_t data(unsigned n)
+{
+    return 0x40006C04 + 4 * n;
+}
+} // namespace bkp
+
+namespace rtc {
+inline constexpr std::uintptr_t Base = 0x40002800;
+inline constexpr std::uintptr_t Ctl = Base + 0x04;
+inline constexpr std::uintptr_t Psch = Base + 0x08;
+inline constexpr std::uintptr_t Pscl = Base + 0x0C;
+inline constexpr std::uintptr_t Cnth = Base + 0x18;
+inline constexpr std::uintptr_t Cntl = Base + 0x1C;
+
+// RTC_CTL
+inline constexpr std::uint32_t Synced = 1u << 3;        // RSYNF: registers synchronised since the flag was cleared
+inline constexpr std::uint32_t ConfigMode = 1u << 4;    // CMF: counter and prescaler writable
+inline constexpr std::uint32_t WriteFinished = 1u << 5; // LWOFF: the last write has reached the RTC
+} // namespace rtc
 
 namespace usart {
 inline constexpr std::uintptr_t Usart1 = 0x40004400;
