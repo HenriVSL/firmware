@@ -158,9 +158,8 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | Hold Exit | Cycle standby, log and key test screens |
 
 Menu, GPS holds the receiver's on/off setting and its status; choosing
-Status opens the GPS screen, where Menu switches the receiver on or off and
-Exit goes back to the menu. The console's `gps raw on` logs every sentence
-the receiver sends.
+Status opens the GPS screen, and Exit or Menu goes back to the list. The
+console's `gps raw on` logs every sentence the receiver sends.
 
 ## Log and console
 

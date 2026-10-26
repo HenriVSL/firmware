@@ -21,7 +21,7 @@ supply runs through the FM transceiver.
 | 3 | Console `gps raw on`, then `gps raw off` after a few seconds | Sentences such as `$GNRMC,...` and `$GNGGA,...` in the log, about one burst a second; then they stop |
 | 4 | Wait with a view of the sky | Log `gps: fix: <lat>, <lon>, <alt> m, <n> of <m> satellites, <time> UTC`; the mark turns green, Status shows Fix |
 | 5 | Choose Status | The GPS screen: "Fix", position, altitude, satellites, speed, UTC time and date matching a clock; the seconds count up without the screen flashing |
-| 6 | Menu twice on the GPS screen | "Off", then "Searching", then "Fix" again, replacing each other cleanly; log `gps: off`, `gps: on` |
+| 6 | Menu on the GPS screen, then GPS: Off, then On, then Status | Menu goes back to the list without switching anything; the screen then shows "Searching" and later "Fix", replacing each other cleanly; log `gps: off`, `gps: on` |
 | 7 | Exit | The GPS list, its Status matching the screen |
 | 8 | Console `gps` | Bytes and sentences counted; 0 bad and 0 lost, or a handful |
 | 9 | Receive and transmit FM on a channel with the GPS on, USB unplugged | As without GPS: clear audio both ways |
