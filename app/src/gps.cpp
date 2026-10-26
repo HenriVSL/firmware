@@ -21,7 +21,8 @@ using services::GpsFix;
 using services::NmeaParser;
 
 board::Gps *port = nullptr;
-os::Task<384> gpsTask;
+board::GpsReceiver receiver;
+os::Task<640> gpsTask;
 os::Queue<Message, 4> inbox;
 
 constexpr os::Ticks PollMs = 50;
@@ -56,6 +57,17 @@ void gpsMain(void *)
     std::uint32_t bytes = 0;
     std::uint32_t sentences = 0;
     os::Ticks lastData = 0;
+    std::uint8_t systems = services::gps_systems::Gps | services::gps_systems::Beidou;
+    // The receiver is set up once it answers after power-on.
+    bool configured = false;
+    lib::StaticString<NmeaParser::MaxSentence> lastText;
+
+    auto write = [&](std::span<const std::uint8_t> data) { port->write(data); };
+    auto configure = [&] {
+        receiver.configure(systems, write);
+        configured = true;
+        log::info("gps") << "receiver set up: " << services::gps_systems::name(systems);
+    };
 
     auto tellUi = [&] { ui::post(ui::Gps{parser.fix(), on, on && !silentReported}); };
 
@@ -75,6 +87,8 @@ void gpsMain(void *)
                                    hadFix = false;
                                    fixChangePending = false;
                                    silentReported = false;
+                                   configured = false;
+                                   lastText.clear();
                                    lastData = os::nowMs();
                                } else {
                                    port->stop();
@@ -88,10 +102,27 @@ void gpsMain(void *)
                                                 << " sentences, " << parser.badChecksums() << " bad, " << port->lostBytes()
                                                 << " lost";
                                logFix(parser.fix(), "");
+                               log::info("gps") << "systems " << services::gps_systems::name(systems)
+                                                << (configured ? "" : " (receiver not set up yet)");
                            },
                            [&](const Raw &r) {
                                raw = r.on;
                                log::info("gps") << "raw sentences " << (raw ? "on" : "off");
+                           },
+                           [&](const Systems &s) {
+                               systems = s.systems;
+                               if (configured) {
+                                   configure();
+                               } else {
+                                   log::info("gps") << "systems " << services::gps_systems::name(systems);
+                               }
+                           },
+                           [&](const ChipCommand &c) {
+                               if (!on) {
+                                   log::info("gps") << "the receiver is off";
+                               } else if (!receiver.debugCommand(c.text.view(), write)) {
+                                   log::info("gps") << "unknown command, try help";
+                               }
                            },
                        },
                 message);
@@ -115,7 +146,15 @@ void gpsMain(void *)
                 if (s != NmeaParser::Sentence::BadChecksum) {
                     ++sentences;
                 }
+                if (s != NmeaParser::Sentence::BadChecksum && !configured) {
+                    configure();
+                }
                 if (raw) {
+                    log::info("gps") << parser.lastSentence();
+                } else if (s == NmeaParser::Sentence::Txt && parser.lastSentence() != lastText.view()) {
+                    // Answers to commands, and status messages; a repeat is not logged again.
+                    lastText.clear();
+                    lastText << parser.lastSentence();
                     log::info("gps") << parser.lastSentence();
                 }
                 if (s != NmeaParser::Sentence::Rmc && s != NmeaParser::Sentence::Gga) {
@@ -152,6 +191,11 @@ void start(board::Gps &p)
 {
     port = &p;
     gpsTask.start("gps", 3, gpsMain, nullptr);
+}
+
+const char *debugHelp()
+{
+    return receiver.debugHelp();
 }
 
 bool post(const Message &message)

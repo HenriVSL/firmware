@@ -98,6 +98,7 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     b[0x20] = 7;
     b[0x27] = 7; // backlight 1 min
     b[0x28] = 1; // GPS on
+    b[0x35] = 4; // GPS and GLONASS
     b[0x2C] = 1;
     b[0x37] = 2;    // menu exit 15 s
     b[0xBE] = 0x0B; // knob, keypad, side
@@ -118,15 +119,18 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     CHECK(s.batterySave == 2);
     CHECK(s.backlightS == 60);
     CHECK(s.gps);
+    CHECK(s.gpsSystems == 5);
     b[0x02] = 0;
     b[0x0B] = 7;  // out of range: on
     b[0x27] = 99; // out of range: always on
     b[0x28] = 0;
+    b[0x35] = 9; // out of range: GPS and BeiDou
     b[0xBE] = 0x10;
     const auto t = dmm::services::decodeSettings(b);
     CHECK(t.batterySave == 1);
     CHECK(t.backlightS == 0);
     CHECK_FALSE(t.gps);
+    CHECK(t.gpsSystems == 3);
     CHECK(t.keyLock.autoLockMs == 0);
     CHECK(t.keyLock.forced);
     CHECK_FALSE(t.keyLock.keypad);

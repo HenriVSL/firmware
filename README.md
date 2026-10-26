@@ -32,8 +32,9 @@ with the codeplug's setting, and the backlight goes off after its light
 time. A battery monitor and auto power-off.
 
 **GPS.** The built-in receiver, on or off with the codeplug's setting or
-from the menu. A GPS screen with position, altitude, satellites, speed and
-UTC time, and a GPS mark in the status bar.
+from the menu, using the satellite systems the codeplug or the menu
+chooses (GPS, BeiDou, GLONASS). A GPS screen with position, altitude,
+satellites, speed and UTC time, and a GPS mark in the status bar.
 
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
@@ -140,10 +141,11 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens |
 
-Menu, GPS holds the receiver's on/off setting and its status; choosing
-Status opens the GPS screen, where Menu switches the receiver on or off and
-Exit goes back to the menu. The console's `gps raw on` logs every sentence
-the receiver sends.
+Menu, GPS holds the receiver's on/off setting, its satellite systems and
+its status; choosing Status opens the GPS screen, and Exit or Menu goes
+back to the list. The console's `gps raw on` logs every sentence the
+receiver sends; `gps query`, `gps restart` and `gps send` talk to the
+receiver itself.
 
 ## Log and console
 

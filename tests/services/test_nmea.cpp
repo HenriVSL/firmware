@@ -116,7 +116,8 @@ TEST_CASE("nmea rejects bad checksums and noise")
     CHECK(p.badChecksums() == 2);
     CHECK_FALSE(p.fix().valid);
     CHECK(feedLine(p, "noise without a dollar") == Sentence::None);
-    CHECK(feedLine(p, sentence("GPTXT,01,01,02,ANTENNA OK")) == Sentence::Other);
+    CHECK(feedLine(p, sentence("GPTXT,01,01,02,ANTENNA OK")) == Sentence::Txt);
+    CHECK(feedLine(p, sentence("GNVTG,,,,,,,,,N")) == Sentence::Other);
     CHECK(feedLine(p, "$" + std::string(200, 'A')) == Sentence::None);
 }
 
