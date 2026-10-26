@@ -621,6 +621,13 @@ void uiMain(void *)
     };
     lib::StaticString<6> clockText;
     os::Ticks lastClockMinute = 0;
+    bool gpsScreenNeed = false;
+    // Battery save also decides whether the GPS receiver sleeps between fixes.
+    auto setBatterySave = [&](std::uint8_t mode) {
+        batterySave = mode;
+        radio::post(radio::BatterySave{mode});
+        gps::post(gps::PowerSave{mode != 0});
+    };
     auto standbyState = [&] {
         StandbyState s;
         s.transmitting = transmitting;
@@ -744,9 +751,10 @@ void uiMain(void *)
             break;
         case MenuItem::GpsStatus:
             label = "Status";
-            value << (!gpsState.on ? "Off" : gpsState.fix.valid ? "Fix"
-                    : gpsState.receiving                        ? "Searching"
-                                                                : "No data");
+            value << (!gpsState.on ? "Off" : gpsState.asleep ? "Sleeping"
+                    : gpsState.fix.valid                     ? "Fix"
+                    : gpsState.receiving                     ? "Searching"
+                                                             : "No data");
             break;
         case MenuItem::Count:
             break;
@@ -932,8 +940,7 @@ void uiMain(void *)
             log::info("ui") << "light time " << durationText(backlightS).view();
             break;
         case MenuItem::BatterySave:
-            batterySave = v;
-            radio::post(radio::BatterySave{v});
+            setBatterySave(v);
             break;
         case MenuItem::KeyLock: {
             services::KeyLockSettings s = keyLock.settings();
@@ -1192,6 +1199,7 @@ void uiMain(void *)
                                logLockSettings();
                                notice(s.locked ? "Keys locked" : "Keys unlocked");
                            },
+                           [&](const BatterySave &b) { setBatterySave(b.mode); },
                            [&](const KeyLockSettings &s) {
                                keyLock.setSettings(s.settings);
                                refreshLockMark();
@@ -1259,8 +1267,8 @@ void uiMain(void *)
                            },
                            [&](const Gps &g) {
                                const bool tagChanged = g.on != gpsState.on || g.receiving != gpsState.receiving ||
-                                   g.fix.valid != gpsState.fix.valid;
-                               gpsState = {g.on, g.receiving, g.fix};
+                                   g.fix.valid != gpsState.fix.valid || g.asleep != gpsState.asleep;
+                               gpsState = {g.on, g.receiving, g.fix, g.asleep};
                                if (view == View::Gps) {
                                    if (tagChanged) {
                                        standby.drawStatus(d, standbyState());
@@ -1299,7 +1307,7 @@ void uiMain(void *)
         }
         if (view == View::Start && static_cast<std::int32_t>(os::nowMs() - startUntil) >= 0) {
             show(channels != nullptr ? View::Standby : View::KeyTest);
-            radio::post(radio::BatterySave{batterySave});
+            setBatterySave(batterySave);
             gps::post(gps::Systems{gpsSystems});
             if (gpsAtStart) {
                 gps::post(gps::Power{true});
@@ -1313,6 +1321,11 @@ void uiMain(void *)
             backlightLit = false;
             d.setBacklight(0);
             services::power::release(services::power::AwakeReason::Display);
+        }
+        // The GPS screen wants a position every second while open.
+        if ((view == View::Gps) != gpsScreenNeed) {
+            gpsScreenNeed = view == View::Gps;
+            gps::post(gps::Need{services::GpsSchedule::Client::Screen, gpsScreenNeed ? 1000u : 0u});
         }
         // The status bar's clock moves on each minute.
         if (const auto utc = system::utcNow()) {

@@ -32,6 +32,8 @@ struct GpsState
     /// Sentences are arriving.
     bool receiving = false;
     services::GpsFix fix;
+    /// Switched off between fixes to save power.
+    bool asleep = false;
 };
 
 /// What the standby screen shows besides the channel.
