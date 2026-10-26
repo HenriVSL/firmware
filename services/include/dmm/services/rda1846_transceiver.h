@@ -57,6 +57,7 @@ public:
     bool transmitting() const override { return m_chip.mode() == drivers::radio::Rda1846::Mode::Transmit; }
     FmReceiveStatus status() override;
     void logStatus(std::string_view what) override;
+    /// Also logs the chip's pin register, as a debug line.
     void setMicrophoneMuted(bool muted) override;
     /// "<reg> [value]" (hex), "tune <value>|auto", "sweep".
     bool debugCommand(std::string_view command) override;
@@ -68,6 +69,7 @@ public:
 
 private:
     void setPin(unsigned pin, bool high);
+    std::uint16_t muteMicrophone(bool muted);
     unsigned frontEnd() const;
     int settledRssi();
     void sweep();

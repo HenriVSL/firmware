@@ -29,6 +29,23 @@ constexpr unsigned TransmitSettleMs = 100;
 constexpr unsigned AmplifierSettleMs = 10;
 constexpr unsigned PowerStepMs = 1;
 
+// Log lines are built in their own frames, kept out of the callers that go
+// on to talk to the chip.
+[[gnu::noinline, gnu::cold]] void logNoAnswer(std::uint16_t id)
+{
+    log::error("fm") << "RDA1846 does not answer (id register " << lib::hex(id, 4) << ")";
+}
+
+[[gnu::noinline]] void logPins(const char *what, std::uint16_t before, std::uint16_t after)
+{
+    log::debug("fm") << what << ", pin register " << lib::hex(before, 4) << " -> " << lib::hex(after, 4);
+}
+
+[[gnu::noinline]] void logNumber(const char *what, int value, const char *unit)
+{
+    log::info("fm") << what << ' ' << value << unit;
+}
+
 } // namespace
 
 Rda1846Transceiver::Rda1846Transceiver(Chip &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
@@ -61,10 +78,12 @@ bool Rda1846Transceiver::start()
     if (m_tuning != nullptr) {
         m_chip.setTuning(m_tuning());
     }
+    const std::uint16_t before = m_chip.readRegister(Chip::GpioRegister);
     if (!m_chip.start(m_sleepMs, startGpio())) {
-        log::error("fm") << "RDA1846 does not answer (id register " << lib::hex(m_chip.readRegister(0), 4) << ")";
+        logNoAnswer(m_chip.readRegister(0));
         return false;
     }
+    logPins("started", before, m_chip.readRegister(Chip::GpioRegister));
     return true;
 }
 
@@ -91,7 +110,7 @@ const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLev
     m_chip.setSquelch(-*threshold, -*threshold - SquelchHysteresisDb);
     const int noiseOpen = squelchOpenNoiseDb(channel.wide, squelchLevel);
     m_chip.setNoiseSquelch(noiseOpen, noiseOpen - SquelchHysteresisDb);
-    log::info("fm") << "noise squelch opens below " << noiseOpen << " dB";
+    logNumber("noise squelch opens below", noiseOpen, " dB");
     m_chip.setMode(Chip::Mode::Receive);
     m_receiveHz = hz;
     setPin(frontEnd(), true);
@@ -116,7 +135,7 @@ const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel le
     setPin(m_pins.transmitMidBand, hz >= m_pins.midLowHz && hz <= m_pins.splitHz);
     m_rf.setReferenceTrim(*trim);
     m_rf.setTransmitPath(true);
-    setMicrophoneMuted(false);
+    muteMicrophone(false);
     m_chip.setFrequency(hz);
     m_chip.setBandwidth(channel.wide ? Chip::Bandwidth::Wide : Chip::Bandwidth::Narrow);
     m_chip.setDeviation(deviation->voice, ctcssCentiHz != 0 ? deviation->ctcss : 0);
@@ -133,7 +152,7 @@ const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel le
     m_sleepMs(PowerStepMs);
     m_rf.setPowerControl(*power);
     m_power = *power;
-    log::info("fm") << "power control " << m_power;
+    logNumber("power control", m_power, "");
     return nullptr;
 }
 
@@ -141,7 +160,7 @@ void Rda1846Transceiver::endTransmit()
 {
     idle();
     m_chip.setTransmitTone(0);
-    setMicrophoneMuted(true);
+    muteMicrophone(true);
     setPin(m_pins.transmitHighBand, false);
     setPin(m_pins.transmitMidBand, false);
 }
@@ -199,7 +218,13 @@ void Rda1846Transceiver::logStatus(std::string_view what)
 
 void Rda1846Transceiver::setMicrophoneMuted(bool muted)
 {
-    m_chip.setGpio(m_pins.microphoneMute, muted ? Mode::High : Mode::Low);
+    const std::uint16_t before = m_chip.readRegister(Chip::GpioRegister);
+    logPins(muted ? "microphone muted" : "microphone on", before, muteMicrophone(muted));
+}
+
+std::uint16_t Rda1846Transceiver::muteMicrophone(bool muted)
+{
+    return m_chip.setGpio(m_pins.microphoneMute, muted ? Mode::High : Mode::Low);
 }
 
 // Mean signal strength over a few reads, after the receiver has settled.
