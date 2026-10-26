@@ -27,7 +27,9 @@ namespace power = services::power;
 
 services::Baseband *baseband = nullptr;
 services::FmTransceiver *fm = nullptr;
-os::Task<512> radioTask;
+// Room for the deepest path, a channel change down to a baseband packet,
+// with an interrupt on top and a margin.
+os::Task<768> radioTask;
 os::Queue<Message, 8> inbox;
 // The last speaker volume asked for, applied again after every start.
 int speakerVolume = -1;
