@@ -1002,6 +1002,10 @@ void handle(Message &message)
                            log::info("console") << "unknown command";
                        }
                    },
+                   [](const GpsPower &g) {
+                       fm->setGpsPower(g.on);
+                       log::info("gps") << "receiver power " << (g.on ? "on" : "off");
+                   },
                },
         message);
 }

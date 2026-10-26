@@ -4,6 +4,7 @@
 #include "dmm/app/app.h"
 
 #include "audio.h"
+#include "gps.h"
 #include "input.h"
 #include "radio.h"
 #include "system.h"
@@ -390,6 +391,7 @@ void runCommand(std::string_view command)
                                 "fm rx|rxw <kHz[.ddd]> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm tone tx|rx off|<0.1 Hz>|d<octal>[n|i], fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, dmr rx <kHz> <colour code> <slot 1|2, 0 = both direct>, dmr tg|pc <id>, dmr tg off, dmr id <id>, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
+        log::info("console") << "gps: gps, gps on|off, gps raw on|off";
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
@@ -428,6 +430,19 @@ void runCommand(std::string_view command)
         ui::post(ui::ShowKeyTest{});
     } else if (command == "panel on" || command == "panel off") {
         ui::post(ui::PanelPower{command == "panel on"});
+    } else if (command == "gps" || command == "gps on" || command == "gps off" || command == "gps raw on" ||
+        command == "gps raw off") {
+        bool posted = false;
+        if (command == "gps") {
+            posted = gps::post(gps::Report{});
+        } else if (command == "gps on" || command == "gps off") {
+            posted = gps::post(gps::Power{command == "gps on"});
+        } else {
+            posted = gps::post(gps::Raw{command == "gps raw on"});
+        }
+        if (!posted) {
+            log::info("console") << "no GPS receiver";
+        }
     } else if (radioCommand(command)) {
     } else if (!command.empty()) {
         log::info("console") << "unknown command, try help";
@@ -540,6 +555,9 @@ void start(Platform &p)
         audio::start(*p.audio);
     }
     radio::start(p.fm, p.baseband);
+    if (p.gps != nullptr) {
+        gps::start(*p.gps);
+    }
     linkTask.start("link", 2, linkMain, nullptr);
     system::start(p);
 }

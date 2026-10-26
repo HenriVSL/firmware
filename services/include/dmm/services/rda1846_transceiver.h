@@ -89,12 +89,14 @@ public:
     void logStatus(std::string_view what);
     /// Also logs the chip's pin register, as a debug line.
     void setMicrophoneMuted(bool muted);
+    /// Also logs the chip's pin register, as a debug line.
+    void setGpsPower(bool on);
     /// "<reg> [value]" (hex), "tune <value>|auto", "sweep".
     bool debugCommand(std::string_view command);
     const char *debugHelp() const;
 
-    /// The GPIO register at start: microphone muted, every RF switch and
-    /// the GPS off, other pins floating.
+    /// The GPIO register at start: microphone muted, every RF switch off,
+    /// the GPS as last set (off at first), other pins floating.
     std::uint16_t startGpio() const;
 
 private:
@@ -115,6 +117,7 @@ private:
     std::uint32_t m_receiveHz = 0;
     std::uint16_t m_tune = 0; // the calibrated front-end tuning in use
     bool m_asleep = false;
+    bool m_gpsOn = false;
 };
 
 } // namespace dmm::services
