@@ -25,3 +25,8 @@ Menu, GPS, Systems chooses. The console talks to the receiver with
 | 9 | Switch the radio off and on | GPS and its systems as the codeplug sets them |
 
 ## Results
+
+2026-10-26: all steps pass. The receiver reports CASIC, ATGM336H, AT6558,
+firmware URANUS5 V5.3.0.0; after setup only GGA, GSV and RMC arrive, and
+the settings survive a cold restart. The gps task keeps 280 unused stack
+words.
