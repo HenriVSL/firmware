@@ -10,7 +10,8 @@
 
 namespace dmm::services {
 
-/// Transmit power levels.
+/// Transmit power levels, lowest first. The numbers give the order only;
+/// stored formats map their own values.
 enum class PowerLevel : std::uint8_t
 {
     Low = 0,
