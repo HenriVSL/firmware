@@ -68,11 +68,12 @@ struct CodeplugSettings
     std::uint8_t zoneB = 0;
     bool sideBMain = false; // side B is the main one
     KeyLockSettings keyLock;
-    std::uint8_t batterySave = 0;  // 0 = off; 1 or 2 = the receiver sleeps 150 or 70 ms per cycle
-    std::uint16_t backlightS = 0;  // backlight time after the last key; 0 = always on
-    bool voiceEnhancement = false; // transmit voice shaped by the radio's equalizer
-    bool gps = false;              // GPS receiver on
-    std::uint8_t gpsSystems = 3;   // satellite systems, gps_systems bits
+    std::uint8_t batterySave = 0;     // 0 = off; 1 or 2 = the receiver sleeps 150 or 70 ms per cycle
+    std::uint16_t backlightS = 0;     // backlight time after the last key; 0 = always on
+    bool voiceEnhancement = false;    // transmit voice shaped by the radio's equalizer
+    bool gps = false;                 // GPS receiver on
+    std::uint8_t gpsSystems = 3;      // satellite systems, gps_systems bits
+    std::int16_t timeZoneMinutes = 0; // local time minus UTC
 };
 
 /// What the radio reads from its codeplug, whatever its format. The
