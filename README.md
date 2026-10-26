@@ -124,11 +124,12 @@ checklist in `docs/hw-tests/`.
 | P2 | Channel settings |
 | Menu | Settings menu |
 | Hold `*` | Lock keys; Menu then `*` unlocks |
-| Hold Exit | Cycle standby, GPS, log and key test screens |
+| Hold Exit | Cycle standby, log and key test screens |
 
-On the GPS screen, Menu switches the receiver on or off and Exit goes back
-to standby. The console's `gps raw on` logs every sentence the receiver
-sends.
+Menu, GPS holds the receiver's on/off setting and its status; choosing
+Status opens the GPS screen, where Menu switches the receiver on or off and
+Exit goes back to the menu. The console's `gps raw on` logs every sentence
+the receiver sends.
 
 ## Log and console
 
