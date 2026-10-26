@@ -6,6 +6,8 @@
 #include "dmm/lib/format.h"
 #include "dmm/services/font.h"
 
+#include <iterator>
+
 namespace dmm::app::ui {
 
 namespace {
@@ -113,7 +115,17 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
         x = tag(d, x, "RX", p::Receive, p::Text);
     }
     if (s.locked) {
-        tag(d, x, "LOCK", p::Warn, p::Ground);
+        x = tag(d, x, "LOCK", p::Warn, p::Ground);
+    }
+    // GPS: green with a fix, grey while searching, amber without data.
+    if (s.gps.on) {
+        if (s.gps.fix.valid) {
+            tag(d, x, "GPS", p::Receive, p::Text);
+        } else if (s.gps.receiving) {
+            tag(d, x, "GPS", p::Rule, p::Dim);
+        } else {
+            tag(d, x, "GPS", p::Warn, p::Ground);
+        }
     }
     // Volume, left of the battery: a speaker mark and the step.
     if (s.volume >= 0) {
@@ -198,6 +210,87 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     d.fillRect(0, h - HintH + 1, w, HintH - 1, p::Ground);
     const std::string_view hints = s.note.empty() ? s.keys : s.note;
     drawText(d, Small, 3, h - HintH + 2, hints, p::Dim, p::Ground);
+}
+
+void drawGpsScreen(Display &d, const GpsState &gps, bool full)
+{
+    const int w = d.width();
+    const int h = d.height();
+    const int top = StandbyScreen::StatusH;
+    constexpr const char *Labels[] = {"Lat", "Lon", "Alt", "Sats", "Speed", "UTC"};
+    const int firstRow = top + Medium.height + 5;
+    if (full) {
+        d.fillRect(0, top, w, h - top, p::Ground);
+        drawText(d, Medium, 4, top + 2, "GPS", p::Text, p::Ground);
+        for (int i = 0; i < static_cast<int>(std::size(Labels)); ++i) {
+            drawText(d, Body, 4, firstRow + i * (Body.height + 1), Labels[i], p::Dim, p::Ground);
+        }
+        d.fillRect(0, h - StandbyScreen::HintH, w, 1, p::Rule);
+    }
+
+    const services::GpsFix &f = gps.fix;
+    std::string_view state = "Off";
+    Color stateInk = p::Dim;
+    if (gps.on && f.valid) {
+        state = "Fix";
+        stateInk = p::Receive;
+    } else if (gps.on && gps.receiving) {
+        state = "Searching";
+    } else if (gps.on) {
+        state = "No data";
+        stateInk = p::Warn;
+    }
+    // Right-aligned in a field as wide as the longest state, so the spaces
+    // cover a longer word drawn before.
+    constexpr std::size_t StateChars = 9;
+    lib::StaticString<StateChars + 1> padded;
+    for (std::size_t i = state.size(); i < StateChars; ++i) {
+        padded << ' ';
+    }
+    padded << state;
+    drawText(d, Medium, w - 4 - textWidth(Medium, padded.view()), top + 2, padded.view(), stateInk, p::Ground);
+
+    int y = firstRow;
+    auto value = [&](std::string_view text) {
+        line(d, Body, 46, y, w - 50, text, p::Text);
+        y += Body.height + 1;
+    };
+    const bool position = gps.on && f.valid;
+    value(position ? latitudeText(f.latitudeE7).view() : "-");
+    value(position ? longitudeText(f.longitudeE7).view() : "-");
+    lib::StaticString<24> v;
+    if (position) {
+        v << f.altitudeDm / 10 << " m";
+    } else {
+        v << "-";
+    }
+    value(v.view());
+    v.clear();
+    if (gps.on) {
+        v << f.satellitesUsed << " of " << f.satellitesInView;
+    } else {
+        v << "-";
+    }
+    value(v.view());
+    v.clear();
+    if (position) {
+        v << f.speedDeciKmh / 10 << '.' << f.speedDeciKmh % 10 << " km/h " << f.courseDeciDeg / 10 << " deg";
+    } else {
+        v << "-";
+    }
+    value(v.view());
+    v.clear();
+    if (gps.on && f.timeValid) {
+        v << lib::zeroPadded(f.hour, 2) << ':' << lib::zeroPadded(f.minute, 2) << ':' << lib::zeroPadded(f.second, 2);
+        if (f.dateValid) {
+            v << ' ' << f.year << '-' << lib::zeroPadded(f.month, 2) << '-' << lib::zeroPadded(f.day, 2);
+        }
+    } else {
+        v << "-";
+    }
+    value(v.view());
+
+    line(d, Small, 3, h - StandbyScreen::HintH + 2, w - 6, gps.on ? "Menu: GPS off  Exit: back" : "Menu: GPS on  Exit: back", p::Dim);
 }
 
 void ListPicker::open(std::string_view title)

@@ -5,6 +5,7 @@
 // and log in a window.
 
 #include "dmm/app/app.h"
+#include "dmm/board/sim_gps.h"
 #include "dmm/os/os.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_codeplug.h"
@@ -33,6 +34,7 @@ int main(int argc, char *argv[])
 
     SimBridge *bridge = SimBridge::instance();
     static SimAudio audio;
+    static SimGps gps;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{bridge->storage()};
     static SimFm fm;
@@ -49,6 +51,7 @@ int main(int argc, char *argv[])
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .gps = &gps,
     };
 
     QQmlApplicationEngine engine;

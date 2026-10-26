@@ -122,7 +122,14 @@ struct UseChannel
     std::uint8_t squelch;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus>;
+/// Switches the GPS receiver's supply, which runs through the FM
+/// transceiver's pins.
+struct GpsPower
+{
+    bool on;
+};
+
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus, GpsPower>;
 
 /// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
 /// board without one) and brings them up.

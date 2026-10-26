@@ -31,6 +31,10 @@ covers the keypad, side keys and knob, with auto lock and forced lock.
 with the codeplug's setting, and the backlight goes off after its light
 time. A battery monitor and auto power-off.
 
+**GPS.** The built-in receiver, on or off with the codeplug's setting or
+from the menu. A GPS screen with position, altitude, satellites, speed and
+UTC time, and a GPS mark in the status bar.
+
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
@@ -46,7 +50,7 @@ radio face.
    as features are added
 4. Programming over USB, compatible with existing codeplug tools
 5. Scan and dual watch
-6. GPS
+6. Clock from GPS time, with the codeplug's time zone
 7. Calibration tool
 8. APRS, Bluetooth, recording, DTMF and selective calling
 9. DMR roaming and SMS
@@ -135,6 +139,11 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | Menu | Settings menu |
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens |
+
+Menu, GPS holds the receiver's on/off setting and its status; choosing
+Status opens the GPS screen, where Menu switches the receiver on or off and
+Exit goes back to the menu. The console's `gps raw on` logs every sentence
+the receiver sends.
 
 ## Log and console
 

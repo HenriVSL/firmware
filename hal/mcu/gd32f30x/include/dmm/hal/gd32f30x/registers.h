@@ -68,6 +68,7 @@ constexpr std::uint32_t gpioClock(unsigned port)
 inline constexpr std::uint32_t Timer2Clock = 1u << 1;
 inline constexpr std::uint32_t Timer3Clock = 1u << 2;
 inline constexpr std::uint32_t Timer4Clock = 1u << 3;
+inline constexpr std::uint32_t Usart1Clock = 1u << 17;
 inline constexpr std::uint32_t UsbdClock = 1u << 23;
 inline constexpr std::uint32_t DacClock = 1u << 29;
 
@@ -148,6 +149,28 @@ inline constexpr std::uint32_t SwjMask = 7u << 24;
 inline constexpr std::uint32_t SwjAllOff = 4u << 24;
 inline constexpr std::uint32_t SwjSwdOnly = 2u << 24;
 } // namespace afio
+
+namespace usart {
+inline constexpr std::uintptr_t Usart1 = 0x40004400;
+inline constexpr std::uintptr_t Stat0 = 0x00;
+inline constexpr std::uintptr_t Data = 0x04;
+inline constexpr std::uintptr_t Baud = 0x08;
+inline constexpr std::uintptr_t Ctl0 = 0x0C;
+inline constexpr std::uintptr_t Ctl1 = 0x10;
+inline constexpr std::uintptr_t Ctl2 = 0x14;
+
+// USART_STAT0. The error flags clear when STAT0 and then DATA are read.
+inline constexpr std::uint32_t OverrunError = 1u << 3;
+inline constexpr std::uint32_t ReceiveNotEmpty = 1u << 5;
+inline constexpr std::uint32_t TransmitComplete = 1u << 6;
+inline constexpr std::uint32_t TransmitEmpty = 1u << 7;
+
+// USART_CTL0
+inline constexpr std::uint32_t ReceiveEnable = 1u << 2;
+inline constexpr std::uint32_t TransmitEnable = 1u << 3;
+inline constexpr std::uint32_t ReceiveInterrupt = 1u << 5;
+inline constexpr std::uint32_t Enable = 1u << 13;
+} // namespace usart
 
 namespace exti {
 inline constexpr std::uintptr_t Base = 0x40010400;

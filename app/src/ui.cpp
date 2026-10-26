@@ -4,6 +4,7 @@
 #include "ui.h"
 
 #include "audio.h"
+#include "gps.h"
 #include "radio.h"
 #include "standby.h"
 
@@ -319,6 +320,7 @@ enum class View : std::uint8_t
     ZonePicker, // choosing a zone
     Menu,       // the settings list
     MenuValue,  // choosing one setting's value
+    Gps,        // the GPS receiver's state and fix, from the menu
     Log,
     KeyTest,
     Message,
@@ -341,6 +343,8 @@ enum class MenuItem : std::uint8_t
     BatterySave,
     KeyLock,
     AutoLock,
+    Gps,
+    GpsStatus, // opens the GPS screen
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -353,6 +357,7 @@ enum class MenuGroup : std::uint8_t
     Display,
     Keys,
     Battery,
+    Gps,
     Count,
 };
 struct GroupInfo
@@ -366,6 +371,7 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
+    {"GPS", {MenuItem::Gps, MenuItem::GpsStatus}, 2},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -381,6 +387,9 @@ std::uint16_t backlightS = 0; // 0 = always on
 bool backlightLit = true;
 os::Ticks lastLightUse = 0;
 std::uint8_t batterySave = 0;
+// The GPS receiver as last reported, and the codeplug's choice at start.
+GpsState gpsState;
+bool gpsAtStart = false;
 // The volume step 0..15, -1 until the knob has been read.
 int volumeLevel = -1;
 bool receiving = false;
@@ -547,6 +556,7 @@ void uiMain(void *)
             keyLock.setSettings(selector.settings().keyLock);
             backlightS = selector.settings().backlightS;
             batterySave = selector.settings().batterySave;
+            gpsAtStart = selector.settings().gps;
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -566,7 +576,7 @@ void uiMain(void *)
     // the test pattern and full-screen messages do not.
     auto lockContext = [&] {
         services::KeyLock::Context c;
-        c.screenLockable = view == View::Standby || view == View::Log || view == View::KeyTest;
+        c.screenLockable = view == View::Standby || view == View::Gps || view == View::Log || view == View::KeyTest;
         c.transmitting = transmitting;
         c.nowMs = os::nowMs();
         return c;
@@ -584,6 +594,7 @@ void uiMain(void *)
         s.entry = std::string_view(entry, entryLength);
         s.volume = volumeLevel;
         s.keys = quickKeys.view();
+        s.gps = gpsState;
         return s;
     };
     auto barHeader = [&](bool bar) {
@@ -594,11 +605,15 @@ void uiMain(void *)
     };
     auto redrawView = [&] {
         const bool radioScreen =
-            view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue;
+            view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue || view == View::Gps;
         barHeader(radioScreen);
         if (view == View::Standby) {
             standby.draw(d, *channels, standbyState());
             drawBattery(d);
+        } else if (view == View::Gps) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawGpsScreen(d, gpsState, true);
         } else if (view == View::ZonePicker || view == View::Menu || view == View::MenuValue) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -617,7 +632,7 @@ void uiMain(void *)
     };
     // The next screen in Exit-held order: standby, log, key test.
     auto nextView = [&] {
-        if (view == View::Standby) {
+        if (view == View::Standby || view == View::Gps) {
             return View::Log;
         }
         if (view == View::Log) {
@@ -629,7 +644,8 @@ void uiMain(void *)
     auto refreshLockMark = [&] {
         if (view == View::Log || view == View::KeyTest) {
             drawLockMark(d);
-        } else if (view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue) {
+        } else if (view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue ||
+            view == View::Gps) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
         }
@@ -676,6 +692,16 @@ void uiMain(void *)
             } else {
                 value << k.autoLockMs / 1000 << " s";
             }
+            break;
+        case MenuItem::Gps:
+            label = "GPS";
+            value << (gpsState.on ? "On" : "Off");
+            break;
+        case MenuItem::GpsStatus:
+            label = "Status";
+            value << (!gpsState.on ? "Off" : gpsState.fix.valid ? "Fix"
+                    : gpsState.receiving                        ? "Searching"
+                                                                : "No data");
             break;
         case MenuItem::Count:
             break;
@@ -773,6 +799,15 @@ void uiMain(void *)
             menuValue.add(60, "60 s");
             menuValue.select(static_cast<std::uint8_t>(keyLock.settings().autoLockMs / 1000));
             break;
+        case MenuItem::Gps:
+            menuValue.open("GPS");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(gpsState.on ? 1 : 0);
+            break;
+        case MenuItem::GpsStatus:
+            show(View::Gps);
+            return;
         case MenuItem::Count:
             return;
         }
@@ -851,6 +886,12 @@ void uiMain(void *)
             logLockSettings();
             break;
         }
+        case MenuItem::Gps:
+            // The menu shows the new value before the gps task reports it.
+            gpsState.on = v == 1;
+            gps::post(gps::Power{v == 1});
+            break;
+        case MenuItem::GpsStatus:
         case MenuItem::Count:
             break;
         }
@@ -1044,6 +1085,14 @@ void uiMain(void *)
                                    show(nextView());
                                    return;
                                }
+                               if (view == View::Gps) {
+                                   if (e.type == Type::Press && e.key == Key::Menu) {
+                                       gps::post(gps::Power{!gpsState.on});
+                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
+                                       openGroup(MenuGroup::Gps, false);
+                                   }
+                                   return;
+                               }
                                if (channels != nullptr && (view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue)) {
                                    channelKey(e.key, e.type);
                                }
@@ -1137,6 +1186,27 @@ void uiMain(void *)
                                    drawBattery(d);
                                }
                            },
+                           [&](const Gps &g) {
+                               const bool tagChanged = g.on != gpsState.on || g.receiving != gpsState.receiving ||
+                                   g.fix.valid != gpsState.fix.valid;
+                               gpsState = {g.on, g.receiving, g.fix};
+                               if (view == View::Gps) {
+                                   if (tagChanged) {
+                                       standby.drawStatus(d, standbyState());
+                                       drawBattery(d);
+                                   }
+                                   if (!noticeShown) {
+                                       drawGpsScreen(d, gpsState, false);
+                                   }
+                               } else if (tagChanged) {
+                                   refreshLockMark();
+                                   // The GPS group's status value, keeping the cursor.
+                                   if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Gps) {
+                                       menuItem = static_cast<MenuItem>(menu.chosen());
+                                       openGroup(MenuGroup::Gps, menuQuick);
+                                   }
+                               }
+                           },
                            [&](const SwitchingOff &) {
                                view = View::Message;
                                d.fillRect(0, 0, d.width(), d.height(), colors::Black);
@@ -1159,6 +1229,9 @@ void uiMain(void *)
         if (view == View::Start && static_cast<std::int32_t>(os::nowMs() - startUntil) >= 0) {
             show(channels != nullptr ? View::Standby : View::KeyTest);
             radio::post(radio::BatterySave{batterySave});
+            if (gpsAtStart) {
+                gps::post(gps::Power{true});
+            }
             useChannel();
         }
         // The backlight goes off after its time, never during a signal or
