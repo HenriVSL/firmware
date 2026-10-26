@@ -35,3 +35,8 @@ supply runs through the FM transceiver.
 - Step 3 shows garbled text: the baud rate differs.
 
 ## Results
+
+2026-10-26: steps 1 to 9 and 11 pass, step 2 also through the console's
+`gps on`. The receiver sends GGA, GLL, GSA, GSV, RMC, VTG, ZDA and TXT for
+GPS and BeiDou once a second, 0 bad and 0 lost in 9700 sentences; a fix
+with 5 of 12 satellites indoors at a window. Step 10 not reported.
