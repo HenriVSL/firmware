@@ -10,6 +10,7 @@
 #include "dmm/lib/format.h"
 #include "dmm/os/os.h"
 #include "dmm/services/battery.h"
+#include "dmm/services/clock.h"
 #include "dmm/services/log.h"
 #include "dmm/services/power.h"
 #include "dmm/version.h"
@@ -38,6 +39,15 @@ std::atomic<bool> feedingStopped{false};
 std::atomic<os::Ticks> lastActivity{0};
 std::atomic<int> autoOffMinutes{0};
 std::atomic<bool> batteryReportWanted{false};
+
+// The real-time clock: read by the system task only, published for others.
+constexpr os::Ticks ClockEveryMs = 100;
+std::atomic<bool> clockRunning{false};
+std::atomic<std::uint32_t> clockSeconds{0};
+std::atomic<bool> clockSetWanted{false};
+std::atomic<std::uint32_t> clockSetTo{0};
+std::atomic<const char *> clockSetSource{nullptr};
+std::atomic<bool> clockReportWanted{false};
 
 // The system task's battery monitor, with the board's levels; without a
 // battery sense no level is ever low or empty.
@@ -203,6 +213,70 @@ void sampleBattery(os::Ticks now)
     ui::post(ui::Battery{static_cast<std::uint16_t>(battery().millivolts()), static_cast<std::uint8_t>(battery().level()), battery().low()});
 }
 
+// "2026-10-26 19:34:15"
+lib::StaticString<20> dateTimeText(std::uint32_t seconds)
+{
+    const services::DateTime t = services::dateTime(seconds);
+    lib::StaticString<20> s;
+    s << t.year << '-' << lib::zeroPadded(t.month, 2) << '-' << lib::zeroPadded(t.day, 2) << ' ' << lib::zeroPadded(t.hour, 2)
+      << ':' << lib::zeroPadded(t.minute, 2) << ':' << lib::zeroPadded(t.second, 2);
+    return s;
+}
+
+void logClock(const char *what)
+{
+    auto line = log::info("clock");
+    line << what;
+    if (!clockRunning.load()) {
+        line << "no clock";
+    } else if (clockSeconds.load() < services::EarliestValidSeconds) {
+        line << "time unknown";
+    } else {
+        line << dateTimeText(clockSeconds.load()).view() << " UTC";
+    }
+}
+
+void startClock()
+{
+    if (platform->rtc == nullptr) {
+        return;
+    }
+    if (!platform->rtc->start()) {
+        log::warning("clock") << "the real-time clock did not start";
+        return;
+    }
+    clockSeconds.store(platform->rtc->seconds());
+    clockRunning.store(true);
+    logClock("");
+}
+
+// Publishes the clock and applies a requested change.
+void serviceClock()
+{
+    if (!clockRunning.load()) {
+        return;
+    }
+    if (clockSetWanted.exchange(false)) {
+        const std::uint32_t before = platform->rtc->seconds();
+        const std::uint32_t to = clockSetTo.load();
+        platform->rtc->setSeconds(to);
+        clockSeconds.store(to);
+        auto line = log::info("clock");
+        line << "set from " << clockSetSource.load() << ": " << dateTimeText(to).view() << " UTC";
+        if (before >= services::EarliestValidSeconds) {
+            const auto off = static_cast<std::int32_t>(before - to);
+            line << " (was " << (off < 0 ? -off : off) << " s " << (off < 0 ? "behind" : "ahead") << ")";
+        } else {
+            line << " (was unknown)";
+        }
+        return;
+    }
+    clockSeconds.store(platform->rtc->seconds());
+    if (clockReportWanted.exchange(false)) {
+        logClock("");
+    }
+}
+
 void systemMain(void *)
 {
     log::info("system") << "DeltaMM " << Version << " on " << platform->boardName;
@@ -212,6 +286,7 @@ void systemMain(void *)
     logResetReport();
     platform->system.holdPower();
     loadCalibration();
+    startClock();
 
     // A short red flash first shows the image runs, whatever happens next.
     platform->leds.set(Leds::Led::Red, true);
@@ -225,6 +300,7 @@ void systemMain(void *)
     os::Ticks wake = os::nowMs();
     os::Ticks sinceReport = 0;
     os::Ticks sinceBattery = BatteryEveryMs;
+    os::Ticks sinceClock = 0;
     bool switchWasOff = false;
     bool emptyReported = false;
     while (!os::stopRequested()) {
@@ -238,6 +314,12 @@ void systemMain(void *)
             return;
         }
         switchWasOff = switchOff;
+
+        sinceClock += StepMs;
+        if (sinceClock >= ClockEveryMs || clockSetWanted.load()) {
+            sinceClock = 0;
+            serviceClock();
+        }
 
         sinceBattery += StepMs;
         if (sinceBattery >= BatteryEveryMs) {
@@ -317,6 +399,27 @@ void stopFeedingWatchdog()
 void reportBattery()
 {
     batteryReportWanted.store(true, std::memory_order_relaxed);
+}
+
+std::optional<std::uint32_t> utcNow()
+{
+    const std::uint32_t s = clockSeconds.load();
+    if (!clockRunning.load() || s < services::EarliestValidSeconds) {
+        return std::nullopt;
+    }
+    return s;
+}
+
+void setClock(std::uint32_t utc, const char *source)
+{
+    clockSetTo.store(utc);
+    clockSetSource.store(source);
+    clockSetWanted.store(true);
+}
+
+void reportClock()
+{
+    clockReportWanted.store(true);
 }
 
 const board::Calibration *calibration()

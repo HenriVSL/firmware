@@ -211,6 +211,16 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
             cursor = tag(d, cursor, "GPS", p::Warn, p::Ground);
         }
     }
+    // The local time, left of the volume.
+    if (!s.clock.empty()) {
+        const int w = textWidth(Small, s.clock);
+        const int x = volumeX(d, *this) - w - 6;
+        gapTo(x);
+        drawText(d, Small, x, 2, s.clock, p::Text, p::Ground);
+        fillArea(d, x, 0, w, 2, p::Ground);
+        fillArea(d, x, 2 + Small.height, w, rowH - 2 - Small.height, p::Ground);
+        cursor = x + w;
+    }
     gapTo(volumeX(d, *this));
     drawVolume(d, s);
     cursor = volumeX(d, *this) + VolumeChars * Small.width;
