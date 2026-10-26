@@ -19,6 +19,14 @@ TEST_CASE("TextWriter formats text, integers, bools and hex")
     CHECK_FALSE(w.truncated());
 }
 
+TEST_CASE("TextWriter pads decimals with zeros")
+{
+    char buf[32];
+    TextWriter w(buf);
+    w << zeroPadded(7, 2) << ':' << zeroPadded(123, 2) << ' ' << zeroPadded(42, 5) << ' ' << zeroPadded(0, 1);
+    CHECK(w.view() == "07:123 00042 0");
+}
+
 TEST_CASE("TextWriter truncates and remembers it")
 {
     char buf[4];
