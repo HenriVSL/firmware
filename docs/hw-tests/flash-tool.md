@@ -1,0 +1,38 @@
+# Flashing with dmm-radio
+
+`dmm-radio flash` sends a firmware set to a radio in update mode, so the
+vendor's programming software is no longer needed; `--wait` lets it start
+before the radio is switched on in update mode. `docs/update-mode.md`
+describes the protocol.
+
+## Before you start
+
+- A verified backup of this radio (`dmm-radio list`).
+- The DeltaMM update files (`update-files` build target) and the
+  factory `.CDD`, `.spi` and `.CDI` files, each set in its own folder.
+- Battery charged, programming cable connected.
+
+## Steps
+
+| # | Do | Expect |
+| --- | --- | --- |
+| 1 | With DeltaMM running: `dmm-radio flash <DeltaMM .CDD>` | Refused: "The radio is running DeltaMM"; the radio carries on as before |
+| 2 | Switch off, then on holding PTT and PF3 | Display dark, red LED blinking; `dmm-radio ports` lists the radio as "factory firmware or update mode" |
+| 3 | `dmm-radio flash <DeltaMM .CDD>` | `Radio: D878UV2 (boot loader V100)`, progress to 100 % in about 10 s, "Done" |
+| 4 | Watch the radio | It starts by itself: "DeltaMM" and the version built, then standby; the tool prints `Running: DeltaMM <version>` |
+| 5 | With DeltaMM running: `dmm-radio flash --wait 600 <DeltaMM .CDD>` | "Waiting up to 600 s for the radio in update mode" and the key hint; nothing is sent |
+| 6 | Switch off, then on holding PTT and PF3 | Within a few seconds the transfer starts, as in steps 3 and 4 |
+| 7 | `dmm-radio flash --wait 3 <DeltaMM .CDD>` with the radio running DeltaMM | After 3 s "No radio in update mode appeared"; nothing is sent |
+| 8 | Update mode again, `dmm-radio flash <factory .CDD>` | Progress to 100 % in about 80 s, "Done"; the factory firmware starts |
+| 9 | Read the radio with the CPS or qdmr | Codeplug and settings as before |
+| 10 | With the factory firmware running: `dmm-radio flash --wait 600 <DeltaMM .CDD>` | "A radio is connected now; waiting for it to be switched off first"; nothing is sent |
+| 11 | Switch off, then on holding PTT and PF3 | DeltaMM flashes and starts, as in steps 3 and 4 |
+
+## If something is off
+
+- `flash` stops with an error: the radio stays in update mode. Run it
+  again, with the same files or the factory ones.
+- No reply to the start: the radio is not in update mode, or another
+  program holds the port.
+
+## Results

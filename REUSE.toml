@@ -21,7 +21,7 @@ SPDX-License-Identifier = "MIT"
 
 # Docs for the flash tool.
 [[annotations]]
-path = ["docs/update-mode.md"]
+path = ["docs/update-mode.md", "docs/hw-tests/flash-tool.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
 
