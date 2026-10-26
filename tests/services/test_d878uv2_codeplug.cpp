@@ -105,6 +105,21 @@ TEST_CASE("plus offset, simplex, digital, custom tone and bad records")
     CHECK_FALSE(dmm::services::decodeChannel(r).has_value());
 }
 
+TEST_CASE("the extended settings give the GPS satellite systems")
+{
+    std::vector<std::uint8_t> e(0x40, 0);
+    dmm::services::CodeplugSettings s;
+    e[0x35] = 4; // GPS and GLONASS
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 5);
+    e[0x35] = 6; // all three
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 7);
+    e[0x35] = 9; // out of range: GPS and BeiDou
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 3);
+}
+
 TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlight")
 {
     std::vector<std::uint8_t> b(0x100, 0);

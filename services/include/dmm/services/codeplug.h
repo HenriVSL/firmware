@@ -72,6 +72,7 @@ struct CodeplugSettings
     std::uint16_t backlightS = 0;  // backlight time after the last key; 0 = always on
     bool voiceEnhancement = false; // transmit voice shaped by the radio's equalizer
     bool gps = false;              // GPS receiver on
+    std::uint8_t gpsSystems = 3;   // satellite systems, gps_systems bits
 };
 
 /// What the radio reads from its codeplug, whatever its format. The
