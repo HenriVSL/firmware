@@ -4,7 +4,9 @@
 #pragma once
 
 #include "dmm/board/parts.h"
+#include "dmm/lib/format.h"
 
+#include <cstdint>
 #include <variant>
 
 namespace dmm::app::gps {
@@ -23,12 +25,25 @@ struct Raw
 {
     bool on;
 };
+/// The satellite systems to use (services::gps_systems bits).
+struct Systems
+{
+    std::uint8_t systems;
+};
+/// One of the receiver chip's own console commands (console test).
+struct ChipCommand
+{
+    lib::StaticString<64> text;
+};
 
-using Message = std::variant<Power, Report, Raw>;
+using Message = std::variant<Power, Report, Raw, Systems, ChipCommand>;
 
 /// Starts the gps task, which owns @p port. The receiver stays off until
 /// a Power message.
 void start(board::Gps &port);
+
+/// The receiver chip's console commands, for the console's help.
+const char *debugHelp();
 
 /// Queues a message for the gps task; false when the queue is full or there
 /// is no receiver.
