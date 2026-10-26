@@ -272,8 +272,12 @@ void systemMain(void *)
         sinceReport += StepMs;
         if (sinceReport >= UptimeReportMs) {
             sinceReport = 0;
-            log::info("system") << "uptime " << (os::nowMs() / 1000) << " s, unused stack words: system "
-                                << systemTask.unusedStackWords();
+            auto line = log::info("system");
+            line << "uptime " << (os::nowMs() / 1000) << " s";
+            for (std::size_t i = 0; os::taskStack(i).name != nullptr; ++i) {
+                const os::TaskStack t = os::taskStack(i);
+                line << (i == 0 ? ", unused stack words: " : ", ") << t.name << ' ' << t.unusedWords;
+            }
         }
     }
     platform->leds.set(Leds::Led::Green, false);

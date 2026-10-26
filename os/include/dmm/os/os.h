@@ -47,6 +47,17 @@ const char *currentTaskName();
 using FatalHandler = void (*)(const char *what, const char *task);
 void setFatalHandler(FatalHandler handler);
 
+/// A started task's name and the stack words it has never used.
+struct TaskStack
+{
+    const char *name = nullptr;
+    std::size_t unusedWords = 0;
+};
+
+/// The @p index-th started task, in start order. The name is nullptr past
+/// the last task, and on the PC, where stacks are not measured.
+TaskStack taskStack(std::size_t index);
+
 /// A task with a statically allocated stack of @p StackWords 32-bit words.
 /// Higher @p priority is more urgent (1..7).
 template <std::size_t StackWords>

@@ -22,6 +22,10 @@ namespace {
 
 FatalHandler fatalHandler = nullptr;
 
+constexpr std::size_t MaxTasks = 16;
+detail::TaskControl *startedTasks[MaxTasks]{};
+std::size_t startedCount = 0;
+
 TickType_t toTicks(std::uint32_t timeoutMs)
 {
     return timeoutMs == WaitForever ? portMAX_DELAY : timeoutMs;
@@ -52,6 +56,15 @@ void sleepMs(Ticks ms)
 void sleepUntil(Ticks &wake, Ticks period)
 {
     xTaskDelayUntil(&wake, period);
+}
+
+TaskStack taskStack(std::size_t index)
+{
+    if (index >= startedCount) {
+        return {};
+    }
+    const auto handle = reinterpret_cast<TaskHandle_t>(startedTasks[index]->storage);
+    return {pcTaskGetName(handle), uxTaskGetStackHighWaterMark(handle)};
 }
 
 void runScheduler()
@@ -100,6 +113,9 @@ void startTask(TaskControl &t, const char *name, unsigned priority, void (*entry
 {
     xTaskCreateStatic(entry, name, static_cast<configSTACK_DEPTH_TYPE>(words), arg, priority, stack,
         reinterpret_cast<StaticTask_t *>(t.storage));
+    if (startedCount < MaxTasks) {
+        startedTasks[startedCount++] = &t;
+    }
 }
 
 std::size_t unusedStackWords(TaskControl &t)
