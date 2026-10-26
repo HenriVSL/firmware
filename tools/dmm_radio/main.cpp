@@ -17,11 +17,13 @@
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QCryptographicHash>
+#include <QDeadlineTimer>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QSettings>
 #include <QTextStream>
+#include <QThread>
 
 #include <utility>
 
@@ -509,8 +511,83 @@ int commandCheckBackup(const QStringList &args, const QString &portRequest, cons
 
 } // namespace
 
-// Sends a firmware set to a radio in update mode.
-int commandFlash(const QStringList &args, const QString &portRequest, const QString &radioId, const QString &root)
+constexpr const char *UpdateModeHint = "Switch the radio off, then on while holding PTT and PF3, the top key (red LED blinking).";
+
+// Waits up to @p seconds for exactly one radio in update mode and returns
+// its port, or an empty string.
+QString waitForUpdateMode(int seconds)
+{
+    out() << "Waiting up to " << seconds << " s for the radio in update mode. " << UpdateModeHint << Qt::endl;
+    // A radio running its factory firmware has the same USB IDs as one in
+    // update mode, so only a radio that appears after none was connected
+    // counts.
+    bool noneConnected = SerialTransport::findRadios().isEmpty();
+    if (!noneConnected) {
+        out() << "A radio is connected now; waiting for it to be switched off first." << Qt::endl;
+    }
+    QDeadlineTimer deadline{std::chrono::seconds(seconds)};
+    while (!deadline.hasExpired()) {
+        const auto radios = SerialTransport::findRadios();
+        if (radios.isEmpty()) {
+            noneConnected = true;
+        } else if (noneConnected && radios.size() == 1) {
+            return radios.constFirst().portName();
+        } else if (noneConnected) {
+            err() << "Several radios found; choose one with --port." << Qt::endl;
+            return {};
+        }
+        QThread::msleep(300);
+    }
+    err() << "No radio in update mode appeared." << Qt::endl;
+    return {};
+}
+
+// Waits a few seconds for a radio running DeltaMM and prints its version.
+void reportStartedFirmware()
+{
+    QDeadlineTimer deadline{std::chrono::seconds(15)};
+    while (!deadline.hasExpired()) {
+        for (const QSerialPortInfo &info : SerialTransport::findDeltaMmPorts()) {
+            SerialTransport transport;
+            QString error;
+            if (!transport.open(info.portName(), &error)) {
+                continue;
+            }
+            DeltaMmClient client(transport);
+            if (const auto running = client.info(&error, 400)) {
+                out() << "Running:  DeltaMM " << running->version << " on " << info.portName() << Qt::endl;
+                return;
+            }
+            transport.write(QByteArray("\n"));
+        }
+        QThread::msleep(500);
+    }
+    out() << "Running:  no DeltaMM port within 15 s (factory firmware, or the radio did not start)." << Qt::endl;
+}
+
+// Opens @p port and starts an update session, retrying for a few seconds
+// while a radio that just appeared settles.
+bool startUpdate(const QString &port, SerialTransport &transport, UpdateClient &client, bool retry, QString *error)
+{
+    QDeadlineTimer deadline{std::chrono::seconds(retry ? 5 : 0)};
+    while (!transport.open(port, error)) {
+        if (deadline.hasExpired()) {
+            return false;
+        }
+        QThread::msleep(500);
+    }
+    while (!client.start(error)) {
+        if (deadline.hasExpired()) {
+            return false;
+        }
+        QThread::msleep(500);
+    }
+    return true;
+}
+
+// Sends a firmware set to a radio in update mode, optionally waiting for
+// the radio to be switched on in it.
+int commandFlash(const QStringList &args, const QString &portRequest, const QString &radioId, const QString &root, int waitSeconds)
 {
     if (args.size() != 1) {
         err() << "Usage: dmm-radio flash <.CDD file> (with its .spi and .CDI next to it)" << Qt::endl;
@@ -532,24 +609,21 @@ int commandFlash(const QStringList &args, const QString &portRequest, const QStr
         return 2;
     }
 
-    if (portRequest.isEmpty() && SerialTransport::findRadios().isEmpty() && !SerialTransport::findDeltaMmPorts().isEmpty()) {
-        err() << "The radio is running DeltaMM. Switch it off, then on while holding PTT and PF3, the top key (red LED blinking)." << Qt::endl;
+    const bool wait = waitSeconds > 0 && portRequest.isEmpty();
+    if (!wait && portRequest.isEmpty() && SerialTransport::findRadios().isEmpty() && !SerialTransport::findDeltaMmPorts().isEmpty()) {
+        err() << "The radio is running DeltaMM. " << UpdateModeHint << Qt::endl;
         return 2;
     }
-    const QString port = pickPort(portRequest);
+    const QString port = wait ? waitForUpdateMode(waitSeconds) : pickPort(portRequest);
     if (port.isEmpty()) {
         return 2;
     }
     SerialTransport transport;
-    QString error;
-    if (!transport.open(port, &error)) {
-        err() << "Cannot open " << port << ": " << error << Qt::endl;
-        return 2;
-    }
     UpdateClient client(transport);
-    if (!client.start(&error)) {
-        err() << "Error: " << error << "." << Qt::endl
-              << "Is the radio in update mode? Switch it off, then on while holding PTT and PF3, the top key (red LED blinking)." << Qt::endl;
+    QString error;
+    if (!startUpdate(port, transport, client, wait, &error)) {
+        err() << "Error on " << port << ": " << error << "." << Qt::endl
+              << "Is the radio in update mode? " << UpdateModeHint << Qt::endl;
         return 2;
     }
     const auto identity = client.identify(&error);
@@ -572,6 +646,7 @@ int commandFlash(const QStringList &args, const QString &portRequest, const QStr
         return 2;
     }
     out() << "Done. The radio starts the new firmware." << Qt::endl;
+    reportStartedFirmware();
     return 0;
 }
 
@@ -592,7 +667,9 @@ int main(int argc, char *argv[])
         "  prepare <image.bin> <factory .CDD> <folder>\n"
         "                        make update files; needs a verified backup\n"
         "On a radio in update mode (red LED blinking):\n"
-        "  flash <.CDD file>     send a firmware set (.CDD, .spi, .CDI)\n"
+        "  flash <.CDD file> [--wait <s>]\n"
+        "                        send a firmware set (.CDD, .spi, .CDI); --wait\n"
+        "                        waits for the radio to enter update mode\n"
         "On a radio running DeltaMM:\n"
         "  info                  version and storage\n"
         "  dump <addr> <len> <file> [--physical]\n"
@@ -608,7 +685,9 @@ int main(int argc, char *argv[])
     const QCommandLineOption physicalOption(QStringLiteral("physical"), QStringLiteral("dump: skip the bad-block remapping."));
     const QCommandLineOption nameOption(QStringLiteral("name"),
         QStringLiteral("prepare: file name without extension (default: DeltaMM_ and this tool's version)."), QStringLiteral("base"));
-    parser.addOptions({portOption, quickOption, dirOption, radioOption, physicalOption, nameOption});
+    const QCommandLineOption waitOption(QStringLiteral("wait"),
+        QStringLiteral("flash: wait up to this many seconds for the radio to be switched on in update mode."), QStringLiteral("seconds"));
+    parser.addOptions({portOption, quickOption, dirOption, radioOption, physicalOption, nameOption, waitOption});
     parser.addPositionalArgument(QStringLiteral("command"), QStringLiteral("ports, backup, verify, list, prepare, flash, info, dump, check-backup or config"));
     parser.process(app);
 
@@ -634,7 +713,7 @@ int main(int argc, char *argv[])
         return commandPrepare(args.mid(1), parser.value(radioOption), root, parser.value(nameOption));
     }
     if (command == QStringLiteral("flash")) {
-        return commandFlash(args.mid(1), parser.value(portOption), parser.value(radioOption), root);
+        return commandFlash(args.mid(1), parser.value(portOption), parser.value(radioOption), root, parser.value(waitOption).toInt());
     }
     if (command == QStringLiteral("info")) {
         return commandInfo(parser.value(portOption));

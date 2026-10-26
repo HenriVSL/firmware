@@ -131,7 +131,9 @@ with `dmm-radio`:
 dmm-radio flash build/fw-d878uv2-release/boards/anytone_d878uv2/package/DeltaMM_<version>.CDD
 ```
 
-The radio starts the new firmware when the transfer ends.
+With `--wait 600`, the tool waits up to ten minutes for the radio to be
+switched on in update mode. The radio starts the new firmware when the
+transfer ends.
 `docs/update-mode.md` describes update mode.
 
 The radio's boot loader stays as it is, so the factory firmware can be

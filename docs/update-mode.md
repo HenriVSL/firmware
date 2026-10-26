@@ -34,7 +34,15 @@ Before sending anything, the tool checks that:
   the image, and ends below the radio data;
 - the radio answers in update mode and reports the model `D878UV2`.
 
-After the transfer ends, the radio starts the new firmware by itself.
+With `--wait <seconds>`, the tool first waits that long for a radio to
+appear in update mode, so it can be started before the radio is switched
+on. A radio running its factory firmware has the same USB IDs as one in
+update mode, so a radio already connected when the wait starts has to be
+switched off and back on in update mode first.
+
+After the transfer ends, the radio starts the new firmware by itself, and
+the tool waits up to 15 s for DeltaMM to answer on USB and prints its
+version.
 
 If the transfer stops, the tool names the address where it stopped. The
 boot loader is never written, so the radio stays in update mode: run
