@@ -76,9 +76,7 @@ std::array<std::uint8_t, D878Uv2Calibration::Bytes> sample()
 
 D878Uv2Calibration loaded(const std::array<std::uint8_t, D878Uv2Calibration::Bytes> &d)
 {
-    D878Uv2Calibration cal;
-    cal.use(d);
-    return cal;
+    return D878Uv2Calibration(d);
 }
 
 } // namespace

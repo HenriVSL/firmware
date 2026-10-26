@@ -95,9 +95,7 @@ D878Uv2Calibration calibration()
     d[0x06] = 0x2A; // deviation: voice, CTCSS, DCS
     d[0x07] = 0x12;
     d[0x08] = 0x0C;
-    D878Uv2Calibration cal;
-    cal.use(d);
-    return cal;
+    return D878Uv2Calibration(d);
 }
 
 std::uint16_t gpioField(std::uint16_t gpio, unsigned pin)
