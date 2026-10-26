@@ -408,6 +408,7 @@ enum class MenuItem : std::uint8_t
     KeyLock,
     AutoLock,
     Gps,
+    GpsSystems,
     GpsStatus, // opens the GPS screen
     Count,
 };
@@ -435,7 +436,7 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS", {MenuItem::Gps, MenuItem::GpsStatus}, 2},
+    {"GPS", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus}, 3},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -454,6 +455,7 @@ std::uint8_t batterySave = 0;
 // The GPS receiver as last reported, and the codeplug's choice at start.
 GpsState gpsState;
 bool gpsAtStart = false;
+std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Beidou;
 // The volume step 0..15, -1 until the knob has been read.
 int volumeLevel = -1;
 bool receiving = false;
@@ -681,6 +683,7 @@ void uiMain(void *)
                 radio::post(radio::VoiceEnhancement{true});
             }
             gpsAtStart = selector.settings().gps;
+            gpsSystems = selector.settings().gpsSystems;
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -867,6 +870,10 @@ void uiMain(void *)
             label = "GPS";
             value << (gpsState.on ? "On" : "Off");
             break;
+        case MenuItem::GpsSystems:
+            label = "Systems";
+            value << services::gps_systems::name(gpsSystems);
+            break;
         case MenuItem::GpsStatus:
             label = "Status";
             value << (!gpsState.on ? "Off" : gpsState.fix.valid ? "Fix"
@@ -983,6 +990,19 @@ void uiMain(void *)
             menuValue.add(1, "On");
             menuValue.select(gpsState.on ? 1 : 0);
             break;
+        case MenuItem::GpsSystems: {
+            namespace g = services::gps_systems;
+            menuValue.open("Systems");
+            menuValue.add(g::Gps | g::Beidou, "GPS + BeiDou");
+            menuValue.add(g::Gps, "GPS");
+            menuValue.add(g::Beidou, "BeiDou");
+            menuValue.add(g::Gps | g::Glonass, "GPS + GLONASS");
+            menuValue.add(g::Glonass, "GLONASS");
+            menuValue.add(g::Beidou | g::Glonass, "BeiDou + GLONASS");
+            menuValue.add(g::All, "All three");
+            menuValue.select(gpsSystems);
+            break;
+        }
         case MenuItem::GpsStatus:
             show(View::Gps);
             return;
@@ -1080,6 +1100,10 @@ void uiMain(void *)
             // The menu shows the new value before the gps task reports it.
             gpsState.on = v == 1;
             gps::post(gps::Power{v == 1});
+            break;
+        case MenuItem::GpsSystems:
+            gpsSystems = v;
+            gps::post(gps::Systems{v});
             break;
         case MenuItem::GpsStatus:
         case MenuItem::Count:
@@ -1470,6 +1494,7 @@ void uiMain(void *)
         if (view == View::Start && startShown && radio::ready()) {
             show(channels != nullptr ? View::Standby : View::KeyTest);
             radio::post(radio::BatterySave{batterySave});
+            gps::post(gps::Systems{gpsSystems});
             if (gpsAtStart) {
                 gps::post(gps::Power{true});
             }
