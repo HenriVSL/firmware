@@ -7,9 +7,16 @@ project(deltamm
     DESCRIPTION "Open firmware for DMR and FM handheld radios"
     LANGUAGES C CXX)
 
-# This fork's builds carry their own mark after the version number.
-set(DMM_VERSION_SUFFIX "-6HL" CACHE STRING "Text after the version number")
-set(DMM_VERSION "${PROJECT_VERSION}${DMM_VERSION_SUFFIX}")
+# This fork's releases: <upstream version>-6HL-<release>. The release
+# number counts from the upstream version named here and starts again at 1
+# when that version changes.
+set(DMM_FORK_BASE 0.18.0)
+set(DMM_FORK_RELEASE 1)
+if(NOT PROJECT_VERSION VERSION_EQUAL DMM_FORK_BASE)
+    message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}, the fork's release number counts from "
+                        "${DMM_FORK_BASE}: set DMM_FORK_BASE to ${PROJECT_VERSION} and DMM_FORK_RELEASE to 1.")
+endif()
+set(DMM_VERSION "${PROJECT_VERSION}-6HL-${DMM_FORK_RELEASE}")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
