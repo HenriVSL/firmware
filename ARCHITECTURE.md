@@ -89,7 +89,7 @@ urgent.
 | 6 | audio | speaker amplifier and routing, beeps |
 | 5 | input | keypad, side keys, PTT, channel knob, volume knob (every 10 ms) |
 | 4 | ui | screens, menus, key lock, codeplug reading, display, backlight |
-| 3 | gps | GPS receiver's serial link: NMEA sentences, fix |
+| 3 | gps | GPS receiver's serial link: NMEA sentences, fix, when the receiver sleeps |
 | 2 | link | USB: data protocol, log console |
 | 1 | system | power latch, battery, watchdog, calibration, real-time clock |
 
@@ -169,7 +169,11 @@ the SCT3258 are built when the option is given.
   receiver reports itself) sending NMEA at 9600 baud, 8N1, on USART1 (PA3
   in, PA2 out). Its supply is the FM transceiver's GPIO2, so the radio task
   switches it; the gps task owns the serial link and sets the receiver up
-  through `casic_receiver`.
+  through `casic_receiver`. The module has no backup supply and ignores
+  the CASIC standby command, so switching the supply off is the only
+  sleep, and every power-on is a cold start: from half a minute to a few
+  minutes to a fix indoors. `gps_schedule` decides when the supply is on from how often
+  each client needs a position.
 - Display: 160 × 128 colour panel on an 8-bit parallel bus.
 - Storage: SPI NAND flash.
 - USB: full-speed device on PA11/PA12, clocked from the crystal PLL; a
