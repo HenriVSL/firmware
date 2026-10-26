@@ -61,6 +61,9 @@ struct FmReceiveStatus
 /// - logStatus(what): logs @p what, then what the receiver hears in the
 ///   chip's own figures.
 /// - setMicrophoneMuted(muted).
+/// - setGpsPower(on): switches the GPS receiver's supply where it runs
+///   through the transceiver's part of the board, else does nothing; kept
+///   across start().
 /// - debugCommand(text), debugHelp(): the chip's own console commands, for
 ///   experiments; results go to the log. False if @p text is none of them.
 template <class T>
@@ -80,6 +83,7 @@ concept FmTransceiver = requires(T &fm, const T &state, const FmChannel &channel
     { fm.status() } -> std::same_as<FmReceiveStatus>;
     fm.logStatus(text);
     fm.setMicrophoneMuted(on);
+    fm.setGpsPower(on);
     { fm.debugCommand(text) } -> std::same_as<bool>;
     { state.debugHelp() } -> std::same_as<const char *>;
 };

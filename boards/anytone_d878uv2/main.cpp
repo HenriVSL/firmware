@@ -10,6 +10,7 @@
 #include "board_fm_tuning.h"
 #include "board_rf.h"
 #include "dmm/board/board_battery.h"
+#include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
 #include "panel_bus.h"
 #include "pins.h"
@@ -274,6 +275,11 @@ extern "C" void irq50Handler()
     BoardAudio::onToneInterrupt();
 }
 
+extern "C" void irq38Handler()
+{
+    BoardGps::onInterrupt();
+}
+
 void hal::boardMain()
 {
     static const dmm::services::ResetReport resetReport = takeResetReport();
@@ -318,6 +324,8 @@ void hal::boardMain()
     audio.configure();
     static BoardRf rf;
     rf.configure();
+    static BoardGps gps;
+    gps.configure();
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
     // Called from the radio task; empty until the system task has read the
     // calibration.
@@ -391,6 +399,7 @@ void hal::boardMain()
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .gps = &gps,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

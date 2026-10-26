@@ -43,10 +43,10 @@ A part the app or a service uses comes in one of two forms.
 - Otherwise a concrete type the board names in its parts header,
   `boards/<name>/include/dmm/board/parts.h`, the one board header shared
   code includes: `board::Fm`, `board::Baseband`, `board::Calibration`,
-  `board::Input`, `board::Battery`, `board::DataChannel`. The shared
-  header writes the part down as a C++20 concept, and the board checks its
-  type against it. Calls are direct. The headers in the board's
-  `include/dmm/board/` include no MCU headers.
+  `board::Input`, `board::Battery`, `board::DataChannel`, `board::Gps`.
+  The shared header writes the part down as a C++20 concept, and the
+  board checks its type against it. Calls are direct. The headers in the
+  board's `include/dmm/board/` include no MCU headers.
 - LEDs, log output and system control stay virtual: the two simulators
   implement them differently and share one build of the app.
 

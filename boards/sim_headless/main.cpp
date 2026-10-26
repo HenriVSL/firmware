@@ -10,6 +10,7 @@
 #include "dmm/services/d878uv2_codeplug.h"
 
 #include "dmm/board/sim_battery.h"
+#include "dmm/board/sim_gps.h"
 #include "dmm/board/sim_input.h"
 #include "sim_audio.h"
 #include "sim_display.h"
@@ -154,6 +155,7 @@ int main(int argc, char *argv[])
     static dmm::services::D878Uv2Codeplug codeplug{storage};
     static SimAudio audio;
     static SimFm fm;
+    static SimGps gps;
     static dmm::app::Platform platform{
         .leds = leds,
         .logSink = logSink,
@@ -167,6 +169,7 @@ int main(int argc, char *argv[])
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .gps = &gps,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

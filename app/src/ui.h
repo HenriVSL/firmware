@@ -8,6 +8,7 @@
 #include "dmm/services/display.h"
 #include "dmm/services/input.h"
 #include "dmm/services/key_lock.h"
+#include "dmm/services/nmea.h"
 
 #include <cstdint>
 #include <variant>
@@ -115,9 +116,16 @@ struct Notice
 struct SwitchingOff
 {
 };
+/// The GPS receiver's state and latest fix.
+struct Gps
+{
+    services::GpsFix fix;
+    bool on;
+    bool receiving;
+};
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, ShowStandby, SetKeyLock, KeyLockSettings, KeyLockReport, Notice>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, ShowStandby, SetKeyLock, KeyLockSettings, KeyLockReport, Notice, Gps>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.

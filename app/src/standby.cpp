@@ -86,6 +86,14 @@ void band(Display &d, int y, int h, std::initializer_list<Piece> pieces)
     fillArea(d, cursor, y, w - cursor, h, p::Ground);
 }
 
+void line(Display &d, const Font &f, int x, int y, int w, std::string_view text, Color ink)
+{
+    const int end = drawText(d, f, x, y, text, ink, p::Ground);
+    if (end < x + w) {
+        d.fillRect(end, y, x + w - end, f.height, p::Ground);
+    }
+}
+
 // A filled tag such as "TX" in the status bar, from @p x; returns the x
 // after it. The text goes first, with the tag's colour behind it, then the
 // rest of the box: nothing is painted twice, so nothing flickers.
@@ -191,6 +199,17 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
     }
     if (s.locked) {
         cursor = tag(d, cursor, "LOCK", p::Warn, p::Ground);
+    }
+    // GPS: green with a fix, grey while searching, amber without data.
+    if (s.gps.on) {
+        gapTo(cursor + 2);
+        if (s.gps.fix.valid) {
+            cursor = tag(d, cursor, "GPS", p::Receive, p::Text);
+        } else if (s.gps.receiving) {
+            cursor = tag(d, cursor, "GPS", p::Rule, p::Dim);
+        } else {
+            cursor = tag(d, cursor, "GPS", p::Warn, p::Ground);
+        }
     }
     gapTo(volumeX(d, *this));
     drawVolume(d, s);
@@ -373,6 +392,75 @@ void StandbyScreen::drawCallTime(Display &d, const CallInfo &c)
     band(d, h - HintH + 1, HintH - 1,
         {{3, h - HintH + 2, t.view(), &Small, c.active ? p::Text : p::Dim},
             {w - 3 - textWidth(Small, channel), h - HintH + 2, channel, &Small, p::Dim}});
+}
+
+void drawGpsScreen(Display &d, const GpsState &gps)
+{
+    const int w = d.width();
+    const int h = d.height();
+    const int top = StandbyScreen::StatusH;
+    d.fillRect(0, top, w, h - top, p::Ground);
+
+    const services::GpsFix &f = gps.fix;
+    std::string_view state = "Off";
+    Color stateInk = p::Dim;
+    if (gps.on && f.valid) {
+        state = "Fix";
+        stateInk = p::Receive;
+    } else if (gps.on && gps.receiving) {
+        state = "Searching";
+    } else if (gps.on) {
+        state = "No data";
+        stateInk = p::Warn;
+    }
+    drawText(d, Medium, 4, top + 2, "GPS", p::Text, p::Ground);
+    drawText(d, Medium, w - 4 - textWidth(Medium, state), top + 2, state, stateInk, p::Ground);
+
+    // Label and value rows.
+    int y = top + Medium.height + 5;
+    auto row = [&](std::string_view label, std::string_view value) {
+        drawText(d, Body, 4, y, label, p::Dim, p::Ground);
+        line(d, Body, 46, y, w - 50, value, p::Text);
+        y += Body.height + 1;
+    };
+    const bool position = gps.on && f.valid;
+    row("Lat", position ? latitudeText(f.latitudeE7).view() : "-");
+    row("Lon", position ? longitudeText(f.longitudeE7).view() : "-");
+    lib::StaticString<24> v;
+    if (position) {
+        v << f.altitudeDm / 10 << " m";
+    } else {
+        v << "-";
+    }
+    row("Alt", v.view());
+    v.clear();
+    if (gps.on) {
+        v << f.satellitesUsed << " of " << f.satellitesInView;
+    } else {
+        v << "-";
+    }
+    row("Sats", v.view());
+    v.clear();
+    if (position) {
+        v << f.speedDeciKmh / 10 << '.' << f.speedDeciKmh % 10 << " km/h " << f.courseDeciDeg / 10 << " deg";
+    } else {
+        v << "-";
+    }
+    row("Speed", v.view());
+    v.clear();
+    if (gps.on && f.timeValid) {
+        v << lib::zeroPadded(f.hour, 2) << ':' << lib::zeroPadded(f.minute, 2) << ':' << lib::zeroPadded(f.second, 2);
+        if (f.dateValid) {
+            v << ' ' << f.year << '-' << lib::zeroPadded(f.month, 2) << '-' << lib::zeroPadded(f.day, 2);
+        }
+    } else {
+        v << "-";
+    }
+    row("UTC", v.view());
+
+    d.fillRect(0, h - StandbyScreen::HintH, w, 1, p::Rule);
+    drawText(d, Small, 3, h - StandbyScreen::HintH + 2, gps.on ? "Menu: GPS off  Exit: back" : "Menu: GPS on  Exit: back",
+        p::Dim, p::Ground);
 }
 
 void ListPicker::open(std::string_view title)
