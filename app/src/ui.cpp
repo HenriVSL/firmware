@@ -320,7 +320,7 @@ enum class View : std::uint8_t
     ZonePicker, // choosing a zone
     Menu,       // the settings list
     MenuValue,  // choosing one setting's value
-    Gps,        // the GPS receiver's state and fix
+    Gps,        // the GPS receiver's state and fix, from the menu
     Log,
     KeyTest,
     Message,
@@ -344,6 +344,7 @@ enum class MenuItem : std::uint8_t
     KeyLock,
     AutoLock,
     Gps,
+    GpsStatus, // opens the GPS screen
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -370,7 +371,7 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS", {MenuItem::Gps}, 1},
+    {"GPS", {MenuItem::Gps, MenuItem::GpsStatus}, 2},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -629,12 +630,9 @@ void uiMain(void *)
         view = v;
         redrawView();
     };
-    // The next screen in Exit-held order: standby, GPS, log, key test.
+    // The next screen in Exit-held order: standby, log, key test.
     auto nextView = [&] {
-        if (view == View::Standby) {
-            return gps::available() ? View::Gps : View::Log;
-        }
-        if (view == View::Gps) {
+        if (view == View::Standby || view == View::Gps) {
             return View::Log;
         }
         if (view == View::Log) {
@@ -698,6 +696,12 @@ void uiMain(void *)
         case MenuItem::Gps:
             label = "GPS";
             value << (gpsState.on ? "On" : "Off");
+            break;
+        case MenuItem::GpsStatus:
+            label = "Status";
+            value << (!gpsState.on ? "Off" : gpsState.fix.valid ? "Fix"
+                    : gpsState.receiving                        ? "Searching"
+                                                                : "No data");
             break;
         case MenuItem::Count:
             break;
@@ -801,6 +805,9 @@ void uiMain(void *)
             menuValue.add(1, "On");
             menuValue.select(gpsState.on ? 1 : 0);
             break;
+        case MenuItem::GpsStatus:
+            show(View::Gps);
+            return;
         case MenuItem::Count:
             return;
         }
@@ -884,6 +891,7 @@ void uiMain(void *)
             gpsState.on = v == 1;
             gps::post(gps::Power{v == 1});
             break;
+        case MenuItem::GpsStatus:
         case MenuItem::Count:
             break;
         }
@@ -1080,8 +1088,8 @@ void uiMain(void *)
                                if (view == View::Gps) {
                                    if (e.type == Type::Press && e.key == Key::Menu) {
                                        gps::post(gps::Power{!gpsState.on});
-                                   } else if (e.type == Type::Press && e.key == Key::Exit && channels != nullptr) {
-                                       show(View::Standby);
+                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
+                                       openGroup(MenuGroup::Gps, false);
                                    }
                                    return;
                                }
@@ -1192,6 +1200,11 @@ void uiMain(void *)
                                    }
                                } else if (tagChanged) {
                                    refreshLockMark();
+                                   // The GPS group's status value, keeping the cursor.
+                                   if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Gps) {
+                                       menuItem = static_cast<MenuItem>(menu.chosen());
+                                       openGroup(MenuGroup::Gps, menuQuick);
+                                   }
                                }
                            },
                            [&](const SwitchingOff &) {
