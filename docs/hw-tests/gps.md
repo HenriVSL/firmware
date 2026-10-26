@@ -40,3 +40,6 @@ supply runs through the FM transceiver.
 `gps on`. The receiver sends GGA, GLL, GSA, GSV, RMC, VTG, ZDA and TXT for
 GPS and BeiDou once a second, 0 bad and 0 lost in 9700 sentences; a fix
 with 5 of 12 satellites indoors at a window. Step 10 not reported.
+
+2026-10-26, after the rework onto 0.18.0: steps 1, 2, 5 and 8 pass again
+(0 bad and 0 lost; a fix shown without flashing).
