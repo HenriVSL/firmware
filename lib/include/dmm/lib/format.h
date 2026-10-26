@@ -24,6 +24,19 @@ constexpr Hex hex(std::uint32_t value, std::uint8_t digits = 8)
     return {value, digits};
 }
 
+/// Decimal formatting request for TextWriter, zero-padded to at least
+/// @c digits.
+struct ZeroPadded
+{
+    std::uint32_t value;
+    std::uint8_t digits;
+};
+
+constexpr ZeroPadded zeroPadded(std::uint32_t value, std::uint8_t digits)
+{
+    return {value, digits};
+}
+
 /// Appends text and numbers to a caller-provided buffer, without printf
 /// and without the heap. Output past the buffer is dropped and remembered.
 class TextWriter
@@ -68,6 +81,17 @@ public:
             put(digits[(h.value >> (4 * i)) & 0xFu]);
         }
         return *this;
+    }
+
+    TextWriter &operator<<(ZeroPadded z)
+    {
+        char tmp[12];
+        const auto res = std::to_chars(tmp, tmp + sizeof(tmp), z.value);
+        const auto length = static_cast<std::size_t>(res.ptr - tmp);
+        for (std::size_t i = length; i < z.digits; ++i) {
+            put('0');
+        }
+        return *this << std::string_view(tmp, length);
     }
 
     std::string_view view() const { return {m_buf.data(), m_len}; }
