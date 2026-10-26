@@ -7,6 +7,10 @@ project(deltamm
     DESCRIPTION "Open firmware for DMR and FM handheld radios"
     LANGUAGES C CXX)
 
+# This fork's builds carry their own mark after the version number.
+set(DMM_VERSION_SUFFIX "-6HL" CACHE STRING "Text after the version number")
+set(DMM_VERSION "${PROJECT_VERSION}${DMM_VERSION_SUFFIX}")
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
