@@ -27,6 +27,22 @@ constexpr std::uint32_t BasebandGainsAt = 0x040;
 // In the first 39-byte modulator block: codec trims at +0x12..+0x14.
 constexpr std::uint32_t CodecTrimsAt = 0x080 + 0x12;
 
+// The calibration's slot for each power level, low to turbo.
+unsigned powerSlot(PowerLevel level)
+{
+    switch (level) {
+    case PowerLevel::Low:
+        return 0;
+    case PowerLevel::Mid:
+        return 1;
+    case PowerLevel::High:
+        return 2;
+    case PowerLevel::Turbo:
+        return 3;
+    }
+    return 0;
+}
+
 struct Band
 {
     std::uint32_t block;
@@ -142,7 +158,7 @@ std::optional<std::uint16_t> D878Uv2Calibration::txPower(std::uint32_t hz, Power
     if (!present() || b == nullptr) {
         return std::nullopt;
     }
-    const auto l = static_cast<unsigned>(level);
+    const unsigned l = powerSlot(level);
     const std::uint8_t *flatness = m_data + b->powerFlatness + l * b->powerStride;
     const unsigned seg = (hz - b->lowHz) / MHz;
     const int value = m_data[b->block + PowerBaseAt + l] + flatness[seg] - flatness[b->powerRef];

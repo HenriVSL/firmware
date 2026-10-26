@@ -78,6 +78,21 @@ Tone decodeTone(unsigned kind, std::uint8_t ctcssIndex, std::uint16_t dcs, std::
     return t;
 }
 
+// A channel's stored power: 0 low, 1 mid, 2 high, 3 turbo.
+PowerLevel powerLevel(unsigned stored)
+{
+    switch (stored) {
+    case 1:
+        return PowerLevel::Mid;
+    case 2:
+        return PowerLevel::High;
+    case 3:
+        return PowerLevel::Turbo;
+    default:
+        return PowerLevel::Low;
+    }
+}
+
 } // namespace
 
 std::optional<Channel> decodeChannel(std::span<const std::uint8_t, 64> r)
@@ -102,7 +117,7 @@ std::optional<Channel> decodeChannel(std::span<const std::uint8_t, 64> r)
         break;
     }
     c.mode = static_cast<ChannelMode>(r[8] & 3);
-    c.power = static_cast<PowerLevel>((r[8] >> 2) & 3);
+    c.power = powerLevel((r[8] >> 2) & 3);
     c.wide = (r[8] & 0x10) != 0;
     c.receiveOnly = (r[9] & 0x20) != 0;
     const std::uint16_t custom = le16(&r[0x10]);
