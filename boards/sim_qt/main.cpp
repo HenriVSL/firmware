@@ -35,6 +35,7 @@ int main(int argc, char *argv[])
     SimBridge *bridge = SimBridge::instance();
     static SimAudio audio;
     static SimGps gps;
+    static SimRtc rtc;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{bridge->storage()};
     static SimFm fm;
@@ -52,6 +53,7 @@ int main(int argc, char *argv[])
         .calibration = &calibration,
         .codeplug = &codeplug,
         .gps = &gps,
+        .rtc = &rtc,
     };
 
     QQmlApplicationEngine engine;

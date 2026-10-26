@@ -10,6 +10,7 @@
 #include "sim_fm.h"
 #include "sim_gps.h"
 #include "sim_input.h"
+#include "sim_rtc.h"
 
 #include "dmm/services/baseband.h"
 #include "dmm/services/casic_receiver.h"
@@ -27,6 +28,7 @@ using Battery = SimBattery;
 using DataChannel = services::UsbChannel;
 using GpsReceiver = services::CasicReceiver;
 using Gps = SimGps;
+using Rtc = SimRtc;
 
 static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Calibration<Calibration>);
@@ -34,5 +36,6 @@ static_assert(services::InputDevices<Input>);
 static_assert(services::BatterySensor<Battery>);
 static_assert(services::GpsPort<Gps>);
 static_assert(services::GpsReceiver<GpsReceiver>);
+static_assert(services::RealTimeClock<Rtc>);
 
 } // namespace dmm::board
