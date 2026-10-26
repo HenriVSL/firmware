@@ -102,14 +102,14 @@ bool copyValid(Storage &storage, std::uint32_t copy)
 
 bool D878Uv2Calibration::load(Storage &storage)
 {
-    m_loaded = false;
+    m_loaded.store(false, std::memory_order_relaxed);
     m_copy = copyValid(storage, CopyA) ? 0 : 1;
     const StorageResult r = storage.read(m_copy == 0 ? CopyA : CopyB, m_data);
     if (!readable(r)) {
         return false;
     }
     m_flagged = !usable(r);
-    m_loaded = true;
+    m_loaded.store(true, std::memory_order_release);
     return true;
 }
 
@@ -122,14 +122,14 @@ const char *D878Uv2Calibration::source() const
     return m_copy == 0 ? "copy A" : "copy B";
 }
 
-void D878Uv2Calibration::use(std::span<const std::uint8_t, Bytes> bytes)
+D878Uv2Calibration::D878Uv2Calibration(std::span<const std::uint8_t, Bytes> bytes)
 {
     for (std::uint32_t i = 0; i < Bytes; ++i) {
         m_data[i] = bytes[i];
     }
     m_copy = 0;
     m_flagged = false;
-    m_loaded = true;
+    m_loaded.store(true, std::memory_order_release);
 }
 
 std::optional<int> D878Uv2Calibration::batteryOffsetMv() const

@@ -6,6 +6,7 @@
 #include "dmm/services/calibration.h"
 
 #include <array>
+#include <atomic>
 #include <span>
 
 namespace dmm::services {
@@ -34,19 +35,25 @@ public:
     static constexpr std::uint32_t BlockBytes = 0x20000;
     static constexpr std::uint32_t Bytes = 0x620;
 
+    D878Uv2Calibration() = default;
+    /// Uses @p bytes as the loaded copy, for tests.
+    explicit D878Uv2Calibration(std::span<const std::uint8_t, Bytes> bytes);
+
+    /// Call once, before any task reads values.
     bool load(Storage &storage) override;
-    /// The factory's first-run marker is set.
-    bool present() const override { return m_loaded && m_data[0x14] == 'w' && m_data[0x15] == 'w'; }
+    /// Read, and the factory's first-run marker is set. Once true, every
+    /// value may be read from any task.
+    bool present() const override
+    {
+        return m_loaded.load(std::memory_order_acquire) && m_data[0x14] == 'w' && m_data[0x15] == 'w';
+    }
     const char *source() const override;
 
-    bool loaded() const { return m_loaded; }
+    bool loaded() const { return m_loaded.load(std::memory_order_acquire); }
     /// Which copy was read: 0 = first, 1 = second.
     int copy() const { return m_copy; }
     /// The flash flagged the copy as uncorrectable.
     bool flagged() const { return m_flagged; }
-
-    /// Uses @p bytes as the loaded copy, for tests and the simulator.
-    void use(std::span<const std::uint8_t, Bytes> bytes);
 
     std::optional<int> batteryOffsetMv() const override;
     std::optional<std::uint16_t> referenceTrim() const override;
@@ -71,7 +78,7 @@ public:
     const std::uint8_t *data() const { return m_data; }
 
 private:
-    bool m_loaded = false;
+    std::atomic<bool> m_loaded{false};
     int m_copy = 0;
     bool m_flagged = false;
     std::uint8_t m_data[Bytes]{};
