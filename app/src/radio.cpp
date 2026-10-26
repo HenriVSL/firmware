@@ -25,8 +25,8 @@ namespace {
 namespace log = services::log;
 namespace power = services::power;
 
-services::Baseband *baseband = nullptr;
-services::FmTransceiver *fm = nullptr;
+board::Fm *fm = nullptr;
+board::Baseband *baseband = nullptr;
 // Room for the deepest path, a channel change down to a baseband packet,
 // with an interrupt on top and a margin.
 os::Task<768> radioTask;
@@ -90,6 +90,13 @@ const char *powerName(services::PowerLevel level)
     return Names[static_cast<int>(level) & 3];
 }
 
+// The board's baseband, if it has one.
+template <class F>
+void withBaseband(F &&f)
+{
+    app::withBaseband(baseband, f);
+}
+
 // The squelch gate's result: the baseband passes receive audio only while
 // told a carrier is present, and the speaker opens for it.
 void setSpeaker(bool open)
@@ -104,7 +111,7 @@ void setSpeaker(bool open)
         power::release(power::AwakeReason::Carrier);
     }
     ui::post(ui::Receiving{open});
-    baseband->setCarrier(open);
+    withBaseband([open](auto &b) { b.setCarrier(open); });
     audio::post(audio::ReceiveAudio{open});
 }
 
@@ -118,11 +125,13 @@ void setSpeaker(bool open)
 // The baseband's analog FM mode for the current channel, receiving.
 void basebandAnalogReceive()
 {
-    const bool ok = baseband->setAnalog(fmChannel.wide) &&
-        baseband->setWorkMode(services::Baseband::WorkMode::Receive) && baseband->setCarrier(speakerOpen);
-    if (!ok) {
-        logAnalogRefused();
-    }
+    withBaseband([](auto &b) {
+        const bool ok = b.setAnalog(fmChannel.wide) && b.setWorkMode(services::BasebandWorkMode::Receive) &&
+            b.setCarrier(speakerOpen);
+        if (!ok) {
+            logAnalogRefused();
+        }
+    });
 }
 
 // MHz with three decimals, for the log.
@@ -137,24 +146,25 @@ lib::StaticString<12> mhz(std::uint32_t hz)
 
 void report()
 {
-    const services::BasebandInfo i = baseband->info();
-    if (!i.running) {
-        log::info("baseband") << "not running: " << (i.problem != nullptr ? i.problem : "not started")
-                              << "; data line " << (i.dataWaiting ? "waiting" : "idle");
-        return;
+    if constexpr (!HasBaseband) {
+        log::info("baseband") << "none on this radio";
     }
-    log::info("baseband") << "running: product " << i.product << ", hardware " << i.hardware << ", software " << i.software
-                          << "; data line " << (i.dataWaiting ? "waiting" : "idle") << "; unused stack words: radio "
-                          << radioTask.unusedStackWords();
+    withBaseband([](auto &b) {
+        const services::BasebandInfo i = b.info();
+        if (!i.running) {
+            log::info("baseband") << "not running: " << (i.problem != nullptr ? i.problem : "not started")
+                                  << "; data line " << (i.dataWaiting ? "waiting" : "idle");
+            return;
+        }
+        log::info("baseband") << "running: product " << i.product << ", hardware " << i.hardware << ", software "
+                              << i.software << "; data line " << (i.dataWaiting ? "waiting" : "idle");
+    });
 }
 
 // Resets the FM transceiver: idle, microphone muted (it reaches the
 // speaker otherwise), every RF switch off.
 void startFm()
 {
-    if (fm == nullptr) {
-        return;
-    }
     if (!fm->start()) {
         log::error("fm") << "no answer from the FM transceiver";
         return;
@@ -167,22 +177,20 @@ void startFm()
     log::error("fm") << "receive refused at " << mhz(fmChannel.receiveHz).view() << " MHz: " << problem;
 }
 
-[[gnu::noinline]] void logReceiving(int level)
+[[gnu::noinline]] void logReceiving()
 {
-    const auto threshold = system::calibration()->squelchThreshold(fmChannel.receiveHz, level);
     log::info("fm") << "receiving " << mhz(fmChannel.receiveHz).view() << " MHz, " << (fmChannel.wide ? "25" : "12.5")
-                    << " kHz, squelch " << squelchLevel << " (opens at -" << (threshold ? *threshold : 0) << " dBm)";
+                    << " kHz, squelch " << squelchLevel;
 }
 
 void fmReceive()
 {
-    const services::Calibration *cal = system::calibration();
-    if (cal == nullptr) {
+    if (system::calibration() == nullptr) {
         log::error("fm") << "receive refused: no calibration loaded";
         return;
     }
     const int level = squelchLevel < 1 ? 1 : squelchLevel;
-    const char *problem = fm->receive(fmChannel, level, *cal);
+    const char *problem = fm->receive(fmChannel, level);
     saver.reset();
     gate.reset();
     gate.setForcedOpen(squelchLevel == 0);
@@ -192,7 +200,7 @@ void fmReceive()
         return;
     }
     basebandAnalogReceive();
-    logReceiving(level);
+    logReceiving();
     setSpeaker(gate.open());
 }
 
@@ -236,8 +244,7 @@ void startTransmit()
     if (transmitting) {
         return;
     }
-    const services::Calibration *cal = system::calibration();
-    if (fm == nullptr || !fm->receiving() || cal == nullptr) {
+    if (!fm->receiving() || system::calibration() == nullptr) {
         log::info("fm") << "PTT: no FM channel set (fm rx first)";
         return;
     }
@@ -252,12 +259,14 @@ void startTransmit()
         return;
     }
     setSpeaker(false);
-    baseband->setMicrophone(transmitAudio != FmTransmitAudio::Route::Direct);
-    baseband->setWorkMode(services::Baseband::WorkMode::Transmit);
-    const char *problem = fm->transmit(channel, powerLevel, static_cast<std::uint16_t>(ctcssDeciHz * 10), *cal);
+    withBaseband([](auto &b) {
+        b.setMicrophone(transmitAudio != FmTransmitAudio::Route::Direct);
+        b.setWorkMode(services::BasebandWorkMode::Transmit);
+    });
+    const char *problem = fm->transmit(channel, powerLevel, static_cast<std::uint16_t>(ctcssDeciHz * 10));
     if (problem != nullptr) {
         fm->endTransmit();
-        baseband->setMicrophone(false);
+        withBaseband([](auto &b) { b.setMicrophone(false); });
         log::error("fm") << "transmit refused at " << mhz(channel.transmitHz).view() << " MHz: " << problem;
         fmReceive();
         return;
@@ -280,7 +289,7 @@ void stopTransmit(const char *why)
         return;
     }
     fm->endTransmit();
-    baseband->setMicrophone(false);
+    withBaseband([](auto &b) { b.setMicrophone(false); });
     transmitting = false;
     power::release(power::AwakeReason::Transmit);
     ui::post(ui::Transmitting{false});
@@ -289,28 +298,22 @@ void stopTransmit(const char *why)
     fmReceive();
 }
 
-bool haveFm()
-{
-    if (fm == nullptr) {
-        log::info("fm") << "no FM transceiver";
-    }
-    return fm != nullptr;
-}
-
 void bringUp()
 {
-    log::info("baseband") << "starting";
-    const os::Ticks started = os::nowMs();
-    baseband->start();
-    log::info("baseband") << "start took " << (os::nowMs() - started) << " ms";
-    report();
-    if (speakerVolume >= 0) {
-        baseband->setSpeakerVolume(speakerVolume);
-    }
-    // A restart forgets the analog set-up.
-    if (fm != nullptr && fm->receiving() && system::calibration() != nullptr) {
-        basebandAnalogReceive();
-    }
+    withBaseband([](auto &b) {
+        log::info("baseband") << "starting";
+        const os::Ticks started = os::nowMs();
+        b.start();
+        log::info("baseband") << "start took " << (os::nowMs() - started) << " ms";
+        report();
+        if (speakerVolume >= 0) {
+            b.setSpeakerVolume(speakerVolume);
+        }
+        // A restart forgets the analog set-up.
+        if (fm->receiving() && system::calibration() != nullptr) {
+            basebandAnalogReceive();
+        }
+    });
 }
 
 const char *saveModeText(std::uint8_t mode)
@@ -338,7 +341,7 @@ void saveStatus()
 // Sleeps or wakes the receiver as battery save asks.
 void saveStep()
 {
-    const bool receiverOn = fm != nullptr && !transmitting && (fm->receiving() || fm->receiverAsleep());
+    const bool receiverOn = !transmitting && (fm->receiving() || fm->receiverAsleep());
     const bool wasActive = saver.active();
     switch (saver.update(os::nowMs(), power::idleForMs(), receiverOn)) {
     case services::BatterySaver::Action::Sleep:
@@ -367,7 +370,7 @@ void handle(Message &message)
     const bool saveMessage =
         std::get_if<BatterySave>(&message) != nullptr || std::get_if<BatterySaveStatus>(&message) != nullptr;
     if (saver.active() && !saveMessage) {
-        if (fm != nullptr && fm->receiverAsleep()) {
+        if (fm->receiverAsleep()) {
             fm->wakeReceiver();
         }
         saver.reset();
@@ -381,41 +384,37 @@ void handle(Message &message)
                    [](const Info &) { report(); },
                    [](const Restart &) { bringUp(); },
                    [](const ChipTone &t) {
-                       const bool ok = baseband->playTone(t.hz, t.ms, ChipTonePercent);
-                       log::info("baseband") << "tone " << t.hz << " Hz, " << t.ms << " ms: " << (ok ? "accepted" : "refused");
+                       withBaseband([&t](auto &b) {
+                           const bool ok = b.playTone(t.hz, t.ms, ChipTonePercent);
+                           log::info("baseband") << "tone " << t.hz << " Hz, " << t.ms << " ms: " << (ok ? "accepted" : "refused");
+                       });
                    },
                    [](const SpeakerVolume &v) {
                        speakerVolume = v.step;
-                       const bool ok = baseband->setSpeakerVolume(v.step);
-                       log::info("baseband") << "speaker volume " << v.step << ": " << (ok ? "set" : "refused");
+                       withBaseband([&v](auto &b) {
+                           const bool ok = b.setSpeakerVolume(v.step);
+                           log::info("baseband") << "speaker volume " << v.step << ": " << (ok ? "set" : "refused");
+                       });
                    },
                    [](const FmReceive &r) {
-                       if (haveFm()) {
-                           fmChannel = services::FmChannel{r.receiveHz, r.receiveHz, r.wide};
-                           fmReceive();
-                       }
+                       fmChannel = services::FmChannel{r.receiveHz, r.receiveHz, r.wide};
+                       fmReceive();
                    },
                    [](const FmIdle &) {
-                       if (haveFm()) {
-                           fm->idle();
-                           setSpeaker(false);
-                           baseband->setWorkMode(services::Baseband::WorkMode::Idle);
-                           log::info("fm") << "idle";
-                       }
+                       fm->idle();
+                       setSpeaker(false);
+                       withBaseband([](auto &b) { b.setWorkMode(services::BasebandWorkMode::Idle); });
+                       log::info("fm") << "idle";
                    },
                    [](const FmSquelch &s) {
                        squelchLevel = s.level;
-                       if (haveFm() && fm->receiving()) {
+                       if (fm->receiving()) {
                            fmReceive();
                        } else {
                            log::info("fm") << "squelch " << squelchLevel;
                        }
                    },
-                   [](const FmStatus &) {
-                       if (haveFm()) {
-                           fmStatus();
-                       }
-                   },
+                   [](const FmStatus &) { fmStatus(); },
                    [](const Ptt &p) {
                        if (p.down) {
                            startTransmit();
@@ -446,9 +445,6 @@ void handle(Message &message)
                        log::info("fm") << "transmit timeout " << timeoutS << " s";
                    },
                    [](const UseChannel &u) {
-                       if (!haveFm()) {
-                           return;
-                       }
                        const services::Channel &c = u.channel;
                        if (!c.analog()) {
                            fm->idle();
@@ -473,20 +469,17 @@ void handle(Message &message)
                    },
                    [](const BatterySaveStatus &) { saveStatus(); },
                    [](const Microphone &m) {
-                       if (fm == nullptr) {
-                           log::info("fm") << "no FM transceiver";
-                           return;
-                       }
                        fm->setMicrophoneMuted(!m.on);
                        log::info("fm") << "microphone " << (m.on ? "on" : "muted");
                    },
                    [](const ChipCommand &c) {
-                       const bool isFm = c.chip == ChipCommand::Chip::Fm;
-                       if (isFm && fm == nullptr) {
-                           log::info("fm") << "no FM transceiver";
-                           return;
+                       bool known = false;
+                       if (c.chip == ChipCommand::Chip::Fm) {
+                           known = fm->debugCommand(c.text.view());
+                       } else {
+                           withBaseband([&](auto &b) { known = b.debugCommand(c.text.view()); });
                        }
-                       if (!(isFm ? fm->debugCommand(c.text.view()) : baseband->debugCommand(c.text.view()))) {
+                       if (!known) {
                            log::info("console") << "unknown command";
                        }
                    },
@@ -500,7 +493,7 @@ void radioMain(void *)
     bringUp();
     os::Ticks lastPoll = os::nowMs();
     while (!os::stopRequested()) {
-        const bool busy = fm != nullptr && (fm->receiving() || transmitting);
+        const bool busy = fm->receiving() || transmitting;
         os::Ticks wait = busy ? FmPollMs : IdleWaitMs;
         if (saver.asleep()) {
             const auto left = static_cast<std::int32_t>(saver.nextChangeMs() - os::nowMs());
@@ -514,7 +507,7 @@ void radioMain(void *)
         if (transmitting && timeoutS != 0 && os::nowMs() - transmitStarted >= static_cast<os::Ticks>(timeoutS) * 1000) {
             stopTransmit("timeout");
         }
-        if (fm != nullptr && fm->receiving() && os::nowMs() - lastPoll >= FmPollMs) {
+        if (fm->receiving() && os::nowMs() - lastPoll >= FmPollMs) {
             lastPoll = os::nowMs();
             pollFm();
         }
@@ -523,16 +516,16 @@ void radioMain(void *)
 
 } // namespace
 
-void start(services::Baseband &b, services::FmTransceiver *f)
+void start(board::Fm &f, board::Baseband *b)
 {
-    baseband = &b;
-    fm = f;
+    fm = &f;
+    baseband = b;
     radioTask.start("radio", 7, radioMain, nullptr);
 }
 
 bool post(const Message &message)
 {
-    return baseband != nullptr && inbox.send(message);
+    return fm != nullptr && inbox.send(message);
 }
 
 } // namespace dmm::app::radio

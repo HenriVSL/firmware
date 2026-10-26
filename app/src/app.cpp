@@ -272,12 +272,8 @@ void runCommand(std::string_view command)
                                 "light 0-5, pattern, logview, keytest, panel on|off, beep <hz> <ms>, rx on|off, bb, bb restart, "
                                 "bbtone <hz> <ms>, "
                                 "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
-        if (platform->fm != nullptr) {
-            log::info("console") << "FM chip: " << platform->fm->debugHelp();
-        }
-        if (platform->baseband != nullptr) {
-            log::info("console") << "baseband chip: " << platform->baseband->debugHelp();
-        }
+        log::info("console") << "FM chip: " << platform->fm.debugHelp();
+        withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
@@ -424,9 +420,7 @@ void start(Platform &p)
     if (p.audio != nullptr) {
         audio::start(*p.audio);
     }
-    if (p.baseband != nullptr) {
-        radio::start(*p.baseband, p.fm);
-    }
+    radio::start(p.fm, p.baseband);
     linkTask.start("link", 2, linkMain, nullptr);
     system::start(p);
 }

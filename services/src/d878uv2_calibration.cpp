@@ -215,7 +215,7 @@ std::optional<int> D878Uv2Calibration::squelchThreshold(std::uint32_t hz, int le
     return m_data[b->block + SquelchBaseAt] - 2 * (level - 1) + flatness[b->squelchRef] - flatness[seg];
 }
 
-std::optional<Calibration::Deviation> D878Uv2Calibration::deviation() const
+std::optional<D878Uv2Calibration::Deviation> D878Uv2Calibration::deviation() const
 {
     if (!present()) {
         return std::nullopt;
@@ -244,5 +244,7 @@ std::optional<D878Uv2Calibration::CodecTrims> D878Uv2Calibration::codecTrims() c
     const std::uint8_t *c = m_data + CodecTrimsAt;
     return CodecTrims{c[0], c[1], c[2]};
 }
+
+static_assert(Calibration<D878Uv2Calibration>);
 
 } // namespace dmm::services

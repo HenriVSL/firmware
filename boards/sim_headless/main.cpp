@@ -146,7 +146,21 @@ int main(int argc, char *argv[])
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{storage};
     static SimAudio audio;
-    static dmm::app::Platform platform{leds, logSink, system, "sim_headless", nullptr, &display, &input, &battery, &storage, nullptr, nullptr, nullptr, &audio, &calibration, &codeplug};
+    static SimFm fm;
+    static dmm::app::Platform platform{
+        .leds = leds,
+        .logSink = logSink,
+        .system = system,
+        .fm = fm,
+        .boardName = "sim_headless",
+        .display = &display,
+        .input = &input,
+        .battery = &battery,
+        .storage = &storage,
+        .audio = &audio,
+        .calibration = &calibration,
+        .codeplug = &codeplug,
+    };
     dmm::app::start(platform);
     dmm::os::runScheduler();
 

@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include <concepts>
 #include <cstdint>
-#include <span>
 #include <string_view>
 
 namespace dmm::services {
@@ -21,57 +21,61 @@ struct BasebandInfo
     bool dataWaiting = false;
 };
 
-/// The radio's baseband processor and the audio path behind it (codec,
-/// speaker). Used by the radio task only.
-class Baseband
+/// Speaker volume steps: 0 = muted, 1..SpeakerVolumeSteps = quietest to
+/// loudest.
+inline constexpr int SpeakerVolumeSteps = 15;
+
+enum class BasebandWorkMode : std::uint8_t
 {
-public:
-    /// Powers the chip up, loads it and sets up the analog audio path.
-    /// Takes a few seconds.
-    virtual bool start() = 0;
-    virtual BasebandInfo info() = 0;
-
-    /// Speaker volume: 0 = muted, 1..VolumeSteps = quietest..loudest.
-    static constexpr int VolumeSteps = 15;
-    virtual bool setSpeakerVolume(int step) = 0;
-
-    /// Plays a tone of @p hz for @p ms on the speaker path at @p percent of
-    /// full scale.
-    virtual bool playTone(std::uint16_t hz, std::uint16_t ms, int percent) = 0;
-
-    /// Analog FM: the chip filters and levels the audio in both directions,
-    /// with pre- and de-emphasis, for a @p wide or narrow channel, at the
-    /// radio's calibrated levels. False without a calibration.
-    virtual bool setAnalog(bool wide) = 0;
-
-    enum class WorkMode : std::uint8_t
-    {
-        Idle,
-        Receive,
-        Transmit,
-    };
-    virtual bool setWorkMode(WorkMode mode) = 0;
-
-    /// Tells the chip a carrier is present (true) or gone; in analog mode
-    /// it passes receive audio only while one is.
-    virtual bool setCarrier(bool present) = 0;
-
-    /// Connects the microphone for transmit (true) or disconnects it and
-    /// restores the receive audio levels.
-    virtual bool setMicrophone(bool on) = 0;
-
-    /// Runs one of the chip's own console commands, for experiments; the
-    /// result goes to the log. Works whether or not start() succeeded.
-    /// False if @p command is not one of them.
-    virtual bool debugCommand(std::string_view command) = 0;
-    /// The chip's console commands, for the help text.
-    virtual const char *debugHelp() const = 0;
-
-protected:
-    ~Baseband() = default;
+    Idle,
+    Receive,
+    Transmit,
 };
 
-/// What a board does around the baseband chip: power and reset.
+/// The radio's baseband processor and the audio path behind it (codec,
+/// speaker). Optional: the board names the type (dmm/board/parts.h), or
+/// NoBaseband. Used by the radio task only.
+///
+/// - start(): powers the chip up, loads it and sets up the analog audio
+///   path. Takes a few seconds. info(): how it went.
+/// - setSpeakerVolume(step): 0..SpeakerVolumeSteps.
+/// - playTone(hz, ms, percent): a tone on the speaker path at @p percent
+///   of full scale.
+/// - setAnalog(wide): analog FM; the chip filters and levels the audio in
+///   both directions, with pre- and de-emphasis, for a wide or narrow
+///   channel, at the radio's calibrated levels. False without a
+///   calibration.
+/// - setWorkMode(mode).
+/// - setCarrier(present): in analog mode the chip passes receive audio
+///   only while told a carrier is present.
+/// - setMicrophone(on): connects the microphone for transmit, or
+///   disconnects it and restores the receive levels.
+/// - debugCommand(text), debugHelp(): the chip's own console commands, for
+///   experiments; results go to the log, also when start() failed. False
+///   if @p text is none of them.
+template <class T>
+concept Baseband = requires(T &bb, const T &state, int step, std::uint16_t hz, std::uint16_t ms, int percent, bool on,
+    BasebandWorkMode mode, std::string_view text) {
+    { bb.start() } -> std::same_as<bool>;
+    { bb.info() } -> std::same_as<BasebandInfo>;
+    { bb.setSpeakerVolume(step) } -> std::same_as<bool>;
+    { bb.playTone(hz, ms, percent) } -> std::same_as<bool>;
+    { bb.setAnalog(on) } -> std::same_as<bool>;
+    { bb.setWorkMode(mode) } -> std::same_as<bool>;
+    { bb.setCarrier(on) } -> std::same_as<bool>;
+    { bb.setMicrophone(on) } -> std::same_as<bool>;
+    { bb.debugCommand(text) } -> std::same_as<bool>;
+    { state.debugHelp() } -> std::same_as<const char *>;
+};
+
+/// The board's parts name this when the radio has no baseband; code for
+/// one is then left out.
+struct NoBaseband
+{
+};
+
+/// What a board does around the baseband chip: power and reset. Virtual,
+/// so the chip's service can be tested with a stand-in board.
 class BasebandBoard
 {
 public:

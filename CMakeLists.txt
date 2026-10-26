@@ -37,6 +37,14 @@ add_subdirectory(lib)
 add_subdirectory(hal)
 add_subdirectory(drivers)
 add_subdirectory(os)
+# The board's parts header (dmm/board/parts.h): the one board header the
+# app includes. Host builds use the simulators' parts.
+if(CMAKE_CROSSCOMPILING)
+    set(DMM_PARTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boards/${DMM_BOARD}/include)
+else()
+    set(DMM_PARTS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/boards/sim_common/include)
+endif()
+
 if(TARGET dmm_os)
     add_subdirectory(services)
     add_subdirectory(app)

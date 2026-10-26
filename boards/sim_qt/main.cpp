@@ -35,7 +35,21 @@ int main(int argc, char *argv[])
     static SimAudio audio;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{bridge->storage()};
-    static dmm::app::Platform platform{*bridge, *bridge, *bridge, "sim_qt", nullptr, &bridge->display(), &bridge->input(), &bridge->battery(), &bridge->storage(), nullptr, nullptr, nullptr, &audio, &calibration, &codeplug};
+    static SimFm fm;
+    static dmm::app::Platform platform{
+        .leds = *bridge,
+        .logSink = *bridge,
+        .system = *bridge,
+        .fm = fm,
+        .boardName = "sim_qt",
+        .display = &bridge->display(),
+        .input = &bridge->input(),
+        .battery = &bridge->battery(),
+        .storage = &bridge->storage(),
+        .audio = &audio,
+        .calibration = &calibration,
+        .codeplug = &codeplug,
+    };
 
     QQmlApplicationEngine engine;
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);

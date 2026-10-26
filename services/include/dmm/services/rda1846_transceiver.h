@@ -7,10 +7,13 @@
 #include "dmm/services/fm_transceiver.h"
 #include "dmm/services/rf_hardware.h"
 
+#include <optional>
+
 namespace dmm::services {
 
-/// FmTransceiver on an RDA1846 whose GPIO pins switch the board's RF paths.
-class Rda1846Transceiver final : public FmTransceiver
+/// An FmTransceiver on an RDA1846 whose GPIO pins switch the board's RF
+/// paths.
+class Rda1846Transceiver
 {
 public:
     /// What the transceiver's GPIO pins do on the board (pin numbers 0..7),
@@ -36,32 +39,58 @@ public:
     /// Picks the chip's register values when it starts; may read storage.
     using TuningSource = const drivers::radio::Rda1846::Tuning &(*)();
 
+    /// The radio's calibrated values for receiving at one frequency, in the
+    /// units RfHardware takes.
+    struct ReceiveTrims
+    {
+        std::uint16_t referenceTrim;
+        std::uint16_t frontEndTune;
+        /// The squelch opens at this level, in dBm.
+        int squelchOpenDbm;
+    };
+    /// The radio's calibrated values for transmitting at one frequency and
+    /// power level: RfHardware units, and the chip's deviation settings for
+    /// voice (10 bits) and for a CTCSS tone (6 bits).
+    struct TransmitTrims
+    {
+        std::uint16_t referenceTrim;
+        std::uint16_t powerControl;
+        std::uint16_t voiceDeviation;
+        std::uint8_t ctcssDeviation;
+    };
+    /// The board's calibrated values; nothing for a frequency outside the
+    /// calibrated bands, or before the calibration has been read.
+    struct TrimsSource
+    {
+        std::optional<ReceiveTrims> (*receive)(std::uint32_t hz, int squelchLevel);
+        std::optional<TransmitTrims> (*transmit)(std::uint32_t hz, PowerLevel level);
+    };
+
     /// @p tuning: the board's register values, or nullptr to keep the
     /// chip's own.
     Rda1846Transceiver(drivers::radio::Rda1846 &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
-        TuningSource tuning = nullptr);
+        TrimsSource trims, TuningSource tuning = nullptr);
 
-    bool present() override { return m_chip.present(); }
-    bool start() override;
-    const char *receive(const FmChannel &channel, int squelchLevel, const Calibration &calibration) override;
-    const char *transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz,
-        const Calibration &calibration) override;
-    void endTransmit() override;
+    bool present() { return m_chip.present(); }
+    bool start();
+    const char *receive(const FmChannel &channel, int squelchLevel);
+    const char *transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz);
+    void endTransmit();
     /// The power-amplifier control value of the running transmission, or 0.
     std::uint16_t transmitPower() const { return m_power; }
-    void idle() override;
-    void sleepReceiver() override;
-    void wakeReceiver() override;
-    bool receiverAsleep() const override { return m_asleep; }
-    bool receiving() const override { return m_chip.mode() == drivers::radio::Rda1846::Mode::Receive; }
-    bool transmitting() const override { return m_chip.mode() == drivers::radio::Rda1846::Mode::Transmit; }
-    FmReceiveStatus status() override;
-    void logStatus(std::string_view what) override;
+    void idle();
+    void sleepReceiver();
+    void wakeReceiver();
+    bool receiverAsleep() const { return m_asleep; }
+    bool receiving() const { return m_chip.mode() == drivers::radio::Rda1846::Mode::Receive; }
+    bool transmitting() const { return m_chip.mode() == drivers::radio::Rda1846::Mode::Transmit; }
+    FmReceiveStatus status();
+    void logStatus(std::string_view what);
     /// Also logs the chip's pin register, as a debug line.
-    void setMicrophoneMuted(bool muted) override;
+    void setMicrophoneMuted(bool muted);
     /// "<reg> [value]" (hex), "tune <value>|auto", "sweep".
-    bool debugCommand(std::string_view command) override;
-    const char *debugHelp() const override;
+    bool debugCommand(std::string_view command);
+    const char *debugHelp() const;
 
     /// The GPIO register at start: microphone muted, every RF switch and
     /// the GPS off, other pins floating.
@@ -78,6 +107,7 @@ private:
     RfHardware &m_rf;
     Pins m_pins;
     void (*m_sleepMs)(unsigned);
+    TrimsSource m_trims;
     TuningSource m_tuning;
     std::uint16_t m_power = 0;
     bool m_wide = false;

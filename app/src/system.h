@@ -4,7 +4,6 @@
 #pragma once
 
 #include "dmm/app/app.h"
-#include "dmm/services/calibration.h"
 
 namespace dmm::app::system {
 
@@ -25,6 +24,6 @@ void reportBattery();
 
 /// The radio's calibration once it has been read and looks valid, else
 /// nullptr. Read-only after that, from any task.
-const services::Calibration *calibration();
+const board::Calibration *calibration();
 
 } // namespace dmm::app::system

@@ -3,8 +3,8 @@
 
 #pragma once
 
+#include "dmm/app/app.h"
 #include "dmm/lib/format.h"
-#include "dmm/services/baseband.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/fm_transceiver.h"
 
@@ -124,12 +124,12 @@ struct UseChannel
 
 using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus>;
 
-/// Starts the radio task, which owns @p baseband and @p fm (may be
-/// nullptr) and brings them up.
-void start(services::Baseband &baseband, services::FmTransceiver *fm);
+/// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
+/// board without one) and brings them up.
+void start(board::Fm &fm, board::Baseband *baseband);
 
 /// Queues a message for the radio task; false when the queue is full or
-/// there is no baseband.
+/// the task has not started.
 bool post(const Message &message);
 
 } // namespace dmm::app::radio

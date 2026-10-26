@@ -319,7 +319,29 @@ void hal::boardMain()
             return dmm::services::Sct3258Baseband::Trims{*gains, {codec->leftOut, codec->rightOut, codec->rightInput}};
         }};
     static dmm::drivers::radio::Rda1846 fmChip{fmBus};
-    static dmm::services::Rda1846Transceiver fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); },
+    // Called from the radio task; empty until the system task has read the
+    // calibration.
+    using Fm = dmm::services::Rda1846Transceiver;
+    static const Fm::TrimsSource fmTrims{
+        [](std::uint32_t hz, int squelchLevel) -> std::optional<Fm::ReceiveTrims> {
+            const auto trim = calibration.referenceTrim();
+            const auto tune = calibration.rxTune(hz);
+            const auto threshold = calibration.squelchThreshold(hz, squelchLevel);
+            if (!trim || !tune || !threshold) {
+                return std::nullopt;
+            }
+            return Fm::ReceiveTrims{*trim, *tune, -*threshold};
+        },
+        [](std::uint32_t hz, dmm::services::PowerLevel level) -> std::optional<Fm::TransmitTrims> {
+            const auto trim = calibration.referenceTrim();
+            const auto power = calibration.txPower(hz, level);
+            const auto deviation = calibration.deviation();
+            if (!trim || !power || !deviation) {
+                return std::nullopt;
+            }
+            return Fm::TransmitTrims{*trim, *power, deviation->voice, deviation->ctcss};
+        }};
+    static Fm fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); }, fmTrims,
         []() -> const dmm::drivers::radio::Rda1846::Tuning & { return fmTuning(&storage); }};
 
     startWatchdog(WatchdogTimeoutMs);
@@ -330,9 +352,24 @@ void hal::boardMain()
     static dmm::services::UsbChannel dataChannel{dataPort};
     static BoardDisplay display{panelStrap};
     usbDevice.start();
-    static dmm::app::Platform platform{leds, logSink, system, "anytone_d878uv2",
-        clock == ClockSource::Crystal ? "clock 120 MHz from crystal" : "crystal did not start, clock 120 MHz from internal RC",
-        &display, &input, &battery, &storage, &dataChannel, &baseband, &fm, &audio, &calibration, &codeplug};
+    static dmm::app::Platform platform{
+        .leds = leds,
+        .logSink = logSink,
+        .system = system,
+        .fm = fm,
+        .boardName = "anytone_d878uv2",
+        .bootReport = clock == ClockSource::Crystal ? "clock 120 MHz from crystal"
+                                                    : "crystal did not start, clock 120 MHz from internal RC",
+        .display = &display,
+        .input = &input,
+        .battery = &battery,
+        .storage = &storage,
+        .dataChannel = &dataChannel,
+        .baseband = &baseband,
+        .audio = &audio,
+        .calibration = &calibration,
+        .codeplug = &codeplug,
+    };
     dmm::app::start(platform);
     dmm::os::runScheduler();
     for (;;) {

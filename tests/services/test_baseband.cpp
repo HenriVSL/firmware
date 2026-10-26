@@ -150,7 +150,7 @@ TEST_CASE("analog mode, work mode and carrier packets")
     chip.packets.clear();
 
     CHECK(baseband.setAnalog(true));
-    CHECK(baseband.setWorkMode(dmm::services::Baseband::WorkMode::Receive));
+    CHECK(baseband.setWorkMode(dmm::services::BasebandWorkMode::Receive));
     CHECK(baseband.setCarrier(true));
     // The codec trims went in at start.
     REQUIRE(chip.packets.size() == 4);
