@@ -359,7 +359,7 @@ private:
 // port closes or stays full for half a second.
 void writeData(std::span<const std::uint8_t> bytes)
 {
-    services::ByteChannel &port = *platform->dataChannel;
+    board::DataChannel &port = *platform->dataChannel;
     os::Ticks waited = 0;
     while (!bytes.empty() && port.isOpen() && waited < 500) {
         const std::size_t n = port.write(bytes);

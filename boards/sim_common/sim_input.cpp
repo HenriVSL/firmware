@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Tommi Tauriainen
 
-#include "sim_input.h"
+#include "dmm/board/sim_input.h"
 
 void SimInput::setKey(dmm::services::Key key, bool down)
 {

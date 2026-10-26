@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "dmm/app/app.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/display.h"
 #include "dmm/services/input.h"
@@ -106,7 +107,7 @@ using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog,
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.
-void start(services::Display &display, services::CodeplugSource *codeplug, const services::InputDevices *input);
+void start(services::Display &display, services::CodeplugSource *codeplug, const board::Input *input);
 
 /// Queues a message for the ui task; false when the queue is full or there
 /// is no display.

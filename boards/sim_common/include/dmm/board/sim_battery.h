@@ -8,13 +8,13 @@
 #include <atomic>
 
 /// A battery whose voltage the simulator sets.
-class SimBattery final : public dmm::services::BatterySensor
+class SimBattery
 {
 public:
     void setMillivolts(int mv) { m_mv = mv; }
-    int readMillivolts() override { return m_mv.load(); }
+    int readMillivolts() { return m_mv.load(); }
     /// A 2-cell Li-ion pack.
-    dmm::services::BatteryThresholds thresholds() const override
+    dmm::services::BatteryThresholds thresholds() const
     {
         return {{6450, 6850, 7450}, 100, 6000, 6100, 5950, 10'000};
     }

@@ -6,6 +6,7 @@
 #include "dmm/lib/fn_ref.h"
 #include "dmm/os/os.h"
 
+#include <concepts>
 #include <cstdint>
 #include <string_view>
 
@@ -52,29 +53,25 @@ constexpr KeyMask keyBit(Key key)
 }
 
 /// Name for logs: "0", "*", "Menu", "Front1", "PTT", ... Screens use the
-/// board's InputDevices::keyLabel() instead.
+/// board's keyLabel() instead.
 std::string_view keyName(Key key);
 
-/// The board's input hardware, read by the input task only.
-class InputDevices
-{
-public:
-    /// Keys down right now, not debounced.
-    virtual KeyMask readKeys() = 0;
-
-    /// The channel knob's running position in raw counts; wraps around.
-    virtual std::int32_t encoderPosition() = 0;
-    /// Raw counts per click of the knob.
-    virtual int encoderCountsPerDetent() const = 0;
-
-    /// The volume knob, 0..1000, or -1 on a board without one.
-    virtual int volumeKnob() = 0;
-    /// The label on @p key as the user sees it, for screens; at most four
-    /// characters. Constant, so any task may call it.
-    virtual std::string_view keyLabel(Key key) const = 0;
-
-protected:
-    ~InputDevices() = default;
+/// The board's input hardware, read by the input task; the board names
+/// the type (dmm/board/parts.h).
+///
+/// - readKeys(): keys down right now, not debounced.
+/// - encoderPosition(): the channel knob's running position in raw counts;
+///   wraps around. encoderCountsPerDetent(): raw counts per click.
+/// - volumeKnob(): 0..1000, or -1 on a board without one.
+/// - keyLabel(key): the label on @p key as the user sees it, for screens;
+///   at most four characters. Constant, so any task may call it.
+template <class T>
+concept InputDevices = requires(T &in, const T &labels, Key key) {
+    { in.readKeys() } -> std::same_as<KeyMask>;
+    { in.encoderPosition() } -> std::same_as<std::int32_t>;
+    { labels.encoderCountsPerDetent() } -> std::same_as<int>;
+    { in.volumeKnob() } -> std::same_as<int>;
+    { labels.keyLabel(key) } -> std::same_as<std::string_view>;
 };
 
 /// Turns raw key samples taken at a fixed rate into events.

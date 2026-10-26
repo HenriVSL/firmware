@@ -6,11 +6,11 @@
 #include "board_adc.h"
 #include "board_audio.h"
 #include "board_baseband.h"
-#include "board_battery.h"
 #include "board_display.h"
 #include "board_fm_tuning.h"
-#include "board_input.h"
 #include "board_rf.h"
+#include "dmm/board/board_battery.h"
+#include "dmm/board/board_input.h"
 #include "panel_bus.h"
 #include "pins.h"
 

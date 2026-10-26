@@ -5,18 +5,27 @@
 
 // The D878UVII's parts that the app uses as concrete types.
 
+#include "dmm/board/board_battery.h"
+#include "dmm/board/board_input.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/rda1846_transceiver.h"
 #include "dmm/services/sct3258_baseband.h"
+#include "dmm/services/usb_channel.h"
 
 namespace dmm::board {
 
 using Fm = services::Rda1846Transceiver;
 using Baseband = services::Sct3258Baseband;
 using Calibration = services::D878Uv2Calibration;
+using Input = ::board::BoardInput;
+using Battery = ::board::BoardBattery;
+using DataChannel = services::UsbChannel;
 
 static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Baseband<Baseband>);
 static_assert(services::Calibration<Calibration>);
+static_assert(services::InputDevices<Input>);
+static_assert(services::BatterySensor<Battery>);
+static_assert(services::ByteChannel<DataChannel>);
 
 } // namespace dmm::board
