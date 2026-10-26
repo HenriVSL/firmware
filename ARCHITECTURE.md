@@ -44,9 +44,10 @@ A part the app or a service uses comes in one of two forms.
   `boards/<name>/include/dmm/board/parts.h`, the one board header shared
   code includes: `board::Fm`, `board::Baseband`, `board::Calibration`,
   `board::Input`, `board::Battery`, `board::DataChannel`, `board::Gps`,
-  `board::GpsReceiver`. The shared header writes the part down as a C++20
-  concept, and the board checks its type against it. Calls are direct.
-  The headers in the board's `include/dmm/board/` include no MCU headers.
+  `board::GpsReceiver`, `board::Rtc`. The shared header writes the part
+  down as a C++20 concept, and the board checks its type against it. Calls
+  are direct. The headers in the board's `include/dmm/board/` include no
+  MCU headers.
 - LEDs, log output and system control stay virtual: the two simulators
   implement them differently and share one build of the app.
 
@@ -90,7 +91,7 @@ urgent.
 | 4 | ui | screens, menus, key lock, codeplug reading, display, backlight |
 | 3 | gps | GPS receiver's serial link: NMEA sentences, fix |
 | 2 | link | USB: data protocol, log console |
-| 1 | system | power latch, battery, watchdog, calibration |
+| 1 | system | power latch, battery, watchdog, calibration, real-time clock |
 
 Messages are small `std::variant`s of plain structs. Commands go down
 (`ui → radio`), events go up (`radio → ui`). No task shares mutable state
@@ -161,6 +162,11 @@ the SCT3258 are built when the option is given.
 - Speaker: an MCU pin switches the amplifier on, a second one connects the
   codec's receive audio to it. Beeps are an MCU PWM tone mixed in before the
   amplifier, so they need neither the codec nor the baseband.
+- Clock: the MCU's real-time clock on a 32.768 kHz crystal, kept running
+  from the battery while the radio is off. It counts UTC seconds since
+  1970; backup data register 0 holds 0x5050 once it is set up. The
+  factory firmware keeps the same counter and marker, so the time carries
+  over between the two.
 - GPS: an ATGM336H module (AT6558 chip, CASIC command set, as the
   receiver reports itself) sending NMEA at 9600 baud, 8N1, on USART1 (PA3
   in, PA2 out). Its supply is the FM transceiver's GPIO2, so the radio task
