@@ -214,6 +214,10 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
             cursor = tag(d, cursor, "GPS", p::Transmit, p::Text);
         }
     }
+    if (s.beacons) {
+        gapTo(cursor + 2);
+        cursor = tag(d, cursor, "A", p::Beacon, p::Text);
+    }
     // The local time, left of the volume.
     if (!s.clock.empty()) {
         const int w = textWidth(Small, s.clock);

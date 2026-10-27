@@ -23,6 +23,7 @@ inline constexpr services::Color Rule = services::rgb(70, 70, 70);
 inline constexpr services::Color Transmit = services::rgb(210, 40, 30);
 inline constexpr services::Color Receive = services::rgb(40, 170, 60);
 inline constexpr services::Color Warn = services::rgb(230, 160, 0);
+inline constexpr services::Color Beacon = services::rgb(40, 100, 200);
 } // namespace palette
 
 /// The GPS receiver as the screens show it.
@@ -53,6 +54,8 @@ struct StandbyState
     GpsState gps;
     /// Local time "HH:MM", or empty while the time is unknown.
     std::string_view clock;
+    /// APRS beacons go out on their own.
+    bool beacons = false;
 };
 
 /// A DMR call for the call screen.

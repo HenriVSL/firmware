@@ -471,6 +471,8 @@ constexpr int ZoneSteps = 53; // UTC-12:00 to UTC+14:00
 // APRS beacons: the interval (the codeplug's at start) and the power.
 constexpr std::uint16_t BeaconIntervals[] = {0, 60, 120, 300, 600, 900, 1200, 1800, 3600};
 std::uint16_t beaconIntervalS = 0;
+// The codeplug has an APRS station, so beacons can go out.
+bool aprsStation = false;
 PowerLevel beaconPower = PowerLevel::Low;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
@@ -727,6 +729,7 @@ void uiMain(void *)
             if (const auto a = codeplug->aprsSettings()) {
                 beaconIntervalS = a->beaconIntervalS;
                 beaconPower = a->power;
+                aprsStation = a->callsign[0] != '\0';
                 aprs::post(aprs::Station{*a});
             }
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
@@ -792,6 +795,7 @@ void uiMain(void *)
         s.gps = gpsState;
         clockText = localClockText();
         s.clock = clockText.view();
+        s.beacons = aprsStation && beaconIntervalS != 0;
         return s;
     };
     auto callInfo = [&] {
@@ -1216,6 +1220,7 @@ void uiMain(void *)
         case MenuItem::AprsBeacon:
             beaconIntervalS = BeaconIntervals[v < std::size(BeaconIntervals) ? v : 0];
             aprs::post(aprs::BeaconInterval{beaconIntervalS});
+            refreshLockMark();
             break;
         case MenuItem::AprsPower:
             beaconPower = static_cast<PowerLevel>(v & 3);
