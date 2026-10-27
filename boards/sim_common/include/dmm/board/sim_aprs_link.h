@@ -76,7 +76,7 @@ private:
             p.hasAltitude = true;
             p.altitudeM = 40;
             p.comment << (which == 0 ? "Made-up car" : "Made-up home");
-            f.info = dmm::services::aprs::positionReport(p, false);
+            dmm::services::aprs::positionReport(p, false, f.info);
         }
         std::array<std::uint8_t, ax25::MaxFrameBytes> bytes{};
         const std::size_t n = ax25::encode(f, bytes);

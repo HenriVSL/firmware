@@ -29,7 +29,8 @@ namespace ax25 = services::ax25;
 using services::AprsSettings;
 using services::GpsSchedule;
 
-os::Task<512> aprsTask;
+// Room for the deepest path, a packet read from the board, and a margin.
+os::Task<384> aprsTask;
 os::Queue<Message, 4> inbox;
 
 // The destination names the software (an experimental APZ tocall).
@@ -54,9 +55,9 @@ os::Ticks nextTry = 0;
 bool waitingForFix = false;
 
 // Too big for the stack. The task builds beacons and reads received
-// packets in turn, so they share the frame.
+// packets in turn, so they share the frame and the position.
 ax25::Frame frame;
-std::array<std::uint8_t, ax25::MaxFrameBytes> frameBytes{};
+services::aprs::Position position;
 
 // Receiving through the board. It is started with a pause after power-on
 // and the start command sent three times, 50 ms apart.
@@ -117,9 +118,11 @@ void report()
     }
 }
 
-services::aprs::Position ourPosition(const services::GpsFix &f)
+// Our position from @p f, into position.
+void setOurPosition(const services::GpsFix &f)
 {
-    services::aprs::Position p;
+    services::aprs::Position &p = position;
+    p = {};
     p.latitudeE7 = f.latitudeE7;
     p.longitudeE7 = f.longitudeE7;
     p.symbolTable = station->symbolTable;
@@ -137,7 +140,6 @@ services::aprs::Position ourPosition(const services::GpsFix &f)
         p.altitudeM = (f.altitudeDm + (f.altitudeDm < 0 ? -5 : 5)) / 10;
     }
     p.comment << station->comment;
-    return p;
 }
 
 // The frame for a position report from @p fix; false if the station's
@@ -163,7 +165,8 @@ bool buildFrame(const services::GpsFix &fix)
         }
         path.remove_prefix(comma == std::string_view::npos ? path.size() : comma + 1);
     }
-    frame.info = services::aprs::positionReport(ourPosition(fix), false);
+    setOurPosition(fix);
+    services::aprs::positionReport(position, false, frame.info);
     return true;
 }
 
@@ -207,9 +210,8 @@ void tryBeacon()
         endPending();
         return;
     }
-    const std::size_t n = ax25::encode(frame, frameBytes);
     const radio::PacketChannel channel{station->frequencyHz, station->wide, power};
-    if (n == 0 || !radio::sendPacket({frameBytes.data(), n}, channel)) {
+    if (!radio::sendPacket(frame, channel)) {
         // The radio has a packet already; look again soon.
         if (now - pendingSince >= WaitForFixMs) {
             ui::post(ui::AprsProblem{ui::AprsProblem::Kind::Busy});
@@ -259,9 +261,10 @@ void remember()
             copyText(h.via, HeardStation::CallBytes, ax25::addressText(plain).view());
         }
     }
-    static std::optional<services::aprs::Position> p;
-    p = services::aprs::readPosition(frame);
-    if (p) {
+    const std::optional<services::aprs::Position> read = services::aprs::readPosition(frame);
+    if (read) {
+        position = *read;
+        const services::aprs::Position *p = &position;
         h.hasPosition = true;
         h.latitudeE7 = p->latitudeE7;
         h.longitudeE7 = p->longitudeE7;

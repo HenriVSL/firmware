@@ -108,14 +108,17 @@ TEST_CASE("aprs position report from our position")
     aprs::Position p;
     p.latitudeE7 = 601708333;  // 60 10.25 N
     p.longitudeE7 = 249383333; // 24 56.30 E
-    CHECK(aprs::positionReport(p, false).view() == "!6010.25N/02456.30E>");
+    dmm::lib::StaticString<ax25::MaxInfo> info;
+    aprs::positionReport(p, false, info);
+    CHECK(info.view() == "!6010.25N/02456.30E>");
     p.hasCourse = true;
     p.courseDeg = 90;
     p.speedKnots = 20;
     p.hasAltitude = true;
     p.altitudeM = 50;
     p.comment << "Test";
-    CHECK(aprs::positionReport(p, true).view() == "=6010.25N/02456.30E>090/020/A=000164Test");
+    aprs::positionReport(p, true, info);
+    CHECK(info.view() == "=6010.25N/02456.30E>090/020/A=000164Test");
     p.latitudeE7 = -335000000;
     p.longitudeE7 = -1120000000;
     p.hasCourse = false;
@@ -123,7 +126,8 @@ TEST_CASE("aprs position report from our position")
     p.comment.clear();
     p.symbolTable = '\\';
     p.symbol = 'k';
-    CHECK(aprs::positionReport(p, false).view() == "!3330.00S\\11200.00Wk/A=-00033");
+    aprs::positionReport(p, false, info);
+    CHECK(info.view() == "!3330.00S\\11200.00Wk/A=-00033");
 }
 
 TEST_CASE("aprs plain position reports read back, with or without a timestamp")
