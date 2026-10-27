@@ -92,12 +92,12 @@ inline constexpr int BatteryFullScaleMv = 13200;
 
 // Held low from the first instructions on: the transmit path and power
 // amplifier enables, the speaker amplifier, its receive-audio switch and
-// the Bluetooth module's power.
+// the BT+APRS board's power.
 inline constexpr Pin TransmitEnable{Port::C, 4};
 inline constexpr Pin PowerAmplifierEnable{Port::E, 6};
 inline constexpr Pin SpeakerAmplifier{Port::A, 7};  // high = on
 inline constexpr Pin ReceiveAudioRoute{Port::E, 0}; // high = codec output to the amplifier
-inline constexpr Pin BluetoothPower{Port::A, 1};
+inline constexpr Pin LinkBoardPower{Port::A, 1};    // high = on
 // The baseband's transmit slot timing: high while its slot is on air.
 inline constexpr Pin TransmitSlot{Port::D, 0};
 inline constexpr unsigned TransmitSlotIrqPriority = 1;
@@ -163,5 +163,13 @@ inline constexpr Pin GpsToReceiver{Port::A, 2};
 inline constexpr dmm::hal::gd32f30x::UsartPort GpsUsart = dmm::hal::gd32f30x::UsartPort::Usart1;
 inline constexpr std::uint32_t GpsBaud = 9600;
 inline constexpr unsigned GpsIrqPriority = 8;
+
+// BT+APRS board: its serial link on UART3 (PC10 to the board, PC11 from
+// it), 8N1; its power is LinkBoardPower.
+inline constexpr Pin LinkBoardTx{Port::C, 10};
+inline constexpr Pin LinkBoardRx{Port::C, 11};
+inline constexpr dmm::hal::gd32f30x::UsartPort LinkBoardUsart = dmm::hal::gd32f30x::UsartPort::Uart3;
+inline constexpr std::uint32_t LinkBoardBaud = 115200;
+inline constexpr unsigned LinkBoardIrqPriority = 8;
 
 } // namespace board

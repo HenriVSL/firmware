@@ -9,6 +9,7 @@
 #include "board_display.h"
 #include "board_fm_tuning.h"
 #include "board_rf.h"
+#include "dmm/board/board_aprs_link.h"
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
@@ -282,6 +283,11 @@ extern "C" void irq38Handler()
     BoardGps::onInterrupt();
 }
 
+extern "C" void irq52Handler()
+{
+    BoardAprsLink::onInterrupt();
+}
+
 void hal::boardMain()
 {
     static const dmm::services::ResetReport resetReport = takeResetReport();
@@ -293,7 +299,7 @@ void hal::boardMain()
     for (Port port : {Port::A, Port::B, Port::C, Port::D, Port::E}) {
         enablePortClock(port);
     }
-    for (Pin pin : {TransmitEnable, PowerAmplifierEnable, SpeakerAmplifier, ReceiveAudioRoute, BluetoothPower, PowerHold, RedLed, GreenLed, BlueLed, UsbPullUp}) {
+    for (Pin pin : {TransmitEnable, PowerAmplifierEnable, SpeakerAmplifier, ReceiveAudioRoute, LinkBoardPower, PowerHold, RedLed, GreenLed, BlueLed, UsbPullUp}) {
         outputLow(pin);
     }
     static BoardBaseband basebandBoard;
@@ -330,6 +336,8 @@ void hal::boardMain()
     static BoardGps gps;
     static BoardRtc rtc;
     gps.configure();
+    static BoardAprsLink aprsLink;
+    aprsLink.configure();
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
     // Called from the radio task; empty until the system task has read the
     // calibration.
@@ -406,6 +414,7 @@ void hal::boardMain()
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,
+        .aprsLink = &aprsLink,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();
