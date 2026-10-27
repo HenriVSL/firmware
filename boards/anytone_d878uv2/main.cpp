@@ -12,6 +12,7 @@
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
+#include "dmm/board/board_modem.h"
 #include "dmm/board/board_rtc.h"
 #include "panel_bus.h"
 #include "pins.h"
@@ -310,6 +311,7 @@ void hal::boardMain()
     static BoardBattery battery;
     battery.configure();
     static BoardAudio audio;
+    static BoardModem modem;
     audio.configure();
     static BoardRf rf;
     rf.configure();
@@ -381,6 +383,7 @@ void hal::boardMain()
         .codeplug = &codeplug,
         .gps = &gps,
         .rtc = &rtc,
+        .modem = &modem,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

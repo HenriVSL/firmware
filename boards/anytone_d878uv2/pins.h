@@ -117,6 +117,8 @@ inline constexpr unsigned AmplifierSettleMs = 150;
 inline constexpr unsigned ToneIrqPriority = 2;
 // Beep level 15 gives this PWM duty peak (of 255).
 inline constexpr unsigned LoudestTonePeak = 90;
+// Flags after a packet, so its end is not cut by the transmitter ramping down.
+inline constexpr std::uint8_t PacketTailFlags = 3;
 
 // DMR baseband (SCT3258): an 8-bit host port on PD8-PD15 with chip select
 // PD2, write PD3 and read PD4; PD5 is low while the chip has data. PD6 is
