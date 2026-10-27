@@ -9,6 +9,7 @@
 #include "dmm/services/fm_transceiver.h"
 
 #include <cstdint>
+#include <span>
 #include <variant>
 
 namespace dmm::app::radio {
@@ -129,11 +130,30 @@ struct GpsPower
     bool on;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus, GpsPower>;
+/// A frame was queued with sendPacket().
+struct SendPacket
+{
+};
+/// How packets go out: flags before the frame, and the audio level in
+/// percent of the board's full level.
+struct PacketSettings
+{
+    std::uint16_t leadMs;
+    std::uint8_t levelPercent;
+};
 
-/// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
-/// board without one) and brings them up.
-void start(board::Fm &fm, board::Baseband *baseband);
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus, GpsPower, SendPacket, PacketSettings>;
+
+/// Starts the radio task, which owns @p fm, @p baseband and @p modem
+/// (each nullptr on a board without one) and brings them up.
+void start(board::Fm &fm, board::Baseband *baseband, board::Modem *modem);
+
+/// Queues @p frame (from the first address to the frame check sequence)
+/// for the current FM channel. The radio waits until the channel is free,
+/// sends it with the microphone muted and goes back to receive; it gives
+/// the frame up if the channel stays busy. False while another frame
+/// waits, or without a modem.
+bool sendPacket(std::span<const std::uint8_t> frame);
 
 /// Queues a message for the radio task; false when the queue is full or
 /// the task has not started.

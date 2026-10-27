@@ -10,11 +10,14 @@
 #include "dmm/lib/format.h"
 #include "dmm/lib/variant.h"
 #include "dmm/os/os.h"
+#include "dmm/services/ax25.h"
 #include "dmm/services/battery_saver.h"
 #include "dmm/services/log.h"
 #include "dmm/services/power.h"
 #include "dmm/services/squelch_gate.h"
 
+#include <array>
+#include <atomic>
 #include <span>
 #include <string_view>
 
@@ -59,6 +62,35 @@ bool transmitting = false;
 // the route through the baseband gives a delayed second copy.
 FmTransmitAudio::Route transmitAudio = FmTransmitAudio::Route::Direct;
 os::Ticks transmitStarted = 0;
+
+// Packet radio: one frame waits at a time. sendPacket() fills the buffer
+// and the radio task owns it until the frame is sent or given up.
+board::Modem *modem = nullptr;
+std::array<std::uint8_t, services::ax25::MaxFrameBytes> packetBytes{};
+std::size_t packetLength = 0;
+std::atomic<bool> packetTaken{false};
+enum class PacketState : std::uint8_t
+{
+    None,
+    Waiting,
+    Sending,
+};
+PacketState packetState = PacketState::None;
+std::uint16_t packetLeadMs = 300;
+std::uint8_t packetLevelPercent = 5;
+constexpr services::PowerLevel PacketPower = services::PowerLevel::Low;
+// Channel access as AX.25 does it: once the channel is free, send in a
+// slot with probability Persistence / 256, otherwise look again a slot
+// later; stations that waited for the same one then rarely start together.
+constexpr os::Ticks SlotMs = 100;
+constexpr std::uint32_t Persistence = 63;
+constexpr os::Ticks GiveUpMs = 30'000;
+os::Ticks packetQueuedAt = 0;
+os::Ticks nextSlot = 0;
+os::Ticks packetAirMs = 0;
+// The receiver heard a carrier at the last poll.
+bool carrier = false;
+std::uint32_t randomState = 0x2545F491;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
 struct Band
@@ -221,6 +253,7 @@ void fmStatus()
 void pollFm()
 {
     const services::FmReceiveStatus s = fm->status();
+    carrier = s.carrier;
     const bool open = gate.update(s.carrier);
     if (open != speakerOpen) {
         fm->logStatus(open ? "squelch open" : "squelch closed");
@@ -239,7 +272,9 @@ lib::StaticString<16> ctcssText()
     return text;
 }
 
-void startTransmit()
+// A packet goes out simplex on the receive frequency, without a tone, at
+// its own power, whatever the channel's transmit settings.
+void startTransmit(bool packet = false)
 {
     if (transmitting) {
         return;
@@ -249,7 +284,9 @@ void startTransmit()
         return;
     }
     services::FmChannel channel = fmChannel;
-    channel.transmitHz = transmitHz != 0 ? transmitHz : fmChannel.receiveHz;
+    channel.transmitHz = transmitHz != 0 && !packet ? transmitHz : fmChannel.receiveHz;
+    const services::PowerLevel level = packet ? PacketPower : powerLevel;
+    const std::uint16_t ctcss = packet ? 0 : static_cast<std::uint16_t>(ctcssDeciHz * 10);
     if (receiveOnly) {
         log::info("fm") << "PTT: this channel is receive only";
         return;
@@ -259,11 +296,11 @@ void startTransmit()
         return;
     }
     setSpeaker(false);
-    withBaseband([](auto &b) {
-        b.setMicrophone(transmitAudio != FmTransmitAudio::Route::Direct);
+    withBaseband([packet](auto &b) {
+        b.setMicrophone(!packet && transmitAudio != FmTransmitAudio::Route::Direct);
         b.setWorkMode(services::BasebandWorkMode::Transmit);
     });
-    const char *problem = fm->transmit(channel, powerLevel, static_cast<std::uint16_t>(ctcssDeciHz * 10));
+    const char *problem = fm->transmit(channel, level, ctcss);
     if (problem != nullptr) {
         fm->endTransmit();
         withBaseband([](auto &b) { b.setMicrophone(false); });
@@ -271,16 +308,16 @@ void startTransmit()
         fmReceive();
         return;
     }
-    if (transmitAudio == FmTransmitAudio::Route::Baseband) {
+    if (packet || transmitAudio == FmTransmitAudio::Route::Baseband) {
         fm->setMicrophoneMuted(true);
     }
     transmitting = true;
     power::hold(power::AwakeReason::Transmit);
     ui::post(ui::Transmitting{true});
     transmitStarted = os::nowMs();
-    log::info("fm") << "transmitting " << mhz(channel.transmitHz).view() << " MHz, power " << powerName(powerLevel)
-                    << ", " << ctcssText().view() << ", timeout " << timeoutS << " s, audio "
-                    << routeName(transmitAudio);
+    log::info("fm") << "transmitting " << mhz(channel.transmitHz).view() << " MHz, power " << powerName(level) << ", "
+                    << (packet ? std::string_view("packet") : ctcssText().view()) << ", timeout " << timeoutS << " s, audio "
+                    << (packet ? "from the modem" : routeName(transmitAudio));
 }
 
 void stopTransmit(const char *why)
@@ -296,6 +333,81 @@ void stopTransmit(const char *why)
     log::info("fm") << "transmit off (" << why << ") after " << (os::nowMs() - transmitStarted) / 100 / 10 << "."
                     << (os::nowMs() - transmitStarted) / 100 % 10 << " s";
     fmReceive();
+}
+
+std::uint32_t random32()
+{
+    randomState ^= randomState << 13;
+    randomState ^= randomState >> 17;
+    randomState ^= randomState << 5;
+    return randomState;
+}
+
+void endPacket()
+{
+    packetState = PacketState::None;
+    packetTaken = false;
+}
+
+void startPacket()
+{
+    startTransmit(true);
+    if (!transmitting) {
+        log::warning("packet") << "not sent: the transmitter did not start";
+        endPacket();
+        return;
+    }
+    if (!modem->send({packetBytes.data(), packetLength}, packetLeadMs, packetLevelPercent)) {
+        stopTransmit("modem busy");
+        endPacket();
+        return;
+    }
+    // The longest the frame can take: every sixth bit stuffed, plus the
+    // closing flags and a margin.
+    packetAirMs = packetLeadMs + static_cast<os::Ticks>((packetLength + 4) * 8 * 6 / 5 * 1000 / 1200) + 200;
+    packetState = PacketState::Sending;
+    log::info("packet") << "sending " << packetLength << " bytes after " << (os::nowMs() - packetQueuedAt) << " ms";
+}
+
+// Moves a queued frame on: waits for a free slot, then sends it.
+void packetStep()
+{
+    const os::Ticks now = os::nowMs();
+    if (packetState == PacketState::Sending) {
+        if (!modem->sending()) {
+            stopTransmit("packet sent");
+            endPacket();
+        } else if (now - transmitStarted > packetAirMs) {
+            stopTransmit("packet took too long");
+            endPacket();
+        }
+        return;
+    }
+    if (packetState != PacketState::Waiting) {
+        return;
+    }
+    if (!fm->receiving()) {
+        log::warning("packet") << "dropped: no FM channel";
+        endPacket();
+        return;
+    }
+    if (now - packetQueuedAt >= GiveUpMs) {
+        log::warning("packet") << "dropped: the channel stayed busy for " << GiveUpMs / 1000 << " s";
+        endPacket();
+        return;
+    }
+    if (transmitting || carrier) {
+        nextSlot = now + SlotMs;
+        return;
+    }
+    if (static_cast<std::int32_t>(now - nextSlot) < 0) {
+        return;
+    }
+    if ((random32() & 0xFF) >= Persistence) {
+        nextSlot = now + SlotMs;
+        return;
+    }
+    startPacket();
 }
 
 void bringUp()
@@ -341,7 +453,8 @@ void saveStatus()
 // Sleeps or wakes the receiver as battery save asks.
 void saveStep()
 {
-    const bool receiverOn = !transmitting && (fm->receiving() || fm->receiverAsleep());
+    // A waiting packet needs the receiver listening for the channel.
+    const bool receiverOn = !transmitting && packetState == PacketState::None && (fm->receiving() || fm->receiverAsleep());
     const bool wasActive = saver.active();
     switch (saver.update(os::nowMs(), power::idleForMs(), receiverOn)) {
     case services::BatterySaver::Action::Sleep:
@@ -376,8 +489,9 @@ void handle(Message &message)
         saver.reset();
         log::info("power") << "battery save ended after " << saver.cycles() << " sleeps so far";
     }
-    // Anything but PTT itself ends a transmission first.
-    if (transmitting && std::get_if<Ptt>(&message) == nullptr) {
+    // Anything but PTT itself ends a transmission first; a queued packet
+    // waits for it instead.
+    if (transmitting && std::get_if<Ptt>(&message) == nullptr && std::get_if<SendPacket>(&message) == nullptr) {
         stopTransmit("another command");
     }
     lib::visit(lib::Overload{
@@ -468,6 +582,18 @@ void handle(Message &message)
                        log::info("power") << "battery save " << saveModeText(saver.mode());
                    },
                    [](const BatterySaveStatus &) { saveStatus(); },
+                   [](const SendPacket &) {
+                       packetState = PacketState::Waiting;
+                       packetQueuedAt = os::nowMs();
+                       // Listen for a slot before the first chance to send.
+                       nextSlot = packetQueuedAt + SlotMs;
+                       randomState ^= packetQueuedAt;
+                   },
+                   [](const PacketSettings &s) {
+                       packetLeadMs = s.leadMs;
+                       packetLevelPercent = s.levelPercent;
+                       log::info("packet") << "lead " << packetLeadMs << " ms, level " << packetLevelPercent << " %";
+                   },
                    [](const Microphone &m) {
                        fm->setMicrophoneMuted(!m.on);
                        log::info("fm") << "microphone " << (m.on ? "on" : "muted");
@@ -497,16 +623,20 @@ void radioMain(void *)
     bringUp();
     os::Ticks lastPoll = os::nowMs();
     while (!os::stopRequested()) {
-        const bool busy = fm->receiving() || transmitting;
+        const bool busy = fm->receiving() || transmitting || packetState != PacketState::None;
         os::Ticks wait = busy ? FmPollMs : IdleWaitMs;
         if (saver.asleep()) {
             const auto left = static_cast<std::int32_t>(saver.nextChangeMs() - os::nowMs());
             wait = left > 0 ? static_cast<os::Ticks>(left) : 0;
         }
+        // Commands wait while a frame goes out; any would end it.
         Message m;
-        if (inbox.receive(m, wait)) {
+        if (packetState == PacketState::Sending) {
+            os::sleepMs(FmPollMs);
+        } else if (inbox.receive(m, wait)) {
             handle(m);
         }
+        packetStep();
         saveStep();
         if (transmitting && timeoutS != 0 && os::nowMs() - transmitStarted >= static_cast<os::Ticks>(timeoutS) * 1000) {
             stopTransmit("timeout");
@@ -520,16 +650,33 @@ void radioMain(void *)
 
 } // namespace
 
-void start(board::Fm &f, board::Baseband *b)
+void start(board::Fm &f, board::Baseband *b, board::Modem *m)
 {
     fm = &f;
     baseband = b;
+    modem = m;
     radioTask.start("radio", 7, radioMain, nullptr);
 }
 
 bool post(const Message &message)
 {
     return fm != nullptr && inbox.send(message);
+}
+
+bool sendPacket(std::span<const std::uint8_t> frame)
+{
+    if (fm == nullptr || modem == nullptr || frame.size() > packetBytes.size() || packetTaken.exchange(true)) {
+        return false;
+    }
+    for (std::size_t i = 0; i < frame.size(); ++i) {
+        packetBytes[i] = frame[i];
+    }
+    packetLength = frame.size();
+    if (!inbox.send(SendPacket{})) {
+        packetTaken = false;
+        return false;
+    }
+    return true;
 }
 
 } // namespace dmm::app::radio
