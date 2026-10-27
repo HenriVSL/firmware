@@ -26,8 +26,15 @@ hears, and Menu, APRS, Heard lists the stations.
 | 4 | Battery save on, Beacon: 5 min | Between beacons `gps: receiver asleep`; it wakes in time and each beacon has a fresh position |
 | 5 | Send now with the GPS off | `No GPS position` about three minutes later; nothing sent |
 | 6 | On a free simplex channel (not the APRS frequency), the second radio transmits there for 40 s; meanwhile console `aprs send here` | The beacon waits for the channel; after 30 s busy, `packet: dropped: the channel stayed busy for 30 s` and `Beacon not sent` |
-| 7 | As 6, but after 10 s the second radio stops, and you press PTT for 5 s | The voice transmission goes out; the beacon waits for it and goes out once the channel is free (`Beacon sent`) |
+| 7 | As 6, but press PTT while the second radio still transmits, let the second radio stop, and release PTT 5 s later | The voice transmission goes out; the beacon waits for it and goes out once the channel is free (`Beacon sent`) |
 | 8 | On the APRS frequency, the second radio sends a beacon | `aprs: heard <its packet>`; Menu, APRS, Heard lists it with the age and the distance; Menu on it shows the position, distance and bearing, altitude, speed, text and the digipeater |
 | 9 | Menu, APRS, Receive: Off | `aprs: receiving off`; nothing more is heard. On starts the board again |
 
 ## Results
+
+2026-10-27: steps 1 to 6, 8 and 9 pass; step 7 was not run, because the
+log port drops while the second radio transmits next to the first. A
+beacon took about 0.8 s on air and the radio was back on the working
+channel at once. Received packets were listed, but the board decoded only
+strong ones: a station the second radio decoded at a noise reading of
+42 dB was missed.
