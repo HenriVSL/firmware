@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "aprs.h"
+
 #include "dmm/services/channel_selector.h"
 #include "dmm/services/display.h"
 #include "dmm/services/nmea.h"
@@ -107,6 +109,14 @@ public:
 /// draws the labels and rules too; otherwise only the values change,
 /// drawn over the old ones.
 void drawGpsScreen(services::Display &d, const GpsState &gps, bool full);
+
+/// "12.3 km" from our fix to the station, or empty without both positions.
+lib::StaticString<10> distanceText(const GpsState &gps, const aprs::HeardStation &s);
+/// "45 s", "12 min", "3 h": how long ago @p thenMs was.
+lib::StaticString<8> ageText(std::uint32_t thenMs, std::uint32_t nowMs);
+/// One heard APRS station: position, distance and bearing from our fix,
+/// altitude, speed, its text and the way it came.
+void drawAprsStation(services::Display &d, const aprs::HeardStation &s, const GpsState &gps, std::uint32_t nowMs);
 
 /// A list to pick one item from, drawn over the screen body: a title bar
 /// and up to Rows rows, the chosen one inverted.
