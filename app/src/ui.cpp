@@ -3,6 +3,7 @@
 
 #include "ui.h"
 
+#include "aprs.h"
 #include "audio.h"
 #include "gps.h"
 #include "radio.h"
@@ -413,6 +414,9 @@ enum class MenuItem : std::uint8_t
     GpsSystems,
     GpsStatus, // opens the GPS screen
     ClockZone,
+    AprsBeacon,
+    AprsPower,
+    AprsSend, // queues a beacon
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -426,6 +430,7 @@ enum class MenuGroup : std::uint8_t
     Keys,
     Battery,
     Gps,
+    Aprs,
     Count,
 };
 struct GroupInfo
@@ -440,6 +445,7 @@ constexpr GroupInfo Groups[] = {
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
     {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone}, 4},
+    {"APRS", {MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsSend}, 3},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -462,6 +468,10 @@ std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Be
 // Local time minus UTC, from the codeplug, in half-hour steps.
 int timeZoneMinutes = 0;
 constexpr int ZoneSteps = 53; // UTC-12:00 to UTC+14:00
+// APRS beacons: the interval (the codeplug's at start) and the power.
+constexpr std::uint16_t BeaconIntervals[] = {0, 60, 120, 300, 600, 900, 1200, 1800, 3600};
+std::uint16_t beaconIntervalS = 0;
+PowerLevel beaconPower = PowerLevel::Low;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -714,6 +724,11 @@ void uiMain(void *)
             gpsAtStart = selector.settings().gps;
             gpsSystems = selector.settings().gpsSystems;
             timeZoneMinutes = selector.settings().timeZoneMinutes;
+            if (const auto a = codeplug->aprsSettings()) {
+                beaconIntervalS = a->beaconIntervalS;
+                beaconPower = a->power;
+                aprs::post(aprs::Station{*a});
+            }
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -926,6 +941,21 @@ void uiMain(void *)
                     : gpsState.receiving                     ? "Searching"
                                                              : "No data");
             break;
+        case MenuItem::AprsBeacon:
+            label = "Beacon";
+            if (beaconIntervalS == 0) {
+                value << "Off";
+            } else {
+                value << durationText(beaconIntervalS).view();
+            }
+            break;
+        case MenuItem::AprsPower:
+            label = "Power";
+            value << Powers[static_cast<int>(beaconPower) & 3];
+            break;
+        case MenuItem::AprsSend:
+            label = "Send now";
+            break;
         case MenuItem::Count:
             break;
         }
@@ -1059,6 +1089,28 @@ void uiMain(void *)
         case MenuItem::GpsStatus:
             show(View::Gps);
             return;
+        case MenuItem::AprsBeacon:
+            menuValue.open("Beacon");
+            for (std::uint8_t i = 0; i < std::size(BeaconIntervals); ++i) {
+                menuValue.add(i, BeaconIntervals[i] == 0 ? std::string_view("Off") : durationText(BeaconIntervals[i]).view());
+                if (BeaconIntervals[i] == beaconIntervalS) {
+                    menuValue.select(i);
+                }
+            }
+            break;
+        case MenuItem::AprsPower: {
+            constexpr const char *Powers[] = {"Low", "Mid", "High", "Turbo"};
+            menuValue.open("Beacon power");
+            for (std::uint8_t i = 0; i < 4; ++i) {
+                menuValue.add(i, Powers[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(beaconPower));
+            break;
+        }
+        case MenuItem::AprsSend:
+            aprs::post(aprs::BeaconNow{});
+            notice("Beacon queued");
+            return;
         case MenuItem::Count:
             return;
         }
@@ -1161,7 +1213,16 @@ void uiMain(void *)
             timeZoneMinutes = (v - 24) * 30;
             log::info("ui") << "time zone " << zoneText(timeZoneMinutes).view();
             break;
+        case MenuItem::AprsBeacon:
+            beaconIntervalS = BeaconIntervals[v < std::size(BeaconIntervals) ? v : 0];
+            aprs::post(aprs::BeaconInterval{beaconIntervalS});
+            break;
+        case MenuItem::AprsPower:
+            beaconPower = static_cast<PowerLevel>(v & 3);
+            aprs::post(aprs::BeaconPower{beaconPower});
+            break;
         case MenuItem::GpsStatus:
+        case MenuItem::AprsSend:
         case MenuItem::Count:
             break;
         }
@@ -1520,6 +1581,12 @@ void uiMain(void *)
                                        openGroup(MenuGroup::Gps, menuQuick);
                                    }
                                }
+                           },
+                           [&](const Packet &p) { notice(p.sent ? "Beacon sent" : "Beacon not sent"); },
+                           [&](const AprsProblem &p) {
+                               notice(p.kind == AprsProblem::Kind::NoCallsign ? "No APRS callsign"
+                                       : p.kind == AprsProblem::Kind::NoFix   ? "No GPS position"
+                                                                              : "Radio busy");
                            },
                            [&](const SwitchingOff &) {
                                view = View::Message;
