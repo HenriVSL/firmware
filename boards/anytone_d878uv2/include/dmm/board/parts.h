@@ -15,6 +15,8 @@
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_link_board.h"
 #include "dmm/services/packet_modem.h"
+#include "dmm/services/d878uv2_programming.h"
+#include "dmm/services/programming.h"
 #include "dmm/services/rda1846_transceiver.h"
 #include "dmm/services/sct3258_baseband.h"
 #include "dmm/services/serial_link.h"
@@ -25,6 +27,7 @@ namespace dmm::board {
 using Fm = services::Rda1846Transceiver;
 using Baseband = services::Sct3258Baseband;
 using Calibration = services::D878Uv2Calibration;
+using Programming = services::D878Uv2Programming;
 using Input = ::board::BoardInput;
 using Battery = ::board::BoardBattery;
 using DataChannel = services::UsbChannel;
@@ -38,6 +41,7 @@ using AprsLinkReader = services::D878Uv2LinkBoardReader;
 static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Baseband<Baseband>);
 static_assert(services::Calibration<Calibration>);
+static_assert(services::Programming<Programming>);
 static_assert(services::InputDevices<Input>);
 static_assert(services::BatterySensor<Battery>);
 static_assert(services::ByteChannel<DataChannel>);
