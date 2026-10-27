@@ -55,6 +55,9 @@ goes there and comes back. The radio's BT+APRS board decodes received
 packets while the radio is on their frequency, and a list shows the
 stations heard with their distance and bearing.
 
+**Programming.** Codeplug tools that speak the radio's own programming
+protocol read and write the codeplug over USB. Tested with QDMR.
+
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
@@ -187,6 +190,18 @@ The GPS mark in the status bar, shown while the GPS is on:
 | Grey | is searching for satellites |
 | Amber | sleeps between fixes (battery save on) |
 | Red | sends no data |
+
+## Programming the codeplug
+
+The data port also speaks the radio's programming protocol, so codeplug
+tools read and write the codeplug as with the factory firmware. QDMR needs
+to know DeltaMM's USB ID (1209:0001 during development); a QDMR with that
+added finds the radio as a D878UVII. The radio starts again after a write,
+with the new codeplug. Only the codeplug is written, never calibration or
+the radio's own data; the callsign database is not written yet.
+
+A write that stops halfway keeps the blocks already written and leaves
+the rest as they were, so finish it with a complete write.
 
 ## Log and console
 
