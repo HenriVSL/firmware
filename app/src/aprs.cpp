@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 
 namespace dmm::app::aprs {
@@ -52,9 +53,33 @@ os::Ticks pendingSince = 0;
 os::Ticks nextTry = 0;
 bool waitingForFix = false;
 
-// Too big for the stack.
+// Too big for the stack. The task builds beacons and reads received
+// packets in turn, so they share the frame.
 ax25::Frame frame;
 std::array<std::uint8_t, ax25::MaxFrameBytes> frameBytes{};
+
+// Receiving through the board. It is started with a pause after power-on
+// and the start command sent three times, 50 ms apart.
+board::AprsLink *link = nullptr;
+board::AprsLinkReader reader;
+bool receiving = false;
+os::Ticks linkStartedAt = 0;
+unsigned startCommandsSent = 0;
+os::Ticks lastByteAt = 0;
+bool partial = false;
+constexpr os::Ticks BoardStartMs = 500;
+constexpr os::Ticks StartCommandGapMs = 50;
+constexpr unsigned StartCommands = 3;
+// A pause this long ends a partial message.
+constexpr os::Ticks PauseMs = 100;
+constexpr os::Ticks ReceivePollMs = 20;
+
+// The heard list, newest first; other tasks read it.
+os::Mutex heardLock;
+std::array<HeardStation, MaxHeard> heardList{};
+std::size_t heardTotal = 0;
+// The station from the codeplug, handed over under the lock.
+std::optional<AprsSettings> newStation;
 
 lib::StaticString<12> frequencyText(std::uint32_t hz)
 {
@@ -210,19 +235,151 @@ void startBeacon()
     nextTry = pendingSince;
 }
 
+void copyText(char *to, std::size_t bytes, std::string_view text)
+{
+    std::size_t n = 0;
+    for (char ch : text) {
+        if (n == bytes) {
+            break;
+        }
+        to[n++] = ch >= ' ' && ch <= '~' ? ch : ' ';
+    }
+    to[n] = '\0';
+}
+
+// Puts what @p frame says into the list, at the top.
+void remember()
+{
+    HeardStation h;
+    copyText(h.call, HeardStation::CallBytes, ax25::addressText(frame.source).view());
+    for (const ax25::Address &a : frame.path) {
+        if (a.repeated) {
+            ax25::Address plain = a;
+            plain.repeated = false;
+            copyText(h.via, HeardStation::CallBytes, ax25::addressText(plain).view());
+        }
+    }
+    static std::optional<services::aprs::Position> p;
+    p = services::aprs::readPosition(frame);
+    if (p) {
+        h.hasPosition = true;
+        h.latitudeE7 = p->latitudeE7;
+        h.longitudeE7 = p->longitudeE7;
+        h.symbolTable = p->symbolTable;
+        h.symbol = p->symbol;
+        h.hasAltitude = p->hasAltitude;
+        h.altitudeM = p->altitudeM;
+        h.hasCourse = p->hasCourse;
+        h.courseDeg = p->courseDeg;
+        h.speedKnots = p->speedKnots;
+        copyText(h.text, HeardStation::TextBytes, p->comment.view());
+    } else {
+        std::string_view info = frame.info.view();
+        if (!info.empty() && info[0] == '>') {
+            info.remove_prefix(1);
+        }
+        copyText(h.text, HeardStation::TextBytes, info);
+    }
+    h.heardAtMs = os::nowMs();
+
+    heardLock.lock();
+    std::size_t at = heardTotal;
+    for (std::size_t i = 0; i < heardTotal; ++i) {
+        if (std::strcmp(heardList[i].call, h.call) == 0) {
+            at = i;
+            break;
+        }
+    }
+    if (at < heardTotal) {
+        h.packets = static_cast<std::uint16_t>(heardList[at].packets + 1);
+        // A packet without a position keeps the last one heard.
+        if (!h.hasPosition && heardList[at].hasPosition) {
+            const HeardStation &old = heardList[at];
+            h.hasPosition = true;
+            h.latitudeE7 = old.latitudeE7;
+            h.longitudeE7 = old.longitudeE7;
+            h.symbolTable = old.symbolTable;
+            h.symbol = old.symbol;
+        }
+    } else {
+        h.packets = 1;
+        at = heardTotal < MaxHeard ? heardTotal++ : MaxHeard - 1;
+    }
+    for (std::size_t i = at; i > 0; --i) {
+        heardList[i] = heardList[i - 1];
+    }
+    heardList[0] = h;
+    heardLock.unlock();
+}
+
+void startReceiving()
+{
+    if (link == nullptr || receiving) {
+        return;
+    }
+    link->start();
+    reader.reset();
+    receiving = true;
+    linkStartedAt = os::nowMs();
+    startCommandsSent = 0;
+    partial = false;
+    log::info("aprs") << "receiving through the board";
+}
+
+void stopReceiving()
+{
+    if (!receiving) {
+        return;
+    }
+    link->stop();
+    receiving = false;
+    log::info("aprs") << "receiving off";
+}
+
+void pollLink()
+{
+    const os::Ticks now = os::nowMs();
+    if (startCommandsSent < StartCommands &&
+        now - linkStartedAt >= BoardStartMs + startCommandsSent * StartCommandGapMs) {
+        link->write(board::AprsLinkReader::StartCommand);
+        ++startCommandsSent;
+    }
+    std::uint8_t buffer[64];
+    for (;;) {
+        const std::size_t n = link->read(buffer);
+        if (n == 0) {
+            break;
+        }
+        lastByteAt = now;
+        partial = true;
+        for (std::size_t i = 0; i < n; ++i) {
+            switch (reader.feed(buffer[i])) {
+            case board::AprsLinkReader::Result::Frame:
+                if (ax25::decode(reader.frame(), frame)) {
+                    remember();
+                    auto line = log::info("aprs");
+                    line << "heard ";
+                    ax25::writeText(line, frame);
+                    ui::post(ui::AprsHeard{});
+                }
+                break;
+            case board::AprsLinkReader::Result::Line:
+                log::info("aprs") << "board: " << reader.line();
+                break;
+            case board::AprsLinkReader::Result::None:
+                break;
+            }
+        }
+    }
+    if (partial && now - lastByteAt >= PauseMs) {
+        reader.reset();
+        partial = false;
+    }
+}
+
 void handle(const Message &message)
 {
     lib::visit(lib::Overload{
-                   [](const Station &s) {
-                       if (s.settings.callsign[0] == '\0') {
-                           return;
-                       }
-                       station = s.settings;
-                       intervalS = s.settings.beaconIntervalS;
-                       nextBeaconAt = os::nowMs() + static_cast<os::Ticks>(intervalS) * 1000;
-                       setGpsNeed(static_cast<std::uint32_t>(intervalS) * 1000);
-                       report();
-                   },
                    [](const BeaconInterval &b) {
                        intervalS = b.seconds;
                        // The first beacon goes as soon as there is a position.
@@ -235,16 +392,45 @@ void handle(const Message &message)
                    [](const BeaconPower &p) { power = p.level; },
                    [](const BeaconNow &) { startBeacon(); },
                    [](const Report &) { report(); },
+                   [](const Receive &r) {
+                       if (r.on) {
+                           startReceiving();
+                       } else {
+                           stopReceiving();
+                       }
+                   },
                },
         message);
+}
+
+// Takes a station setStation() handed over.
+void takeStation()
+{
+    heardLock.lock();
+    std::optional<AprsSettings> s = newStation;
+    newStation.reset();
+    heardLock.unlock();
+    if (!s || s->callsign[0] == '\0') {
+        return;
+    }
+    station = s;
+    intervalS = s->beaconIntervalS;
+    nextBeaconAt = os::nowMs() + static_cast<os::Ticks>(intervalS) * 1000;
+    setGpsNeed(static_cast<std::uint32_t>(intervalS) * 1000);
+    report();
 }
 
 void aprsMain(void *)
 {
     while (!os::stopRequested()) {
         Message m;
-        if (inbox.receive(m, pending ? RetryMs : IdleMs)) {
+        if (inbox.receive(m, receiving ? ReceivePollMs : pending ? RetryMs
+                                                                 : IdleMs)) {
             handle(m);
+        }
+        takeStation();
+        if (receiving) {
+            pollLink();
         }
         const os::Ticks now = os::nowMs();
         if (intervalS != 0 && static_cast<std::int32_t>(now - nextBeaconAt) >= 0) {
@@ -263,9 +449,50 @@ std::uint8_t levelPercent = 5;
 
 } // namespace
 
-void start()
+void start(board::AprsLink *l)
 {
+    link = l;
     aprsTask.start("aprs", 2, aprsMain, nullptr);
+}
+
+void setStation(const AprsSettings &settings)
+{
+    heardLock.lock();
+    newStation = settings;
+    heardLock.unlock();
+}
+
+bool heardStation(std::size_t index, HeardStation &out)
+{
+    heardLock.lock();
+    const bool found = index < heardTotal;
+    if (found) {
+        out = heardList[index];
+    }
+    heardLock.unlock();
+    return found;
+}
+
+bool heardStation(std::string_view call, HeardStation &out)
+{
+    heardLock.lock();
+    bool found = false;
+    for (std::size_t i = 0; i < heardTotal && !found; ++i) {
+        if (call == heardList[i].call) {
+            out = heardList[i];
+            found = true;
+        }
+    }
+    heardLock.unlock();
+    return found;
+}
+
+std::size_t heardCount()
+{
+    heardLock.lock();
+    const std::size_t n = heardTotal;
+    heardLock.unlock();
+    return n;
 }
 
 bool post(const Message &message)
