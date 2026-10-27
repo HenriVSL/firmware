@@ -121,14 +121,17 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
     // searching, red without data.
     if (s.gps.on) {
         if (s.gps.asleep) {
-            tag(d, x, "GPS", p::Warn, p::Ground);
+            x = tag(d, x, "GPS", p::Warn, p::Ground);
         } else if (s.gps.fix.valid) {
-            tag(d, x, "GPS", p::Receive, p::Text);
+            x = tag(d, x, "GPS", p::Receive, p::Text);
         } else if (s.gps.receiving) {
-            tag(d, x, "GPS", p::Rule, p::Dim);
+            x = tag(d, x, "GPS", p::Rule, p::Dim);
         } else {
-            tag(d, x, "GPS", p::Transmit, p::Text);
+            x = tag(d, x, "GPS", p::Transmit, p::Text);
         }
+    }
+    if (s.beacons) {
+        tag(d, x, "A", p::Beacon, p::Text);
     }
     // Volume, left of the battery: a speaker mark and the step.
     int right = batteryX(d);
