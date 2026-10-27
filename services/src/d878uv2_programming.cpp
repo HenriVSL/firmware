@@ -14,9 +14,10 @@ constexpr std::string_view Leave = "END";
 constexpr std::uint8_t Identify = 0x02;
 constexpr std::uint8_t Ack = 0x06;
 constexpr std::uint8_t Refused = 0x15;
-// 'I', model, band code, version, 06. The band code says what the radio
-// transmits on: 144-146 and 430-440 MHz.
-constexpr std::uint8_t Identity[16] = {'I', 'D', '8', '7', '8', 'U', 'V', '2', 0x03, 'V', '1', '0', '0', 0, 0, Ack};
+// 'I', model, band code, version, 06, as the factory firmware answers on a
+// European radio. The band code says what the radio transmits on: 144-146
+// and 430-440 MHz. The vendor's software accepts only known versions.
+constexpr std::uint8_t Identity[16] = {'I', 'D', '8', '7', '8', 'U', 'V', '2', 0x03, 'V', '1', '0', '1', 0, 0, Ack};
 constexpr std::size_t ReadBytes = 6;
 constexpr std::size_t WriteBytes = 24;
 
