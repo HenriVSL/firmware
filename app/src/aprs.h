@@ -24,9 +24,11 @@ struct BeaconPower
 {
     services::PowerLevel level;
 };
-/// Sends a beacon as soon as there is a position.
+/// Sends a beacon as soon as there is a position; @c here on the current
+/// channel instead of the APRS frequency (console test).
 struct BeaconNow
 {
+    bool here = false;
 };
 /// Logs the station and the beacon state.
 struct Report
