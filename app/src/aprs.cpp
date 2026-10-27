@@ -50,6 +50,8 @@ services::PowerLevel power = services::PowerLevel::Low;
 os::Ticks nextBeaconAt = 0;
 // A beacon waiting for a position or for the radio, since when.
 bool pending = false;
+// The waiting beacon goes out on the current channel (console test).
+bool pendingHere = false;
 os::Ticks pendingSince = 0;
 os::Ticks nextTry = 0;
 bool waitingForFix = false;
@@ -210,7 +212,7 @@ void tryBeacon()
         endPending();
         return;
     }
-    const radio::PacketChannel channel{station->frequencyHz, station->wide, power};
+    const radio::PacketChannel channel{pendingHere ? 0u : station->frequencyHz, station->wide, power};
     if (!radio::sendPacket(frame, channel)) {
         // The radio has a packet already; look again soon.
         if (now - pendingSince >= WaitForFixMs) {
@@ -227,12 +229,13 @@ void tryBeacon()
     endPending();
 }
 
-void startBeacon()
+void startBeacon(bool here = false)
 {
     if (pending) {
         return;
     }
     pending = true;
+    pendingHere = here;
     pendingSince = os::nowMs();
     nextTry = pendingSince;
 }
@@ -393,7 +396,7 @@ void handle(const Message &message)
                        log::info("aprs") << (intervalS == 0 ? "beacons off" : "beacons on");
                    },
                    [](const BeaconPower &p) { power = p.level; },
-                   [](const BeaconNow &) { startBeacon(); },
+                   [](const BeaconNow &b) { startBeacon(b.here); },
                    [](const Report &) { report(); },
                    [](const Receive &r) {
                        if (r.on) {
@@ -505,7 +508,7 @@ bool post(const Message &message)
 
 const char *consoleHelp()
 {
-    return "aprs, aprs send, aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>";
+    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>";
 }
 
 bool runCommand(std::string_view command)
@@ -519,8 +522,8 @@ bool runCommand(std::string_view command)
     }
     std::string_view rest(command.data() + 5, command.size() - 5);
     const std::string_view word = lib::takeWord(rest);
-    if (word == "send" && rest.empty()) {
-        post(BeaconNow{});
+    if (word == "send" && (rest.empty() || rest == "here")) {
+        post(BeaconNow{rest == "here"});
         return true;
     }
     const std::optional<std::int32_t> n = lib::parseNumber(rest, 10);
