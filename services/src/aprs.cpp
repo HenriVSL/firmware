@@ -256,9 +256,9 @@ std::optional<Position> readMicE(const ax25::Frame &frame, std::string_view info
 
 } // namespace
 
-lib::StaticString<ax25::MaxInfo> positionReport(const Position &p, bool messaging)
+void positionReport(const Position &p, bool messaging, lib::StaticString<ax25::MaxInfo> &out)
 {
-    lib::StaticString<ax25::MaxInfo> out;
+    out.clear();
     out << (messaging ? '=' : '!');
     writeAngle(out, p.latitudeE7, 2, 'N', 'S');
     out << p.symbolTable;
@@ -277,7 +277,6 @@ lib::StaticString<ax25::MaxInfo> positionReport(const Position &p, bool messagin
         }
     }
     out << p.comment.view();
-    return out;
 }
 
 std::optional<Position> readPosition(const ax25::Frame &frame)

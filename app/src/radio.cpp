@@ -1261,16 +1261,13 @@ bool post(const Message &message)
     return fm != nullptr && inbox.send(message);
 }
 
-bool sendPacket(std::span<const std::uint8_t> frame, const PacketChannel &channel)
+bool sendPacket(const services::ax25::Frame &frame, const PacketChannel &channel)
 {
-    if (fm == nullptr || modem == nullptr || frame.size() > packetBytes.size() || packetTaken.exchange(true)) {
+    if (fm == nullptr || modem == nullptr || packetTaken.exchange(true)) {
         return false;
     }
     packetChannel = channel;
-    for (std::size_t i = 0; i < frame.size(); ++i) {
-        packetBytes[i] = frame[i];
-    }
-    packetLength = frame.size();
+    packetLength = services::ax25::encode(frame, packetBytes);
     if (!inbox.send(SendPacket{})) {
         packetTaken = false;
         return false;

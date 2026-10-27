@@ -44,7 +44,7 @@ using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Rec
 struct HeardStation
 {
     static constexpr std::size_t CallBytes = 9;
-    static constexpr std::size_t TextBytes = 40;
+    static constexpr std::size_t TextBytes = 32;
 
     char call[CallBytes + 1] = {};
     bool hasPosition = false;
