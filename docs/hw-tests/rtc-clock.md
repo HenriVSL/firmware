@@ -23,3 +23,9 @@ time zone or Menu, GPS and time, Zone. The console has `time` and
 | 7 | Flash the factory firmware and look at its clock; flash DeltaMM back | The same time in both: the counter and its marker carry over |
 
 ## Results
+
+2026-10-27: all steps pass. After flashing and after a minute switched
+off, the clock read the PC's UTC within a second; the factory firmware
+showed the same time. Changing the zone from UTC+3:00 to UTC+2:00 moved
+the status bar at once, and a GPS fix corrected a clock set 60 s behind
+to the PC's time.
