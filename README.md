@@ -42,6 +42,9 @@ covers the keypad, side keys and knob, with auto lock and forced lock.
 with the codeplug's setting, and the backlight goes off after its light
 time. A battery monitor and auto power-off.
 
+**Programming.** Codeplug tools that speak the radio's own programming
+protocol read and write the codeplug over USB. Tested with QDMR.
+
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
@@ -139,6 +142,18 @@ checklist in `docs/hw-tests/`.
 | Menu | Settings menu |
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens |
+
+## Programming the codeplug
+
+The data port also speaks the radio's programming protocol, so codeplug
+tools read and write the codeplug as with the factory firmware. QDMR needs
+to know DeltaMM's USB ID (1209:0001 during development); a QDMR with that
+added finds the radio as a D878UVII. The radio starts again after a write,
+with the new codeplug. Only the codeplug is written, never calibration or
+the radio's own data; the callsign database is not written yet.
+
+A write that stops halfway keeps the blocks already written and leaves
+the rest as they were, so finish it with a complete write.
 
 ## Log and console
 
