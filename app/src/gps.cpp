@@ -99,6 +99,8 @@ const char *clientName(services::GpsSchedule::Client client)
         return "screen";
     case services::GpsSchedule::Client::Console:
         return "console";
+    case services::GpsSchedule::Client::Aprs:
+        return "APRS";
     case services::GpsSchedule::Client::Count:
         break;
     }

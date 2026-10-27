@@ -148,12 +148,23 @@ using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand
 /// (each nullptr on a board without one) and brings them up.
 void start(board::Fm &fm, board::Baseband *baseband, board::Modem *modem);
 
+/// Where a packet goes out: simplex on @c hz (0 = the current FM channel),
+/// without a tone.
+struct PacketChannel
+{
+    std::uint32_t hz = 0;
+    bool wide = true;
+    services::PowerLevel power = services::PowerLevel::Low;
+};
+
 /// Queues @p frame (from the first address to the frame check sequence)
-/// for the current FM channel. The radio waits until the channel is free,
-/// sends it with the microphone muted and goes back to receive; it gives
-/// the frame up if the channel stays busy. False while another frame
-/// waits, or without a modem.
-bool sendPacket(std::span<const std::uint8_t> frame);
+/// for @p channel. The radio tunes there if it is elsewhere, waits until
+/// the channel is free, sends the frame with the microphone muted and
+/// goes back to the working channel; it gives the frame up if the channel
+/// stays busy, or the user transmits or changes channel meanwhile. The ui
+/// hears whether it went out. False while another frame waits, or
+/// without a modem.
+bool sendPacket(std::span<const std::uint8_t> frame, const PacketChannel &channel);
 
 /// Queues a message for the radio task; false when the queue is full or
 /// the task has not started.

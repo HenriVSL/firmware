@@ -78,7 +78,13 @@ enum class PacketState : std::uint8_t
 PacketState packetState = PacketState::None;
 std::uint16_t packetLeadMs = 300;
 std::uint8_t packetLevelPercent = 5;
-constexpr services::PowerLevel PacketPower = services::PowerLevel::Low;
+PacketChannel packetChannel;
+// A packet on another frequency: the working channel to go back to.
+bool hopped = false;
+services::FmChannel workingChannel;
+bool workingReceiving = false;
+// Listening on the packet frequency before the first chance to send.
+constexpr os::Ticks HopListenMs = 500;
 // Channel access as AX.25 does it: once the channel is free, send in a
 // slot with probability Persistence / 256, otherwise look again a slot
 // later; stations that waited for the same one then rarely start together.
@@ -87,6 +93,8 @@ constexpr std::uint32_t Persistence = 63;
 constexpr os::Ticks GiveUpMs = 30'000;
 os::Ticks packetQueuedAt = 0;
 os::Ticks nextSlot = 0;
+// No sending before this: listening first after queueing or retuning.
+os::Ticks listenUntil = 0;
 os::Ticks packetAirMs = 0;
 // The receiver heard a carrier at the last poll.
 bool carrier = false;
@@ -285,7 +293,7 @@ void startTransmit(bool packet = false)
     }
     services::FmChannel channel = fmChannel;
     channel.transmitHz = transmitHz != 0 && !packet ? transmitHz : fmChannel.receiveHz;
-    const services::PowerLevel level = packet ? PacketPower : powerLevel;
+    const services::PowerLevel level = packet ? packetChannel.power : powerLevel;
     const std::uint16_t ctcss = packet ? 0 : static_cast<std::uint16_t>(ctcssDeciHz * 10);
     if (receiveOnly) {
         log::info("fm") << "PTT: this channel is receive only";
@@ -343,10 +351,40 @@ std::uint32_t random32()
     return randomState;
 }
 
-void endPacket()
+// Back to the working channel after a packet on another frequency.
+void returnFromHop()
 {
+    if (!hopped) {
+        return;
+    }
+    hopped = false;
+    fmChannel = workingChannel;
+    if (workingReceiving) {
+        fmReceive();
+    } else {
+        fm->idle();
+        setSpeaker(false);
+    }
+}
+
+void endPacket(bool sent)
+{
+    returnFromHop();
     packetState = PacketState::None;
     packetTaken = false;
+    ui::post(ui::Packet{sent});
+}
+
+// Goes to the packet's frequency, remembering the working channel.
+void hop()
+{
+    workingChannel = fmChannel;
+    workingReceiving = fm->receiving();
+    hopped = true;
+    fmChannel = services::FmChannel{packetChannel.hz, packetChannel.hz, packetChannel.wide};
+    fmReceive();
+    listenUntil = os::nowMs() + HopListenMs;
+    log::info("packet") << "listening on " << mhz(packetChannel.hz).view() << " MHz";
 }
 
 void startPacket()
@@ -354,12 +392,12 @@ void startPacket()
     startTransmit(true);
     if (!transmitting) {
         log::warning("packet") << "not sent: the transmitter did not start";
-        endPacket();
+        endPacket(false);
         return;
     }
     if (!modem->send({packetBytes.data(), packetLength}, packetLeadMs, packetLevelPercent)) {
         stopTransmit("modem busy");
-        endPacket();
+        endPacket(false);
         return;
     }
     // The longest the frame can take: every sixth bit stuffed, plus the
@@ -376,31 +414,35 @@ void packetStep()
     if (packetState == PacketState::Sending) {
         if (!modem->sending()) {
             stopTransmit("packet sent");
-            endPacket();
+            endPacket(true);
         } else if (now - transmitStarted > packetAirMs) {
             stopTransmit("packet took too long");
-            endPacket();
+            endPacket(false);
         }
         return;
     }
     if (packetState != PacketState::Waiting) {
         return;
     }
+    if (!hopped && packetChannel.hz != 0 && (!fm->receiving() || fmChannel.receiveHz != packetChannel.hz)) {
+        hop();
+        return;
+    }
     if (!fm->receiving()) {
         log::warning("packet") << "dropped: no FM channel";
-        endPacket();
+        endPacket(false);
         return;
     }
     if (now - packetQueuedAt >= GiveUpMs) {
         log::warning("packet") << "dropped: the channel stayed busy for " << GiveUpMs / 1000 << " s";
-        endPacket();
+        endPacket(false);
         return;
     }
     if (transmitting || carrier) {
         nextSlot = now + SlotMs;
         return;
     }
-    if (static_cast<std::int32_t>(now - nextSlot) < 0) {
+    if (static_cast<std::int32_t>(now - nextSlot) < 0 || static_cast<std::int32_t>(now - listenUntil) < 0) {
         return;
     }
     if ((random32() & 0xFF) >= Persistence) {
@@ -488,6 +530,16 @@ void handle(Message &message)
         }
         saver.reset();
         log::info("power") << "battery save ended after " << saver.cycles() << " sleeps so far";
+    }
+    // The user's own use of the radio comes first: a packet waiting on
+    // another frequency is given up, back on the working channel.
+    if (hopped && packetState == PacketState::Waiting) {
+        const Ptt *ptt = std::get_if<Ptt>(&message);
+        if ((ptt != nullptr && ptt->down) || std::get_if<UseChannel>(&message) != nullptr ||
+            std::get_if<FmReceive>(&message) != nullptr || std::get_if<FmIdle>(&message) != nullptr) {
+            log::info("packet") << "dropped: the radio is in use";
+            endPacket(false);
+        }
     }
     // Anything but PTT itself ends a transmission first; a queued packet
     // waits for it instead.
@@ -587,6 +639,7 @@ void handle(Message &message)
                        packetQueuedAt = os::nowMs();
                        // Listen for a slot before the first chance to send.
                        nextSlot = packetQueuedAt + SlotMs;
+                       listenUntil = nextSlot;
                        randomState ^= packetQueuedAt;
                    },
                    [](const PacketSettings &s) {
@@ -663,11 +716,12 @@ bool post(const Message &message)
     return fm != nullptr && inbox.send(message);
 }
 
-bool sendPacket(std::span<const std::uint8_t> frame)
+bool sendPacket(std::span<const std::uint8_t> frame, const PacketChannel &channel)
 {
     if (fm == nullptr || modem == nullptr || frame.size() > packetBytes.size() || packetTaken.exchange(true)) {
         return false;
     }
+    packetChannel = channel;
     for (std::size_t i = 0; i < frame.size(); ++i) {
         packetBytes[i] = frame[i];
     }

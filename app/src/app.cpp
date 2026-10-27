@@ -504,6 +504,7 @@ void start(Platform &p)
         audio::start(*p.audio);
     }
     radio::start(p.fm, p.baseband, p.modem);
+    aprs::start();
     if (p.gps != nullptr) {
         gps::start(*p.gps);
     }
