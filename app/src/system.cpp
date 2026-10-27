@@ -295,6 +295,7 @@ void serviceClock()
         clockRatePpb.store(platform->rtc->rateCorrection());
         log::info("clock") << "rate correction " << ppmText(clockRatePpb.load()).view() << " (was "
                            << ppmText(before).view() << ")";
+        ui::post(ui::ClockRate{});
     }
     publishClock(platform->rtc->read());
     if (clockReportWanted.exchange(false)) {
