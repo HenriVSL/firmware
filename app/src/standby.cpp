@@ -117,14 +117,17 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
     if (s.locked) {
         x = tag(d, x, "LOCK", p::Warn, p::Ground);
     }
-    // GPS: green with a fix, grey while searching, amber without data.
+    // GPS: amber while asleep between fixes, green with a fix, grey while
+    // searching, red without data.
     if (s.gps.on) {
-        if (s.gps.fix.valid) {
+        if (s.gps.asleep) {
+            tag(d, x, "GPS", p::Warn, p::Ground);
+        } else if (s.gps.fix.valid) {
             tag(d, x, "GPS", p::Receive, p::Text);
         } else if (s.gps.receiving) {
             tag(d, x, "GPS", p::Rule, p::Dim);
         } else {
-            tag(d, x, "GPS", p::Warn, p::Ground);
+            tag(d, x, "GPS", p::Transmit, p::Text);
         }
     }
     // Volume, left of the battery: a speaker mark and the step.
@@ -237,14 +240,17 @@ void drawGpsScreen(Display &d, const GpsState &gps, bool full)
     const services::GpsFix &f = gps.fix;
     std::string_view state = "Off";
     Color stateInk = p::Dim;
-    if (gps.on && f.valid) {
+    if (gps.on && gps.asleep) {
+        state = "Sleeping";
+        stateInk = p::Warn;
+    } else if (gps.on && f.valid) {
         state = "Fix";
         stateInk = p::Receive;
     } else if (gps.on && gps.receiving) {
         state = "Searching";
     } else if (gps.on) {
         state = "No data";
-        stateInk = p::Warn;
+        stateInk = p::Transmit;
     }
     // Right-aligned in a field as wide as the longest state, so the spaces
     // cover a longer word drawn before.

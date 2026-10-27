@@ -71,6 +71,12 @@ struct SetKeyLock
 {
     bool locked;
 };
+/// Sets battery save as Menu, Battery does (console): 0 off, 1 on, 2 fast
+/// wake.
+struct BatterySave
+{
+    std::uint8_t mode;
+};
 /// What the key lock covers.
 struct KeyLockSettings
 {
@@ -108,10 +114,12 @@ struct Gps
     services::GpsFix fix;
     bool on;
     bool receiving;
+    /// Enabled, but switched off between fixes to save power.
+    bool asleep;
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, ShowStandby, SetKeyLock, KeyLockSettings, KeyLockReport, Gps>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.

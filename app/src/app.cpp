@@ -214,7 +214,7 @@ bool radioCommand(std::string_view command)
     } else if (command == "save") {
         posted = radio::post(radio::BatterySaveStatus{});
     } else if (numbersAfter(command, "save ", 10, n, 1) && n[0] <= 2) {
-        posted = radio::post(radio::BatterySave{static_cast<std::uint8_t>(n[0])});
+        posted = ui::post(ui::BatterySave{static_cast<std::uint8_t>(n[0])});
     } else if (command == "fm status") {
         posted = radio::post(radio::FmStatus{});
     } else if (numbersAfter(command, "fm sq ", 10, n, 1) && n[0] <= 5) {
@@ -315,7 +315,7 @@ void runCommand(std::string_view command)
                                 "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
-        log::info("console") << "gps: gps, gps on|off, gps raw on|off; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
+        log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
@@ -366,12 +366,17 @@ void runCommand(std::string_view command)
         }
     } else if (command == "gps" || lib::startsWith(command, "gps ")) {
         bool posted = false;
+        std::int32_t needS[1] = {};
         if (command == "gps") {
             posted = gps::post(gps::Report{});
         } else if (command == "gps on" || command == "gps off") {
             posted = gps::post(gps::Power{command == "gps on"});
         } else if (command == "gps raw on" || command == "gps raw off") {
             posted = gps::post(gps::Raw{command == "gps raw on"});
+        } else if (numbersAfter(command, "gps need ", 10, needS, 1)) {
+            // The console's own need, for tests: a position every <seconds>, 0 = none.
+            posted = gps::post(
+                gps::Need{services::GpsSchedule::Client::Console, static_cast<std::uint32_t>(needS[0]) * 1000});
         } else {
             gps::ChipCommand c;
             c.text << std::string_view(command.data() + 4, command.size() - 4);
