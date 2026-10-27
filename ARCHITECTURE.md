@@ -91,6 +91,7 @@ urgent.
 | 4 | ui | screens, menus, key lock, codeplug reading, display, backlight |
 | 3 | gps | GPS receiver's serial link: NMEA sentences, fix, when the receiver sleeps |
 | 2 | link | USB: data protocol, log console |
+| 2 | aprs | BT+APRS board's serial link: beacons, received packets, heard list |
 | 1 | system | power latch, battery, watchdog, calibration, real-time clock |
 
 Messages are small `std::variant`s of plain structs. Commands go down
@@ -102,6 +103,10 @@ Safety rules that the structure enforces:
 - PTT goes `input → ui → radio`, so the key lock decides in one place.
 - The radio task keeps its own transmit timeout and band limits, and any
   other command to it ends a transmission first.
+- Packets go out from the radio task too: simplex on their own
+  frequency, low power by default, without a tone and with the microphone
+  muted, once the channel is free. PTT or a channel change gives a waiting
+  packet up.
 
 ## Memory
 
@@ -191,6 +196,17 @@ the SCT3258 are built when the option is given.
   sleep, and every power-on is a cold start: from half a minute to a few
   minutes to a fix indoors. `gps_schedule` decides when the supply is on from how often
   each client needs a position.
+- APRS sending: AFSK samples go to the beep PWM (PB9, TIMER3 channel 3,
+  32 kHz samples), which also reaches the transmitter's modulation input
+  while the microphone is muted (the FM transceiver's GPIO3).
+- APRS receiving: the BT+APRS board, a daughterboard with its own MCU,
+  decodes the receiver's audio. As observed, PA1 powers it; it talks on
+  UART3 (PC10 to it, PC11 from it) at 115200 baud, 8N1, answers the bytes
+  EE 01 06 with 06 and `+READY`, and sends each packet it decodes as
+  `+APRS:`, a flag, the AX.25 frame with its frame check and a flag
+  (`d878uv2_link_board`).
+- Codeplug APRS settings: a block at 0x02501000 and the comment at
+  0x02501200 (`d878uv2_codeplug`).
 - Display: 160 × 128 colour panel on an 8-bit parallel bus.
 - Storage: SPI NAND flash.
 - USB: full-speed device on PA11/PA12, clocked from the crystal PLL; a

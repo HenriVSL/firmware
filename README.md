@@ -47,6 +47,14 @@ time between fixes and while the radio is off. The receiver's timing
 wanders by a few milliseconds, so a 30-minute run gets the rate to within
 about 5 ppm (0.4 s a day); a 60-minute run does better.
 
+**APRS.** Position beacons from the GPS, with the codeplug's APRS
+callsign, path, symbol, comment and frequency, at the codeplug's interval
+or now from the menu. Each packet waits for a free channel and goes out
+simplex on the APRS frequency at low power; from another channel the radio
+goes there and comes back. The radio's BT+APRS board decodes received
+packets while the radio is on their frequency, and a list shows the
+stations heard with their distance and bearing.
+
 **Platform.** Beeps, volume and backlight. A USB log with a debug
 console, and crash details kept across restarts.
 
@@ -160,6 +168,16 @@ logs every sentence the receiver sends; `gps query`, `gps restart` and
 position every so many seconds (0: none). `time` logs the clock, and
 `time set YYYY-MM-DD HH:MM:SS` sets it (UTC); `time cal <min>` runs a
 calibration (0 stops it) and `time cal reset` clears the correction.
+
+Menu, APRS holds Heard (the stations heard, newest first: choose one for
+its position, distance and bearing, altitude, speed and text), Send now,
+Beacon (the interval, Off to stop), Power (the beacon power) and Receive
+(the board on or off). An A in the status bar shows that beacons go out
+on their own. The console's `aprs` logs the station and the beacon state,
+`aprs send` sends a beacon (`aprs send here`: on the current channel, for
+tests), `aprs every <s>` sets the interval, and
+`aprs lead <ms>` and `aprs level <%>` set the packet's lead-in and audio
+level.
 
 The GPS mark in the status bar, shown while the GPS is on:
 
