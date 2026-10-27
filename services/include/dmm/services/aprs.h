@@ -42,8 +42,8 @@ struct Position
 /// "!DDMM.mmN/DDDMM.mmE>CCC/SSS/A=FFFFFFcomment", course and speed only
 /// when @p p has them, the altitude in feet only when it has one.
 /// @p messaging uses '=' instead of '!', saying the station can receive
-/// messages.
-lib::StaticString<ax25::MaxInfo> positionReport(const Position &p, bool messaging);
+/// messages. Written into @p out, which it replaces.
+void positionReport(const Position &p, bool messaging, lib::StaticString<ax25::MaxInfo> &out);
 
 /// The position in @p frame, if it is a position report in any of the
 /// three forms (with or without a timestamp).
