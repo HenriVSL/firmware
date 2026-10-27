@@ -8,18 +8,34 @@
 
 namespace dmm::services {
 
+/// A clock reading: UTC seconds since 1970-01-01 and the milliseconds into
+/// that second.
+struct ClockReading
+{
+    std::uint32_t seconds = 0;
+    std::uint16_t milliseconds = 0; // 0..999
+};
+
 /// A clock that keeps UTC while the radio is off; the board names the type
 /// (dmm/board/parts.h). Used by one task.
 ///
 /// - start(): starts the clock if it is not running yet. True when it
 ///   runs; false without one.
 /// - seconds(): UTC seconds since 1970-01-01.
-/// - setSeconds(utc): sets it.
+/// - read(): the same to the millisecond.
+/// - setSeconds(utc): sets it; the fraction of the second runs on.
+/// - setRateCorrection(ppb): runs the clock faster by @p ppb parts per
+///   billion (negative: slower), as near as the clock can; kept while the
+///   radio is off.
+/// - rateCorrection(): the correction in effect, in parts per billion.
 template <class T>
-concept RealTimeClock = requires(T &clock, std::uint32_t utc) {
+concept RealTimeClock = requires(T &clock, std::uint32_t utc, std::int32_t ppb) {
     { clock.start() } -> std::same_as<bool>;
     { clock.seconds() } -> std::same_as<std::uint32_t>;
+    { clock.read() } -> std::same_as<ClockReading>;
     clock.setSeconds(utc);
+    clock.setRateCorrection(ppb);
+    { clock.rateCorrection() } -> std::same_as<std::int32_t>;
 };
 
 /// A calendar date and time of day.
