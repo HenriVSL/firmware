@@ -28,3 +28,10 @@ The status bar's GPS mark is amber while the receiver sleeps.
 | 9 | Console `save 0`, then `save 1` | Menu, Battery follows (Off, then On); `gps: power saving off` and the receiver on, then `power saving on` and asleep after its next fix |
 
 ## Results
+
+2026-10-27: all steps pass. Indoors with GPS only, starts reached a fix
+in 35 to 105 s and the receiver slept ten seconds after each; the learnt
+start lead was 44 to 131 s. A start without a fix was given up after five
+minutes and slept 3600 s. With `gps need 300`, the receiver woke by itself
+223 s after sleeping, had a fix 66 s later, the second it was due, and
+corrected a clock set 60 s behind.
