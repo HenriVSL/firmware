@@ -18,6 +18,10 @@ std::optional<Channel> decodeChannel(std::span<const std::uint8_t, 64> record);
 /// Decodes the start of the D878UVII general settings block (at least 0xC0 bytes).
 CodeplugSettings decodeSettings(std::span<const std::uint8_t> block);
 
+/// Decodes the D878UVII APRS settings block (at least 0xCC bytes) and its
+/// separate comment text; nothing without a valid callsign.
+std::optional<AprsSettings> decodeAprsSettings(std::span<const std::uint8_t> block, std::span<const std::uint8_t> comment);
+
 /// The D878UVII's codeplug on its data flash, read only. Every 128 KB
 /// block is kept twice, in the block itself and the one after it; reads
 /// come from the copy marked valid.
@@ -34,6 +38,7 @@ public:
     StorageResult read(std::uint32_t address, std::span<std::uint8_t> data);
 
     std::optional<CodeplugSettings> settings() override;
+    std::optional<AprsSettings> aprsSettings() override;
     std::optional<Channel> channel(std::uint16_t index) override;
     std::optional<Channel> vfo(bool sideB) override;
     bool zoneInUse(std::uint8_t zone) override;
