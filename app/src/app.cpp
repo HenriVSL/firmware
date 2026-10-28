@@ -32,6 +32,7 @@ Platform *platform = nullptr;
 os::Task<512> linkTask;
 
 constexpr os::Ticks LinkStepMs = 20;
+constexpr os::Ticks ProgrammingStepMs = 1;
 
 // Sends what is queued, then gives USB time to carry it out, before the
 // console does something that ends this run.
@@ -456,16 +457,26 @@ void writeData(std::span<const std::uint8_t> bytes)
     }
 }
 
-// Serves DeltaMM's PC protocol while requests keep coming.
+// Serves the data port while requests keep coming: DeltaMM's PC protocol,
+// and the radio's own programming protocol, which has the port to itself
+// in program mode.
 void serveData(services::DataLink &link)
 {
+    board::Programming *programming = platform->programming;
     std::uint8_t input[64];
     for (;;) {
         const std::size_t n = platform->dataChannel->read(input);
         if (n == 0) {
             return;
         }
-        link.feed(std::span(input, n), os::nowMs(), writeData);
+        const os::Ticks now = os::nowMs();
+        const bool programmingBefore = programming != nullptr && programming->active(now);
+        if (programming != nullptr) {
+            programming->feed(std::span(input, n), now, writeData);
+        }
+        if (!programmingBefore && (programming == nullptr || !programming->active(now))) {
+            link.feed(std::span(input, n), now, writeData);
+        }
     }
 }
 
@@ -484,7 +495,14 @@ void linkMain(void *)
         if (platform->logSink.ready()) {
             log::drain(platform->logSink);
         }
-        os::sleepUntil(wake, LinkStepMs);
+        // In program mode the PC waits for each answer: look often.
+        const bool programming = platform->programming != nullptr && platform->programming->active(os::nowMs());
+        if (platform->programming != nullptr && platform->programming->takeCodeplugChanged()) {
+            log::info("programming") << "codeplug written from the PC: restarting";
+            flushLog();
+            platform->system.restart();
+        }
+        os::sleepUntil(wake, programming ? ProgrammingStepMs : LinkStepMs);
     }
     log::drain(platform->logSink);
 }

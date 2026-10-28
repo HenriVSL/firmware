@@ -10,6 +10,7 @@ add_library(dmm_services STATIC
     src/d878uv2_calibration.cpp
     src/d878uv2_codeplug.cpp
     src/d878uv2_link_board.cpp
+    src/d878uv2_programming.cpp
     src/d878uv2_storage.cpp
     src/data_link.cpp
     src/input.cpp
