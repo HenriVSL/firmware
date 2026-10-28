@@ -40,7 +40,7 @@ talkgroup covers a whole network. The radio tries each repeater, waking
 quiet ones, on a side key the codeplug sets to roaming, when PTT finds
 no repeater, and by itself as the codeplug's roaming settings say
 (implemented, not yet tested on the radio). The Channel menu turns
-roaming off for the session. This is basic roaming, by
+roaming off, or picks another roaming zone, for the session. This is basic roaming, by
 signal strength in the way the factory firmware does it; roaming as the
 ETSI DMR standards describe it is still to come.
 
