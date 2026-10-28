@@ -162,7 +162,7 @@ struct RoamNow
 };
 /// The frequency offset a radio starts with: added to every receive and
 /// transmit frequency, for a radio whose frequency reference has drifted.
-inline constexpr std::int32_t DefaultFrequencyOffsetHz = 0;
+inline constexpr std::int32_t DefaultFrequencyOffsetHz = 2000;
 
 /// Added to every receive and transmit frequency, for a radio whose
 /// frequency reference has drifted; 0 = none.
