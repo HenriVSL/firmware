@@ -13,6 +13,7 @@ add_library(dmm_services STATIC
     src/key_lock.cpp
     src/log.cpp
     src/power.cpp
+    src/roaming.cpp
     src/audio.cpp
     src/rda1846_transceiver.cpp
     src/sct3258_baseband.cpp
