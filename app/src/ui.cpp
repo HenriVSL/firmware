@@ -401,6 +401,7 @@ enum class MenuItem : std::uint8_t
     SquelchMode,
     Power,
     Roaming,
+    RoamZone,
     FrequencyOffset,
     Backlight,
     BacklightTime,
@@ -424,11 +425,11 @@ enum class MenuGroup : std::uint8_t
 struct GroupInfo
 {
     const char *name;
-    MenuItem items[5];
+    MenuItem items[6];
     std::uint8_t count;
 };
 constexpr GroupInfo Groups[] = {
-    {"Channel", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::FrequencyOffset}, 5},
+    {"Channel", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::RoamZone, MenuItem::FrequencyOffset}, 6},
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
@@ -486,6 +487,17 @@ struct RoamState
     char name[CodeplugSource::SiteNameBytes + 1] = {};
 };
 RoamState roam;
+// Hands the roaming zone's repeaters to the radio task, which then looks
+// for one afresh.
+void loadRoamingSites()
+{
+    radio::setRoamingSites([](std::span<services::RoamingSite> out) {
+        roamingSites = roamingZone != services::RoamingSettings::NoZone && codeplug != nullptr
+            ? codeplug->roamingSites(roamingZone, out)
+            : 0;
+        return roamingSites;
+    });
+}
 // The side keys' functions, and whether a long press has already acted.
 services::KeyFunction sideShort[CodeplugSettings::SideKeys] = {};
 services::KeyFunction sideLong[CodeplugSettings::SideKeys] = {};
@@ -697,10 +709,7 @@ void uiMain(void *)
             }
             const services::RoamingSettings &roaming = selector.settings().roaming;
             roamingZone = roaming.zone;
-            radio::setRoamingSites([](std::span<services::RoamingSite> out) {
-                roamingSites = roamingZone != services::RoamingSettings::NoZone ? codeplug->roamingSites(roamingZone, out) : 0;
-                return roamingSites;
-            });
+            loadRoamingSites();
             radio::post(radio::RoamingSetup{roaming});
             std::copy(std::begin(selector.settings().sideShort), std::end(selector.settings().sideShort), sideShort);
             std::copy(std::begin(selector.settings().sideLong), std::end(selector.settings().sideLong), sideLong);
@@ -864,6 +873,14 @@ void uiMain(void *)
             label = "Roaming";
             value << (roamingOn ? "On" : "Off");
             break;
+        case MenuItem::RoamZone: {
+            label = "Roam zone";
+            std::array<char, CodeplugSource::ZoneNameBytes + 1> name{};
+            value << (roamingZone != services::RoamingSettings::NoZone && codeplug->roamingZoneName(roamingZone, name)
+                    ? std::string_view(name.data())
+                    : std::string_view("-"));
+            break;
+        }
         case MenuItem::FrequencyOffset:
             label = "Freq offset";
             value << (offsetKhz > 0 ? "+" : "") << offsetKhz << " kHz";
@@ -964,6 +981,21 @@ void uiMain(void *)
             menuValue.add(1, "On");
             menuValue.select(roamingOn ? 1 : 0);
             break;
+        case MenuItem::RoamZone: {
+            menuValue.open("Roam zone");
+            std::uint8_t zones[CodeplugSource::MaxRoamingZones];
+            const std::size_t n = codeplug->roamingZones(zones);
+            for (std::size_t i = 0; i < n; ++i) {
+                std::array<char, CodeplugSource::ZoneNameBytes + 1> name{};
+                codeplug->roamingZoneName(zones[i], name);
+                menuValue.add(zones[i], name.data());
+            }
+            if (n == 0) {
+                menuValue.add(services::RoamingSettings::NoZone, "None");
+            }
+            menuValue.select(roamingZone);
+            break;
+        }
         case MenuItem::FrequencyOffset:
             menuValue.open("Freq offset");
             for (int k = -MaxOffsetKhz; k <= MaxOffsetKhz; ++k) {
@@ -1079,6 +1111,13 @@ void uiMain(void *)
             roamingOn = v == 1;
             radio::post(radio::RoamingOn{roamingOn});
             break;
+        case MenuItem::RoamZone:
+            if (v != roamingZone) {
+                roamingZone = v;
+                loadRoamingSites();
+                log::info("ui") << "roaming zone " << v << ", " << roamingSites << " repeaters";
+            }
+            break;
         case MenuItem::FrequencyOffset:
             offsetKhz = static_cast<int>(v) - MaxOffsetKhz;
             radio::post(radio::FrequencyOffset{offsetKhz * 1000});
@@ -1115,7 +1154,7 @@ void uiMain(void *)
             break;
         }
         if (menuItem == MenuItem::Squelch || menuItem == MenuItem::SquelchMode || menuItem == MenuItem::Power ||
-            menuItem == MenuItem::Roaming) {
+            menuItem == MenuItem::Roaming || menuItem == MenuItem::RoamZone) {
             useChannel();
         }
         // Back to the list it came from, showing the new value; straight to
