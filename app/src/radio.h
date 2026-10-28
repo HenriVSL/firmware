@@ -160,6 +160,16 @@ struct UseChannel
 struct RoamNow
 {
 };
+/// The frequency offset a radio starts with: added to every receive and
+/// transmit frequency, for a radio whose frequency reference has drifted.
+inline constexpr std::int32_t DefaultFrequencyOffsetHz = 0;
+
+/// Added to every receive and transmit frequency, for a radio whose
+/// frequency reference has drifted; 0 = none.
+struct FrequencyOffset
+{
+    std::int32_t hz;
+};
 /// Roaming on, or off: every channel works on its own frequencies. Takes
 /// effect with the next UseChannel.
 struct RoamingOn
@@ -201,7 +211,7 @@ struct PacketSettings
     std::uint8_t levelPercent;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
 
 /// Starts the radio task, which owns @p fm, @p baseband and @p modem
 /// (each nullptr on a board without one) and brings them up.
