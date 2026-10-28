@@ -38,6 +38,14 @@ struct StandbyState
     std::string_view note;
     /// Volume step 0..15, or -1 when unknown.
     int volume = -1;
+    /// The channel roams: a search under way, or the repeater in use (its
+    /// output frequency, 0 = the channel's own; its colour code; its name,
+    /// or empty).
+    bool roaming = false;
+    bool roamSearching = false;
+    std::uint32_t roamHz = 0;
+    std::uint8_t roamColourCode = 0;
+    std::string_view roamSite;
 };
 
 /// A DMR call for the call screen.
