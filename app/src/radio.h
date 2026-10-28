@@ -4,6 +4,7 @@
 #pragma once
 
 #include "dmm/app/app.h"
+#include "dmm/lib/fn_ref.h"
 #include "dmm/lib/format.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/fm_transceiver.h"
@@ -147,8 +148,37 @@ struct UseChannel
     services::Channel channel;
     std::uint8_t squelch;
 };
+/// Looks for the best repeater of the roaming zone now.
+struct RoamNow
+{
+};
+/// The frequency offset a radio starts with: added to every receive and
+/// transmit frequency, for a radio whose frequency reference has drifted.
+inline constexpr std::int32_t DefaultFrequencyOffsetHz = 0;
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, BatterySave, BatterySaveStatus, VoiceEnhancement>;
+/// Added to every receive and transmit frequency, for a radio whose
+/// frequency reference has drifted; 0 = none.
+struct FrequencyOffset
+{
+    std::int32_t hz;
+};
+/// Roaming on, or off: every channel works on its own frequencies. Takes
+/// effect with the next UseChannel.
+struct RoamingOn
+{
+    bool on;
+};
+/// When roaming looks for a better repeater by itself.
+struct RoamingSetup
+{
+    services::RoamingSettings settings;
+};
+/// Logs the roaming state.
+struct RoamStatus
+{
+};
+
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, BatterySave, BatterySaveStatus, VoiceEnhancement>;
 
 /// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
 /// board without one) and brings them up.
@@ -176,5 +206,9 @@ bool ready();
 /// The talkgroups heard besides the channel's own contact (the channel's
 /// receive group list); set before posting the channel.
 void setReceiveGroups(std::span<const std::uint32_t> ids);
+
+/// The roaming zone's repeaters, which @p fill writes and counts; set before
+/// posting a roaming channel.
+void setRoamingSites(lib::FnRef<std::size_t(std::span<services::RoamingSite>)> fill);
 
 } // namespace dmm::app::radio
