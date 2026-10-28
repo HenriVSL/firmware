@@ -3,6 +3,8 @@
 
 #include "system.h"
 
+#include "radio.h"
+
 #include "ui.h"
 
 #include "dmm/lib/format.h"
@@ -28,8 +30,6 @@ os::Task<384> systemTask;
 
 constexpr os::Ticks StepMs = 10;
 constexpr os::Ticks StartFlashMs = 300;
-constexpr os::Ticks HeartbeatPeriodMs = 1000;
-constexpr os::Ticks HeartbeatOnMs = 100;
 constexpr os::Ticks UptimeReportMs = 10000;
 constexpr os::Ticks BatteryEveryMs = 250;
 constexpr os::Ticks LowBatteryBlinkMs = 800;
@@ -125,6 +125,7 @@ void waitForSwitchOffThenPowerDown()
     log::info("system") << "power switch off";
     platform->leds.set(Leds::Led::Green, false);
     platform->leds.set(Leds::Led::Red, false);
+    platform->leds.set(Leds::Led::Blue, false);
     feedWatchdog();
     os::sleepMs(LogFlushMs);
     platform->system.releasePower();
@@ -153,6 +154,7 @@ void softOff(const char *reason)
     ui::post(ui::PanelPower{false});
     platform->leds.set(Leds::Led::Green, false);
     platform->leds.set(Leds::Led::Red, false);
+    platform->leds.set(Leds::Led::Blue, false);
     waitForSwitchOffThenPowerDown();
 }
 
@@ -324,7 +326,6 @@ void systemMain(void *)
 
     lastActivity.store(os::nowMs(), std::memory_order_relaxed);
     os::Ticks wake = os::nowMs();
-    os::Ticks phase = 0;
     os::Ticks sinceReport = 0;
     os::Ticks sinceBattery = BatteryEveryMs;
     os::Ticks sinceClock = 0;
@@ -375,13 +376,15 @@ void systemMain(void *)
             return;
         }
 
-        // Green heartbeat once a second; while the battery is low the red
-        // LED blinks as well.
-        platform->leds.set(Leds::Led::Green, phase < HeartbeatOnMs);
-        platform->leds.set(Leds::Led::Red, battery().low() && now % (2 * LowBatteryBlinkMs) < LowBatteryBlinkMs);
+        // Green while FM is heard, blue while a DMR call is, red on the air;
+        // while the battery is low the red LED blinks when not transmitting.
+        const radio::Activity air = radio::activity();
+        const bool lowBlink = battery().low() && now % (2 * LowBatteryBlinkMs) < LowBatteryBlinkMs;
+        platform->leds.set(Leds::Led::Green, air == radio::Activity::FmReceive);
+        platform->leds.set(Leds::Led::Blue, air == radio::Activity::DmrReceive);
+        platform->leds.set(Leds::Led::Red, air == radio::Activity::Transmit || lowBlink);
 
         os::sleepUntil(wake, StepMs);
-        phase = (phase + StepMs) % HeartbeatPeriodMs;
         sinceReport += StepMs;
         if (sinceReport >= UptimeReportMs) {
             sinceReport = 0;

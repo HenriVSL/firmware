@@ -4,6 +4,7 @@
 #pragma once
 
 #include "dmm/app/app.h"
+#include "dmm/lib/fn_ref.h"
 #include "dmm/lib/format.h"
 #include "dmm/services/ax25.h"
 #include "dmm/services/codeplug.h"
@@ -71,6 +72,11 @@ struct BatterySave
 {
     std::uint8_t mode;
 };
+/// The transmitted voice shaped by the radio's equalizer (on) or flat.
+struct VoiceEnhancement
+{
+    bool on;
+};
 /// Logs battery save's state and what keeps the radio awake.
 struct BatterySaveStatus
 {
@@ -89,10 +95,12 @@ struct FmTransmitFrequency
 {
     std::uint32_t hz;
 };
-/// CTCSS tone sent with FM transmit, in 0.1 Hz; 0 = none.
-struct FmCtcss
+/// The tone sent with FM transmit, or listened for on receive (the
+/// speaker then opens only for it).
+struct FmTone
 {
-    std::uint16_t deciHz;
+    bool transmit;
+    services::Tone tone;
 };
 /// FM transmit power level.
 struct FmPower
@@ -118,11 +126,36 @@ struct FmTransmitAudio
 };
 /// Works on @c channel from now on: receive, and transmit on PTT, with its
 /// frequencies, width, tone and power. @c squelch is 0..5.
+/// Receive DMR at @c receiveHz on colour code @c colourCode, slot 1 or 2
+/// through a repeater, or both slots direct (@c slot 0).
+struct DmrReceive
+{
+    std::uint32_t receiveHz;
+    std::uint8_t colourCode;
+    std::uint8_t slot;
+};
+/// DMR transmit for the session: whom to call (id 0 = the channel's own
+/// contact) and the radio's own ID (0 = the channel's).
+struct DmrTarget
+{
+    services::dmr::Target target;
+};
+struct DmrOwnId
+{
+    std::uint32_t id;
+};
 struct UseChannel
 {
     services::Channel channel;
     std::uint8_t squelch;
 };
+/// Looks for the best repeater of the roaming zone now.
+struct RoamNow
+{
+};
+/// The frequency offset a radio starts with: added to every receive and
+/// transmit frequency, for a radio whose frequency reference has drifted.
+inline constexpr std::int32_t DefaultFrequencyOffsetHz = 2000;
 
 /// Switches the GPS receiver's supply, which runs through the FM
 /// transceiver's pins.
@@ -130,7 +163,6 @@ struct GpsPower
 {
     bool on;
 };
-
 /// A frame was queued with sendPacket().
 struct SendPacket
 {
@@ -142,8 +174,29 @@ struct PacketSettings
     std::uint16_t leadMs;
     std::uint8_t levelPercent;
 };
+/// Added to every receive and transmit frequency, for a radio whose
+/// frequency reference has drifted; 0 = none.
+struct FrequencyOffset
+{
+    std::int32_t hz;
+};
+/// Roaming on, or off: every channel works on its own frequencies. Takes
+/// effect with the next UseChannel.
+struct RoamingOn
+{
+    bool on;
+};
+/// When roaming looks for a better repeater by itself.
+struct RoamingSetup
+{
+    services::RoamingSettings settings;
+};
+/// Logs the roaming state.
+struct RoamStatus
+{
+};
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmCtcss, FmPower, FmTimeout, FmTransmitAudio, UseChannel, BatterySave, BatterySaveStatus, GpsPower, SendPacket, PacketSettings>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
 
 /// Starts the radio task, which owns @p fm, @p baseband and @p modem
 /// (each nullptr on a board without one) and brings them up.
@@ -169,5 +222,28 @@ bool sendPacket(const services::ax25::Frame &frame, const PacketChannel &channel
 /// Queues a message for the radio task; false when the queue is full or
 /// the task has not started.
 bool post(const Message &message);
+
+/// What the radio is doing on the air, for the status LEDs.
+enum class Activity : std::uint8_t
+{
+    Idle,
+    FmReceive,  // the speaker is open on an FM signal
+    DmrReceive, // a DMR call is heard
+    Transmit,   // on the air, FM or DMR, a repeater wake-up included
+};
+/// Any task may ask.
+Activity activity();
+
+/// True once the radio's chips are up and it takes commands that reach the
+/// air; false while they start or restart. Any task may ask.
+bool ready();
+
+/// The talkgroups heard besides the channel's own contact (the channel's
+/// receive group list); set before posting the channel.
+void setReceiveGroups(std::span<const std::uint32_t> ids);
+
+/// The roaming zone's repeaters, which @p fill writes and counts; set before
+/// posting a roaming channel.
+void setRoamingSites(lib::FnRef<std::size_t(std::span<services::RoamingSite>)> fill);
 
 } // namespace dmm::app::radio

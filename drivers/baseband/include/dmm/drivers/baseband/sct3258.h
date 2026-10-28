@@ -5,6 +5,7 @@
 
 #include "dmm/hal/host_port_bus.h"
 #include "dmm/lib/fn_ref.h"
+#include "dmm/lib/ring_buffer.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -53,6 +54,10 @@ public:
     /// Added to a type to read fields back instead of writing them.
     static constexpr std::uint8_t TypeRead = 0x20;
     static constexpr std::uint8_t TypeCodec = 0x40;
+    /// The packet type for DMR fields.
+    static constexpr std::uint8_t TypeDmr = 0x08;
+    /// Set in reports of what was received from the far end.
+    static constexpr std::uint8_t TypeFarEnd = 0x10;
 
     // Field identifiers.
     static constexpr std::uint8_t VocoderSelect = 0x10;
@@ -66,6 +71,37 @@ public:
     static constexpr std::uint8_t QueryProduct = 0x30;
     static constexpr std::uint8_t QueryHardware = 0x31;
     static constexpr std::uint8_t QuerySoftware = 0x32;
+    static constexpr std::uint8_t NewEvent = 0x1B;
+    static constexpr std::uint8_t DemodGain = 0x1C;
+    static constexpr std::uint8_t DcOffset = 0x39;
+    static constexpr std::uint8_t SquelchLevel = 0x6C;
+    static constexpr std::uint8_t ModGain = 0x2C;
+    static constexpr std::uint8_t DigitalMicGain = 0x68;
+    static constexpr std::uint8_t DigitalSpeakerGain = 0x69;
+    /// EQUALIZER_FILTER: a selection byte (bit 5 transmit side, bit 4 on,
+    /// low bits the filter 1..3), then a1, a2, b0, b1, b2 in Q16.14.
+    static constexpr std::uint8_t EqualizerFilter = 0x70;
+    static constexpr std::uint8_t EqualizerTransmit = 0x20;
+    static constexpr std::uint8_t EqualizerOn = 0x10;
+    static constexpr int EqualizerFilters = 3;
+    static constexpr int EqualizerSampleHz = 24'000;
+    static constexpr std::uint8_t DmrOffset = 0x7A;
+    /// DMR_CALL_SLOT: transmit on the slot in the low bits.
+    static constexpr std::uint8_t SlotTransmit = 0x80;
+    /// DMR_CALL_SLOT: no slot, on the chip's own timing; the only way it
+    /// transmits before it has received a repeater's timing.
+    static constexpr std::uint8_t SlotAny = 0x00;
+    /// DMR_CALL_SLOT: take the transmit timing from the received timing.
+    static constexpr std::uint8_t SlotFollowReceive = 0x40;
+    static constexpr std::uint8_t ReportField = 0x1D;
+    static constexpr std::uint8_t SyncMissCount = 0x2F;
+    static constexpr std::uint8_t DataFrame = 0x43;
+    static constexpr std::uint8_t DmrCallSlot = 0x6F;
+    static constexpr std::uint8_t DmrFlc = 0x76;
+    static constexpr std::uint8_t DmrColourCode = 0x77;
+    static constexpr std::uint8_t DmrCallOption = 0x79;
+    static constexpr std::uint8_t DmrSlotType = 0x7B;
+    static constexpr std::uint8_t DmrSlotFound = 0x7F;
 
     // WorkMode codes.
     static constexpr std::uint8_t WorkIdle = 0;
@@ -78,6 +114,18 @@ public:
     // ACK_MESSAGE codes.
     static constexpr std::uint8_t AckReady = 0x01;
     static constexpr std::uint8_t AckReadyNoFirmware = 0x00;
+    /// ACK_MESSAGE code: everything queued for the far end has gone out.
+    static constexpr std::uint8_t AckAllSent = 0x0A;
+
+    // PROCESS_MODE values.
+    static constexpr std::uint8_t ProcessLayer2 = 0x02;
+    static constexpr std::uint8_t ProcessAnalog = 0x80;
+
+    // VOCODER_SEL values: AMBE+2, the one the radio's own firmware selects
+    // on digital channels, and analog.
+    static constexpr std::uint8_t VocoderAmbePlus2 = 0x04;
+    static constexpr std::uint8_t VocoderDigital = 0x0C;
+    static constexpr std::uint8_t VocoderAnalog = 0x10;
 
     enum class BootResult : std::uint8_t
     {
@@ -105,7 +153,8 @@ public:
     /// Waits up to @p timeoutMs for the next packet from the chip.
     bool receive(Packet &out, unsigned timeoutMs);
 
-    /// Sends a packet and waits for the chip's reply to it.
+    /// Sends a packet and waits for the chip's reply to it. Reports that
+    /// arrive meanwhile are kept for nextReport().
     bool request(std::uint8_t type, std::span<const std::uint8_t> fields, Packet &reply, unsigned timeoutMs = 100);
 
     /// A query field (QueryProduct...) as text; false if not answered.
@@ -114,16 +163,50 @@ public:
     /// Sends a control field and checks the chip's answer: the same field
     /// with status 0. Returns the status, or -1 without an answer.
     int control(std::span<const std::uint8_t> fields, unsigned timeoutMs = 100);
+    /// As control(), in a packet of @p type (TypeDmr for DMR fields).
+    int control(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned timeoutMs = 100);
 
     /// Writes one external codec register through the chip (page, register,
     /// value). The chip passes the fields (a zero, page, register, value, two
     /// zeros) to the codec. True when the chip accepted it.
     bool codecWrite(std::uint8_t page, std::uint8_t reg, std::uint8_t value);
 
+    /// Hands one DMR data frame to the chip for sending, with the channel's
+    /// colour code: @p property (voice or data burst and its data type) and
+    /// @p data. True when the chip acknowledged it; else lastFrameReply()
+    /// tells what came instead. The first frame after the switch to
+    /// transmit may take a few hundred milliseconds to be acknowledged.
+    bool sendFrame(std::uint8_t colourCode, std::uint8_t property, std::span<const std::uint8_t> data,
+        unsigned timeoutMs = 500);
+    /// Waits until the chip reports the last frame sent; the next frame
+    /// must not be handed over before. Other reports are kept.
+    bool awaitSent(unsigned timeoutMs = 200);
+    /// After a refused sendFrame(): the reply's type and first field, or
+    /// -1 when nothing came.
+    int lastFrameReply() const { return m_lastFrameReply; }
+
+    /// A packet the chip sent on its own: what it received from the far
+    /// end, an event, or the note that everything queued has gone out.
+    static bool isReport(const Packet &packet);
+    /// The next report: one a request set aside, else one waiting now.
+    /// False when there is none. Longer reports are cut to ReportBytes.
+    bool nextReport(Packet &out);
+    static constexpr std::size_t ReportBytes = 48;
+
 private:
+    int m_lastFrameReply = -1;
+    struct Report
+    {
+        std::uint8_t type;
+        std::uint8_t length;
+        std::uint8_t fields[ReportBytes];
+    };
+    void keep(const Packet &packet);
+
     hal::HostPortBus &m_bus;
     lib::FnRef<void(unsigned)> m_delayUs;
     PacketParser m_parser;
+    lib::RingBuffer<Report, 8> m_reports;
 };
 
 } // namespace dmm::drivers::baseband

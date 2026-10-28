@@ -19,6 +19,7 @@
 #include "dmm/services/log.h"
 #include "dmm/version.h"
 
+#include <optional>
 #include <string_view>
 
 namespace dmm::app {
@@ -128,6 +129,59 @@ int powerLevel(std::string_view command)
     return -1;
 }
 
+// A frequency in kHz with up to three decimals ("145637.5"), as Hz; nothing
+// if @p word is not one or is below 100 MHz.
+std::optional<std::uint32_t> khzToHz(std::string_view word)
+{
+    const std::size_t dot = word.find('.');
+    const std::string_view whole(word.data(), dot == std::string_view::npos ? word.size() : dot);
+    const auto khz = lib::parseNumber(whole, 10);
+    if (!khz || *khz < 100'000 || *khz > 999'999) {
+        return std::nullopt;
+    }
+    std::uint32_t hz = static_cast<std::uint32_t>(*khz) * 1000;
+    if (dot != std::string_view::npos) {
+        const std::string_view fraction(word.data() + dot + 1, word.size() - dot - 1);
+        if (fraction.empty() || fraction.size() > 3) {
+            return std::nullopt;
+        }
+        std::uint32_t scale = 100;
+        for (const char c : fraction) {
+            if (c < '0' || c > '9') {
+                return std::nullopt;
+            }
+            hz += static_cast<std::uint32_t>(c - '0') * scale;
+            scale /= 10;
+        }
+    }
+    return hz;
+}
+
+// "<prefix><kHz>" as Hz.
+std::optional<std::uint32_t> frequencyAfter(std::string_view command, std::string_view prefix)
+{
+    if (!lib::startsWith(command, prefix)) {
+        return std::nullopt;
+    }
+    return khzToHz(std::string_view(command.data() + prefix.size(), command.size() - prefix.size()));
+}
+
+// "dmr rx <kHz> <colour code> <slot>".
+std::optional<radio::DmrReceive> dmrReceiveCommand(std::string_view command)
+{
+    std::string_view rest = command;
+    if (lib::takeWord(rest) != "dmr" || lib::takeWord(rest) != "rx") {
+        return std::nullopt;
+    }
+    const auto hz = khzToHz(lib::takeWord(rest));
+    const auto cc = lib::parseNumber(lib::takeWord(rest), 10);
+    const auto slot = lib::parseNumber(lib::takeWord(rest), 10);
+    if (!hz || !cc || *cc > 15 || !slot || *slot > 2 || !rest.empty()) {
+        return std::nullopt;
+    }
+    return radio::DmrReceive{*hz, static_cast<std::uint8_t>(*cc), static_cast<std::uint8_t>(*slot)};
+}
+
 bool numbersAfter(std::string_view command, std::string_view prefix, int base, std::int32_t *out, std::size_t count)
 {
     if (!lib::startsWith(command, prefix)) {
@@ -162,6 +216,50 @@ bool numbersAfter(std::string_view command, std::string_view prefix, int base, s
     return true;
 }
 
+// "fm tone tx|rx <tone>": off, a CTCSS tone in 0.1 Hz (600..2600), or a
+// DCS code as d and three octal digits, then n (normal, the default) or i
+// (inverted).
+bool toneCommand(std::string_view command, radio::FmTone &out)
+{
+    using services::Tone;
+    std::string_view rest = command;
+    if (lib::takeWord(rest) != "fm" || lib::takeWord(rest) != "tone") {
+        return false;
+    }
+    const std::string_view direction = lib::takeWord(rest);
+    if (direction != "tx" && direction != "rx") {
+        return false;
+    }
+    out.transmit = direction == "tx";
+    const std::string_view value = lib::takeWord(rest);
+    if (!rest.empty()) {
+        return false;
+    }
+    if (value == "off") {
+        out.tone = Tone{};
+        return true;
+    }
+    if ((value.size() == 4 || value.size() == 5) && value[0] == 'd') {
+        const char suffix = value.size() == 5 ? value[4] : 'n';
+        bool octal = true;
+        for (std::size_t i = 1; i <= 3; ++i) {
+            octal = octal && value[i] >= '0' && value[i] <= '7';
+        }
+        if (!octal || (suffix != 'n' && suffix != 'i')) {
+            return false;
+        }
+        const auto bits = static_cast<std::uint16_t>((value[1] - '0') << 6 | (value[2] - '0') << 3 | (value[3] - '0'));
+        out.tone = Tone{Tone::Kind::Dcs, bits, suffix == 'i'};
+        return true;
+    }
+    const auto deciHz = lib::parseNumber(value, 10);
+    if (deciHz && *deciHz >= 600 && *deciHz <= 2600) {
+        out.tone = Tone{Tone::Kind::Ctcss, static_cast<std::uint16_t>(*deciHz), false};
+        return true;
+    }
+    return false;
+}
+
 // Hands @p command without its first @p prefixLength characters to one
 // chip's own console commands.
 bool chipCommand(radio::ChipCommand::Chip chip, std::string_view command, std::size_t prefixLength)
@@ -183,18 +281,51 @@ bool radioCommand(std::string_view command)
         posted = radio::post(radio::Restart{});
     } else if (numbersAfter(command, "bbtone ", 10, n, 2) && n[0] > 0 && n[0] <= 8000 && n[1] > 0 && n[1] <= 10000) {
         posted = radio::post(radio::ChipTone{static_cast<std::uint16_t>(n[0]), static_cast<std::uint16_t>(n[1])});
-    } else if ((numbersAfter(command, "fm rx ", 10, n, 1) || numbersAfter(command, "fm rxw ", 10, n, 1)) && n[0] >= 100'000) {
-        posted = radio::post(radio::FmReceive{static_cast<std::uint32_t>(n[0]) * 1000, lib::startsWith(command, "fm rxw ")});
+    } else if (lib::startsWith(command, "fm offset ")) {
+        std::string_view rest(command.data() + 10, command.size() - 10);
+        const bool minus = !rest.empty() && rest[0] == '-';
+        if (minus || (!rest.empty() && rest[0] == '+')) {
+            rest.remove_prefix(1);
+        }
+        const auto hz = lib::parseNumber(rest, 10);
+        if (!hz || *hz > 5000) {
+            return false;
+        }
+        posted = radio::post(radio::FrequencyOffset{minus ? -*hz : *hz});
+    } else if (command == "roam") {
+        posted = radio::post(radio::RoamStatus{});
+    } else if (command == "roam now") {
+        posted = radio::post(radio::RoamNow{});
+    } else if (command == "dmr tg off") {
+        posted = radio::post(radio::DmrTarget{{}});
+    } else if (lib::startsWith(command, "dmr tg ") || lib::startsWith(command, "dmr pc ")) {
+        const auto id = lib::parseNumber(std::string_view(command.data() + 7, command.size() - 7), 10);
+        if (!id || *id <= 0 || *id > 0xFFFFFF) {
+            return false;
+        }
+        using services::dmr::CallType;
+        const CallType type = lib::startsWith(command, "dmr tg ") ? CallType::Group : CallType::Private;
+        posted = radio::post(radio::DmrTarget{{type, static_cast<std::uint32_t>(*id)}});
+    } else if (lib::startsWith(command, "dmr id ")) {
+        const auto id = lib::parseNumber(std::string_view(command.data() + 7, command.size() - 7), 10);
+        if (!id || *id < 0 || *id > 0xFFFFFF) {
+            return false;
+        }
+        posted = radio::post(radio::DmrOwnId{static_cast<std::uint32_t>(*id)});
+    } else if (const auto dmr = dmrReceiveCommand(command)) {
+        posted = radio::post(*dmr);
+    } else if (const auto rx = frequencyAfter(command, "fm rx ")) {
+        posted = radio::post(radio::FmReceive{*rx, false});
+    } else if (const auto rxw = frequencyAfter(command, "fm rxw ")) {
+        posted = radio::post(radio::FmReceive{*rxw, true});
     } else if (command == "fm off") {
         posted = radio::post(radio::FmIdle{});
     } else if (command == "fm tx off") {
         posted = radio::post(radio::FmTransmitFrequency{0});
-    } else if (numbersAfter(command, "fm tx ", 10, n, 1) && n[0] >= 100'000) {
-        posted = radio::post(radio::FmTransmitFrequency{static_cast<std::uint32_t>(n[0]) * 1000});
-    } else if (command == "fm ctcss off") {
-        posted = radio::post(radio::FmCtcss{0});
-    } else if (numbersAfter(command, "fm ctcss ", 10, n, 1) && n[0] >= 600 && n[0] <= 2600) {
-        posted = radio::post(radio::FmCtcss{static_cast<std::uint16_t>(n[0])});
+    } else if (const auto tx = frequencyAfter(command, "fm tx ")) {
+        posted = radio::post(radio::FmTransmitFrequency{*tx});
+    } else if (radio::FmTone tone{}; toneCommand(command, tone)) {
+        posted = radio::post(tone);
     } else if (const int level = powerLevel(command); level >= 0) {
         posted = radio::post(radio::FmPower{static_cast<services::PowerLevel>(level)});
     } else if (command == "fm txaudio both" || command == "fm txaudio bb" || command == "fm txaudio direct") {
@@ -314,7 +445,7 @@ void runCommand(std::string_view command)
         log::info("console") << "commands: help, fault, hang, restart, battery, autooff <min>, storage, peek <hex addr>, "
                                 "light 0-5, pattern, logview, keytest, panel on|off, beep <hz> <ms>, rx on|off, bb, bb restart, "
                                 "bbtone <hz> <ms>, "
-                                "fm rx|rxw <kHz> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm ctcss <0.1 Hz>|off, fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
+                                "fm rx|rxw <kHz[.ddd]> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm tone tx|rx off|<0.1 Hz>|d<octal>[n|i], fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, dmr rx <kHz> <colour code> <slot 1|2, 0 = both direct>, dmr tg|pc <id>, dmr tg off, dmr id <id>, roam, roam now, fm offset <+-Hz>, mic on|off, lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>";
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>";
@@ -428,12 +559,15 @@ public:
                 m_garbled = true;
             } else if (m_length < sizeof m_line) {
                 m_line[m_length++] = c;
+            } else {
+                // A line too long to keep whole is not run cut short.
+                m_garbled = true;
             }
         }
     }
 
 private:
-    char m_line[64] = {};
+    char m_line[80] = {};
     std::size_t m_length = 0;
     bool m_garbled = false;
     char m_previous = 0;

@@ -86,10 +86,30 @@ public:
     /// The baseband chip's analog-mode gains, big-endian words: transmit
     /// before and after the limiter, CTCSS, DCS and receive volume.
     std::optional<std::array<std::uint8_t, 10>> basebandAnalogGains() const;
+    /// The baseband chip's converter offsets and output gains for @p hz, as
+    /// stored (big-endian words): the band block's ten bytes, then the
+    /// frequency range's own last word. The per-MHz correction of that last
+    /// word is not applied.
+    std::optional<std::array<std::uint8_t, 12>> basebandDcOffset(std::uint32_t hz) const;
+    /// The baseband chip's demodulator gain, as stored (big-endian).
+    std::optional<std::array<std::uint8_t, 2>> basebandDemodGain() const;
+    /// The baseband chip's digital voice gains to the speaker and from the
+    /// microphone, as stored (big-endian); nothing when erased.
+    std::optional<std::array<std::uint8_t, 2>> basebandSpeakerGain() const;
+    std::optional<std::array<std::uint8_t, 2>> basebandMicGain() const;
+    /// The baseband chip's modulator gain for @p hz's band, as stored
+    /// (big-endian).
+    std::optional<std::array<std::uint8_t, 2>> basebandModGain(std::uint32_t hz) const;
+    /// The baseband chip's transmit slot timing offset and length, as
+    /// stored (big-endian words, 41.7 us units, then two more words).
+    std::optional<std::array<std::uint8_t, 8>> basebandSlotTiming() const;
 
     const std::uint8_t *data() const { return m_data; }
 
 private:
+    /// The big-endian word at @p at; nothing when erased.
+    std::optional<std::array<std::uint8_t, 2>> word(std::uint32_t at) const;
+
     std::atomic<bool> m_loaded{false};
     int m_copy = 0;
     bool m_flagged = false;

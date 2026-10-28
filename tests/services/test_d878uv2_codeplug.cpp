@@ -7,9 +7,11 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <string>
+#include <utility>
 #include <vector>
 
 using dmm::drivers::storage::SpiNand;
@@ -44,6 +46,7 @@ std::array<std::uint8_t, 64> sampleRecord()
     r[0x0A] = 9;                              // 88.5 Hz
     r[0x0E] = 19;                             // DCS 023 (octal) = 19, inverted: +512
     r[0x0F] = 0x02;
+    r[0x19] = 1 << 4; // squelch on the receive tone
     std::memcpy(&r[0x23], "RPT 2M", 6);
     return r;
 }
@@ -64,7 +67,25 @@ TEST_CASE("a channel record decodes to frequencies, mode, power and tones")
     CHECK_FALSE(c->receiveOnly);
     CHECK(c->transmitTone == Tone{Tone::Kind::Ctcss, 885, false});
     CHECK(c->receiveTone == Tone{Tone::Kind::Dcs, 19, true});
+    CHECK(c->squelchMode == dmm::services::SquelchMode::Tone);
     CHECK(std::string(c->name) == "RPT 2M");
+}
+
+TEST_CASE("the squelch mode follows the codeplug, carrier without a receive tone")
+{
+    using dmm::services::SquelchMode;
+    auto r = sampleRecord();
+    const auto mode = [&](unsigned stored) {
+        r[0x19] = static_cast<std::uint8_t>(stored << 4);
+        return dmm::services::decodeChannel(r)->squelchMode;
+    };
+    CHECK(mode(0) == SquelchMode::Carrier);
+    CHECK(mode(1) == SquelchMode::Tone);
+    CHECK(mode(2) == SquelchMode::Carrier); // signalling only
+    CHECK(mode(3) == SquelchMode::Tone);
+    CHECK(mode(4) == SquelchMode::Tone);
+    r[9] = 1 << 2; // no receive tone
+    CHECK(mode(1) == SquelchMode::Carrier);
 }
 
 TEST_CASE("plus offset, simplex, digital, custom tone and bad records")
@@ -100,6 +121,7 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     b[0x28] = 1;  // GPS on
     b[0x35] = 4;  // GPS and GLONASS
     b[0x30] = 30; // UTC+3:00
+    b[0x57] = 1;  // voice enhancement
     b[0x2C] = 1;
     b[0x37] = 2;    // menu exit 15 s
     b[0xBE] = 0x0B; // knob, keypad, side
@@ -122,6 +144,7 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     CHECK(s.gps);
     CHECK(s.gpsSystems == 5);
     CHECK(s.timeZoneMinutes == 180);
+    CHECK(s.voiceEnhancement);
     b[0x02] = 0;
     b[0x0B] = 7;  // out of range: on
     b[0x27] = 99; // out of range: always on
@@ -240,4 +263,290 @@ TEST_CASE("the APRS settings block gives callsign, path, symbol, comment, freque
     // An erased block has no callsign.
     b.fill(0xFF);
     CHECK_FALSE(dmm::services::decodeAprsSettings(b, comment));
+}
+
+TEST_CASE("a digital channel's colour code, slot, group list and links")
+{
+    auto r = sampleRecord();
+    r[8] = static_cast<std::uint8_t>((r[8] & ~3) | 1); // digital
+    r[0x14] = 0x34;                                    // contact 0x1234, little-endian
+    r[0x15] = 0x12;
+    r[0x18] = 2;    // radio ID 2
+    r[0x1C] = 5;    // receive group list 5
+    r[0x20] = 0x07; // colour code 7
+    r[0x21] = 0x01; // slot 2
+    const auto c = dmm::services::decodeChannel(r);
+    REQUIRE(c.has_value());
+    CHECK(c->digital());
+    CHECK(c->dmr.colourCode == 7);
+    CHECK(c->dmr.slot == 2);
+    CHECK(c->dmr.groupList == 5);
+    const auto links = dmm::services::channelLinks(r);
+    CHECK(links.contact == 0x1234);
+    CHECK(links.radioId == 2);
+    r[0x21] = 0x00;
+    r[0x1C] = 0xFF;
+    CHECK(dmm::services::decodeChannel(r)->dmr.slot == 1);
+    CHECK(dmm::services::decodeChannel(r)->dmr.groupList == dmm::services::dmr::ChannelSettings::NoGroupList);
+}
+
+TEST_CASE("the codeplug looks up a digital channel's contact and own ID")
+{
+    using dmm::services::dmr::CallType;
+    using dmm::services::dmr::Target;
+    FakeSpiNand chip;
+    auto markValid = [&](std::uint32_t block) {
+        chip.put(block + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    };
+    markValid(0x024C0000);
+    chip.put(0x024C1500, {0x01}); // channel 0 in use
+    chip.put(0x024C1320, {0x04}); // radio ID 2 in use
+    markValid(0x02640000);
+    // The contact bitmap is inverted: a clear bit marks a contact in use.
+    chip.put(0x02640000 + 125, {0xFD}); // contact 1001 in use, 1000 not
+    // Channel 0: digital, contact 1001, radio ID 2, colour code 3, slot 1.
+    auto rec = sampleRecord();
+    rec[8] = static_cast<std::uint8_t>((rec[8] & ~3) | 1);
+    rec[0x14] = 0xE9;
+    rec[0x15] = 0x03;
+    rec[0x18] = 2;
+    rec[0x20] = 3;
+    markValid(0x00800000);
+    chip.put(0x00800000, std::vector<std::uint8_t>(rec.begin(), rec.end()));
+    // Contact 1001: second bank, entry 1: a group call to talkgroup 2441.
+    markValid(0x026C0000);
+    std::vector<std::uint8_t> contact(0x27, 0);
+    contact[0] = 1;
+    contact[0x23] = 0x00;
+    contact[0x24] = 0x00;
+    contact[0x25] = 0x24;
+    contact[0x26] = 0x41;
+    chip.put(0x026C0000 + 0x64, contact);
+    // Radio ID 2: 7654321.
+    markValid(0x02580000);
+    chip.put(0x02580000 + 2 * 0x20, {0x07, 0x65, 0x43, 0x21});
+
+    SpiNand nand(chip, noDelay);
+    D878Uv2Storage storage(nand);
+    storage.start();
+    D878Uv2Codeplug cp(storage);
+
+    const auto c = cp.channel(0);
+    REQUIRE(c.has_value());
+    CHECK(c->dmr.colourCode == 3);
+    CHECK(c->dmr.contact == Target{CallType::Group, 2441});
+    CHECK(c->dmr.ownId == 7654321);
+    CHECK_FALSE(cp.contact(1000).has_value()); // not in the bitmap
+    CHECK_FALSE(cp.radioId(1).has_value());
+}
+
+TEST_CASE("contact names are found by ID through the sorted ID table")
+{
+    FakeSpiNand chip;
+    auto markValid = [&](std::uint32_t block) {
+        chip.put(block + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    };
+    // Sorted IDs: private 244 (index 2), talkgroup 244 (index 0), private
+    // 1234567 (index 1); the rest erased.
+    auto entry = [](std::uint32_t bcd, bool group, std::uint32_t index) {
+        const std::uint32_t v = bcd << 1 | (group ? 1u : 0u);
+        return std::vector<std::uint8_t>{static_cast<std::uint8_t>(v), static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v >> 16), static_cast<std::uint8_t>(v >> 24), static_cast<std::uint8_t>(index),
+            0, 0, 0};
+    };
+    std::vector<std::uint8_t> table;
+    for (const auto &e : {entry(0x244, false, 2), entry(0x244, true, 0), entry(0x1234567, false, 1)}) {
+        table.insert(table.end(), e.begin(), e.end());
+    }
+    table.resize(0x2000, 0xFF);
+    markValid(0x04340000);
+    chip.put(0x04340000, table);
+    markValid(0x02680000);
+    auto named = [&](std::uint32_t index, const char *name) {
+        std::vector<std::uint8_t> r(0x10, 0);
+        std::memcpy(&r[1], name, std::strlen(name));
+        chip.put(0x02680000 + index * 0x64, r);
+    };
+    named(0, "Suomi");
+    named(1, "Caller One");
+    named(2, "Somebody");
+
+    SpiNand nand(chip, noDelay);
+    D878Uv2Storage storage(nand);
+    storage.start();
+    D878Uv2Codeplug cp(storage);
+    std::array<char, D878Uv2Codeplug::ContactNameBytes + 1> name{};
+    REQUIRE(cp.contactName(244, true, name));
+    CHECK(std::string(name.data()) == "Suomi");
+    REQUIRE(cp.contactName(244, false, name));
+    CHECK(std::string(name.data()) == "Somebody");
+    REQUIRE(cp.contactName(1234567, false, name));
+    CHECK(std::string(name.data()) == "Caller One");
+    CHECK_FALSE(cp.contactName(1234568, false, name));
+    CHECK_FALSE(cp.contactName(1, true, name));
+}
+
+TEST_CASE("users are found in the user directory by radio ID, also across a bank end")
+{
+    FakeSpiNand chip;
+    auto markValid = [&](std::uint32_t block) {
+        chip.put(block + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    };
+    auto le = [](std::uint32_t v) {
+        return std::vector<std::uint8_t>{static_cast<std::uint8_t>(v), static_cast<std::uint8_t>(v >> 8),
+            static_cast<std::uint8_t>(v >> 16), static_cast<std::uint8_t>(v >> 24)};
+    };
+    auto record = [](const char *name, const char *city, const char *call) {
+        std::vector<std::uint8_t> r = {0x00, 0, 0, 0, 0, 0};
+        for (const char *t : {name, city, call}) {
+            r.insert(r.end(), t, t + std::strlen(t) + 1);
+        }
+        r.push_back(0); // state
+        r.push_back(0); // country
+        r.push_back(0); // comment
+        return r;
+    };
+    // Two users: 1000001 at the start, 7654321 split over the first bank's
+    // end (100000 bytes of records per bank).
+    const auto first = record("Caller", "Town", "AB1CD");
+    const auto second = record("Second Caller", "City", "XY9ZZ");
+    const std::uint32_t secondAt = 100'000 - 10;
+    std::vector<std::uint8_t> ids;
+    for (const auto &[bcd, at] : {std::pair{0x1000001u, 0u}, std::pair{0x7654321u, secondAt}}) {
+        const auto k = le(bcd << 1);
+        const auto i = le(at);
+        ids.insert(ids.end(), k.begin(), k.end());
+        ids.insert(ids.end(), i.begin(), i.end());
+    }
+    markValid(0x04000000);
+    chip.put(0x04000000, ids);
+    markValid(0x04840000);
+    chip.put(0x04840000, le(2));
+    markValid(0x05500000);
+    chip.put(0x05500000, first);
+    chip.put(0x05500000 + secondAt, std::vector<std::uint8_t>(second.begin(), second.begin() + 10));
+    markValid(0x05540000);
+    chip.put(0x05540000, std::vector<std::uint8_t>(second.begin() + 10, second.end()));
+
+    SpiNand nand(chip, noDelay);
+    D878Uv2Storage storage(nand);
+    storage.start();
+    D878Uv2Codeplug cp(storage);
+    D878Uv2Codeplug::DmrUser user;
+    REQUIRE(cp.dmrUser(1000001, user));
+    CHECK(std::string(user.name.data()) == "Caller");
+    CHECK(std::string(user.callsign.data()) == "AB1CD");
+    REQUIRE(cp.dmrUser(7654321, user));
+    CHECK(std::string(user.name.data()) == "Second Caller");
+    CHECK(std::string(user.callsign.data()) == "XY9ZZ");
+    CHECK_FALSE(cp.dmrUser(1234567, user));
+}
+
+TEST_CASE("a digital channel roams unless its exclusion bit is set")
+{
+    auto r = sampleRecord();
+    r[0x34] = 0xFB;
+    CHECK_FALSE(dmm::services::decodeChannel(r)->roaming); // analog
+    r[8] = static_cast<std::uint8_t>((r[8] & ~3) | 1);
+    CHECK(dmm::services::decodeChannel(r)->roaming);
+    r[0x34] = 0x04;
+    CHECK_FALSE(dmm::services::decodeChannel(r)->roaming);
+}
+
+TEST_CASE("settings: roaming and the side keys")
+{
+    using dmm::services::KeyFunction;
+    using dmm::services::RoamingSettings;
+    std::vector<std::uint8_t> b(0x100, 0);
+    b[0x12] = 0x24; // PF3 short: roaming
+    b[0x41] = 0x24; // PF1 long: roaming
+    b[0x10] = 0x02; // PF1 short: something else
+    b[0xBA] = 10;   // every 10 min
+    b[0xBF] = 45;   // after 45 s quiet
+    b[0xDC] = 1;    // roaming zone 1
+    b[0xE0] = 1;    // out of range
+    b[0xE7] = 1;    // automatic
+    const auto s = dmm::services::decodeSettings(b);
+    CHECK(s.sideShort[0] == KeyFunction::None);
+    CHECK(s.sideShort[1] == KeyFunction::None);
+    CHECK(s.sideShort[2] == KeyFunction::Roam);
+    CHECK(s.sideLong[0] == KeyFunction::Roam);
+    CHECK(s.sideLong[2] == KeyFunction::None);
+    CHECK(s.roaming.zone == 1);
+    CHECK(s.roaming.automatic);
+    CHECK(s.roaming.start == RoamingSettings::Start::OutOfRange);
+    CHECK(s.roaming.periodMinutes == 10);
+    CHECK(s.roaming.quietS == 45);
+    b[0xDC] = 64; // out of range
+    b[0xE0] = 0;
+    b[0xE7] = 0;
+    const auto t = dmm::services::decodeSettings(b);
+    CHECK(t.roaming.zone == RoamingSettings::NoZone);
+    CHECK(t.roaming.start == RoamingSettings::Start::Periodic);
+    CHECK_FALSE(t.roaming.automatic);
+    // A block too short for the roaming settings leaves them off.
+    const auto u = dmm::services::decodeSettings(std::span(b).first(0xC0));
+    CHECK(u.roaming.zone == RoamingSettings::NoZone);
+    CHECK(u.sideShort[2] == KeyFunction::Roam);
+}
+
+TEST_CASE("a roaming zone's repeaters, in the zone's order")
+{
+    using dmm::services::RoamingSite;
+    FakeSpiNand chip;
+    chip.put(0x01040000 + 0x1FFF8, {0xFF, 0xFF, 0xFF, 0xFF, 0x55, 0x55, 0xAA, 0xAA});
+    // Repeaters 0, 1 and 3 in use; 2 is not.
+    chip.put(0x01042000, {0x0B});
+    auto repeater = [&](unsigned index, std::vector<std::uint8_t> bcd, std::uint8_t colourCode, const char *name) {
+        std::vector<std::uint8_t> r(0x20, 0);
+        std::copy(bcd.begin(), bcd.end(), r.begin());
+        r[8] = colourCode;
+        std::memcpy(&r[0x0A], name, std::strlen(name));
+        chip.put(0x01040000 + index * 0x20, r);
+    };
+    // 434.5000 MHz out, 432.5000 MHz in, 10 Hz steps.
+    repeater(0, {0x43, 0x45, 0x00, 0x00, 0x43, 0x25, 0x00, 0x00}, 16, "SITE A");
+    repeater(1, {0x43, 0x45, 0x12, 0x50, 0x43, 0x25, 0x12, 0x50}, 3, "SITE B");
+    repeater(2, {0x43, 0x45, 0x25, 0x00, 0x43, 0x25, 0x25, 0x00}, 1, "UNUSED");
+    repeater(3, {0x00, 0x00, 0x00, 0x00, 0x43, 0x25, 0x37, 0x50}, 1, "NO RX");
+    // Zone 1 in use: repeaters 1, 2 (not in use), 3 (no frequency), 0.
+    chip.put(0x01042080, {0x02, 0, 0, 0, 0, 0, 0, 0}); // the whole bitmap, as written
+    std::vector<std::uint8_t> zone(0x80, 0xFF);
+    zone[0] = 1;
+    zone[1] = 2;
+    zone[2] = 3;
+    zone[3] = 0;
+    std::memcpy(&zone[0x40], "NETWORK", 7);
+    chip.put(0x01043000 + 0x80, zone);
+
+    SpiNand nand(chip, noDelay);
+    D878Uv2Storage storage(nand);
+    storage.start();
+    D878Uv2Codeplug cp(storage);
+
+    std::array<RoamingSite, 8> sites{};
+    REQUIRE(cp.roamingSites(1, sites) == 2);
+    CHECK(sites[0].receiveHz == 434'512'500);
+    CHECK(sites[0].transmitHz == 432'512'500);
+    CHECK(sites[0].colourCode == 3);
+    CHECK(sites[1].receiveHz == 434'500'000);
+    CHECK(sites[1].transmitHz == 432'500'000);
+    CHECK(sites[1].colourCode == RoamingSite::ChannelColourCode);
+    std::array<char, D878Uv2Codeplug::SiteNameBytes + 1> name{};
+    REQUIRE(cp.roamingSiteName(1, 0, name));
+    CHECK(std::string(name.data()) == "SITE B");
+    REQUIRE(cp.roamingSiteName(1, 1, name));
+    CHECK(std::string(name.data()) == "SITE A");
+    CHECK_FALSE(cp.roamingSiteName(1, 2, name));
+    CHECK(cp.roamingSites(0, sites) == 0);  // zone not in use
+    CHECK(cp.roamingSites(64, sites) == 0); // no such zone
+    std::array<RoamingSite, 1> one{};
+    CHECK(cp.roamingSites(1, one) == 1);
+    std::array<std::uint8_t, 4> zones{};
+    REQUIRE(cp.roamingZones(zones) == 1);
+    CHECK(zones[0] == 1);
+    std::array<char, D878Uv2Codeplug::ZoneNameBytes + 1> zoneName{};
+    REQUIRE(cp.roamingZoneName(1, zoneName));
+    CHECK(std::string(zoneName.data()) == "NETWORK");
+    CHECK_FALSE(cp.roamingZoneName(0, zoneName));
 }

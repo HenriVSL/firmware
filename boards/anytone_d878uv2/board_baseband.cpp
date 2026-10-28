@@ -48,6 +48,13 @@ constexpr CodecWrite Receive[] = {
     {Page0, LeftDacVolume, DacMinus22Db},
 };
 
+// Digital receive: the voice comes from the vocoder at its calibrated
+// level, so the DAC stays at 0 dB.
+constexpr CodecWrite DigitalReceive[] = {
+    {Page1, LeftMicPositive, 0x00},
+    {Page0, LeftDacVolume, 0},
+};
+
 // Transmit: DAC back to 0 dB, the microphone on the left input through
 // 20 kOhm, input amplifier +16 dB, left AGC on with the same target; the
 // microphone is connected last.
@@ -59,11 +66,21 @@ constexpr CodecWrite Transmit[] = {
     {Page1, LeftMicPositive, MicIn1Left20k},
 };
 
+// The demodulated FM signal reaches the baseband with its polarity
+// reversed: digital receive decodes nothing otherwise.
+
+// The baseband's own carrier squelch: no gain adjust, no forced RF gain,
+// a check every 80 ms (60 units), noise thresholds 0x0F3C high and 0x0A8C
+// low. On analog channels the analog thresholds are off.
+constexpr std::uint8_t DigitalSquelch[] = {0x00, 0x00, 0x00, 0x3C, 0x0F, 0x3C, 0x0A, 0x8C, 0x0F, 0x3C, 0x0A, 0x8C};
+constexpr std::uint8_t AnalogSquelch[] = {0x00, 0x00, 0x00, 0x3C, 0x0F, 0x3C, 0x0A, 0x8C, 0xFF, 0xFF, 0xFF, 0xFF};
+
 // The driver gain spans -6 to +23 dB over the volume steps, more finely at
 // the bottom.
 constexpr dmm::services::Sct3258Baseband::Audio Audio{
     .codec = dmm::drivers::baseband::Sct3258::CodecTlv320aic3204,
     .receive = Receive,
+    .digitalReceive = DigitalReceive,
     .transmit = Transmit,
     .speakerPage = Page1,
     .speakerRegister = HplGain,
@@ -71,6 +88,12 @@ constexpr dmm::services::Sct3258Baseband::Audio Audio{
     .speakerSteps = {hplDb(-6), hplDb(-4), hplDb(-1), hplDb(2), hplDb(6), hplDb(8), hplDb(10), hplDb(12), hplDb(13),
         hplDb(15), hplDb(16), hplDb(18), hplDb(20), hplDb(22), hplDb(23)},
     .trims = {{{Page1, LeftOutGain}, {Page1, RightOutGain}, {Page1, RightMicPgaVolume}}},
+    .digitalSquelch = DigitalSquelch,
+    .analogSquelch = AnalogSquelch,
+    .demodulatorInverted = true,
+    // Voice enhancement: a little less around 180 Hz, a lift around 2.4 kHz
+    // with the rest 1.7 dB down, and a narrow dip at 2 kHz.
+    .transmitEqualizer = {{{184.0F, -3.3F, 0.95F, 0.0F}, {2450.0F, 4.1F, 1.25F, -1.7F}, {1990.0F, -3.1F, 4.5F, 0.0F}}},
 };
 
 void outputLow(Pin pin)

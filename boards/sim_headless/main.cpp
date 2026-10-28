@@ -50,19 +50,21 @@ public:
 
     void set(Led led, bool on) override
     {
-        const int index = led == Led::Red ? 0 : 1;
+        const int index = static_cast<int>(led);
         if (m_state[index] == on) {
             return;
         }
         m_state[index] = on;
         if (m_print) {
-            printLine(QStringLiteral("LED %1 %2").arg(led == Led::Red ? QStringLiteral("red") : QStringLiteral("green"), on ? QStringLiteral("on") : QStringLiteral("off")));
+            const QString name = led == Led::Red ? QStringLiteral("red") : led == Led::Green ? QStringLiteral("green")
+                                                                                             : QStringLiteral("blue");
+            printLine(QStringLiteral("LED %1 %2").arg(name, on ? QStringLiteral("on") : QStringLiteral("off")));
         }
     }
 
 private:
     bool m_print;
-    bool m_state[2] = {false, false};
+    bool m_state[3] = {false, false, false};
 };
 
 // The simulated radio has no power switch or watchdog; quitting the
@@ -197,10 +199,11 @@ int main(int argc, char *argv[])
         for (const QString &name : names) {
             for (unsigned i = 0; i < static_cast<unsigned>(dmm::services::Key::Count); ++i) {
                 const auto key = static_cast<dmm::services::Key>(i);
-                const std::string_view n = dmm::services::keyName(key);
+                const std::string_view n = input.keyLabel(key);
                 if (name.compare(QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())), Qt::CaseInsensitive) == 0) {
                     QTimer::singleShot(at, Qt::PreciseTimer, &app, [key] { input.setKey(key, true); });
                     QTimer::singleShot(at + 300, Qt::PreciseTimer, &app, [key] { input.setKey(key, false); });
+                    break;
                 }
             }
             at += 800;

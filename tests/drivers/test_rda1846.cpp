@@ -5,6 +5,7 @@
 
 #include <doctest/doctest.h>
 
+#include <bit>
 #include <map>
 #include <vector>
 
@@ -112,11 +113,11 @@ namespace {
 // A small tuning that exercises every list the driver walks.
 constexpr Rda1846::Setting TestStartUp[] = {{0x04, 0x0FD0}, {0x47, 0x7F2F}};
 constexpr Rda1846::Setting TestAfterCalibration[] = {{0x27, 0x74A4, 5}, {0x27, 0x6CA4}};
-constexpr Rda1846::WidthSetting TestWidth[] = {{0x32, 0x4495, 0x75E3}};
-constexpr Rda1846::WidthSetting TestWidthPage1[] = {{0x06, 0x0014, 0x0024}};
-constexpr Rda1846::RangeSetting TestRanges[] = {{200'000'000, 299'999'999, {0x34, 0x2B8E, 0x2B8B}}};
-constexpr Rda1846::WidthSetting TestReceive[] = {{0x0A, 0x4380, 0x43A0}, {0x58, 0x8085, 0x8085}};
-constexpr Rda1846::WidthSetting TestTransmit[] = {{0x0A, 0x3BA0, 0x3BA0}, {0x58, 0x8405, 0x8405}};
+constexpr Rda1846::WidthSetting TestWidth[] = {{0x32, 0x4495, 0x75E3, 0x4495}};
+constexpr Rda1846::WidthSetting TestWidthPage1[] = {{0x06, 0x0014, 0x0024, 0x0014}};
+constexpr Rda1846::RangeSetting TestRanges[] = {{200'000'000, 299'999'999, {0x34, 0x2B8E, 0x2B8B, 0x2B8E}}};
+constexpr Rda1846::WidthSetting TestReceive[] = {{0x0A, 0x4380, 0x43A0, 0x4380}, {0x58, 0x8085, 0x8085, 0x8085}};
+constexpr Rda1846::WidthSetting TestTransmit[] = {{0x0A, 0x3BA0, 0x3BA0, 0x3BA0}, {0x58, 0x8405, 0x8405, 0x8405}};
 constexpr Rda1846::BandWord TestBandWords[] = {
     {145'000'000, 145'000'000, 0x8643},
     {144'000'000, 146'000'000, 0x8543},
@@ -230,11 +231,94 @@ TEST_CASE("RSSI, transmit tone and deviation")
     CHECK(chip.noiseDb() == 64);
     chip.setNoiseSquelch(56, 53);
     CHECK(bus.registers[0x48] == ((56 << 7) | 53));
-    chip.setTransmitTone(11'880);
+    using Tone = Rda1846::SubTone;
+    chip.setTransmitTone(Tone{Tone::Kind::Ctcss, 11'880, false});
     CHECK(bus.registers[0x4A] == 11'880);
     CHECK(bus.registers[0x4E] == 0x2602);
-    chip.setTransmitTone(0);
+    chip.setTransmitTone(Tone{});
     CHECK(bus.registers[0x4E] == 0x2002);
     chip.setDeviation(0x50, 0x12);
     CHECK(bus.registers[0x59] == ((0x50 << 6) | 0x12));
+}
+
+TEST_CASE("DCS words match the chip maker's example and are Golay codewords")
+{
+    // The programming guide's example: DCS 023 is 0x76 in 0x4B and 0x3813
+    // in 0x4C.
+    CHECK(Rda1846::dcsWord(023) == 0x763813u);
+    // Any two Golay (23,12) codewords differ in at least seven bits.
+    for (const std::uint16_t a : {std::uint16_t{023}, std::uint16_t{0114}, std::uint16_t{0245}, std::uint16_t{0754}}) {
+        for (const std::uint16_t b : {std::uint16_t{025}, std::uint16_t{0115}, std::uint16_t{0251}, std::uint16_t{0731}}) {
+            const std::uint32_t diff = Rda1846::dcsWord(a) ^ Rda1846::dcsWord(b);
+            CHECK(std::popcount(diff) >= 7);
+        }
+        CHECK((Rda1846::dcsWord(a) & 0xFFF) == (0x800u | a));
+    }
+}
+
+TEST_CASE("DCS transmit tones")
+{
+    LoggingBus bus;
+    Rda1846 chip(bus);
+    using Tone = Rda1846::SubTone;
+    chip.setTransmitTone(Tone{Tone::Kind::Dcs, 023, false});
+    CHECK(bus.registers[0x4A] == 13'440);
+    CHECK(bus.registers[0x4B] == 0x0076);
+    CHECK(bus.registers[0x4C] == 0x3813);
+    CHECK(bus.registers[0x4E] == 0x2482);
+    chip.setTransmitTone(Tone{Tone::Kind::Dcs, 023, true});
+    CHECK(bus.registers[0x4E] == 0x2582);
+}
+
+TEST_CASE("a receive tone switches on its own detector and flag, kept across width changes")
+{
+    LoggingBus bus;
+    Rda1846 chip(bus);
+    using Tone = Rda1846::SubTone;
+    bus.registers[0x3A] = 0x40C3;
+    chip.setReceiveTone(Tone{Tone::Kind::Ctcss, 8850, false});
+    CHECK(bus.registers[0x4A] == 8850);
+    CHECK(bus.registers[0x3A] == 0x40C1);
+    CHECK(chip.receiveToneHeard(Rda1846::CtcssMatch));
+    CHECK_FALSE(chip.receiveToneHeard(Rda1846::DcsMatch | 1u << 2));
+    chip.setBandwidth(Rda1846::Bandwidth::Wide);
+    CHECK(bus.registers[0x3A] == 0x44C1);
+    chip.setReceiveTone(Tone{Tone::Kind::Dcs, 0754, true});
+    CHECK(bus.registers[0x3A] == 0x44C4);
+    CHECK(bus.registers[0x4E] == 0x2582);
+    CHECK(chip.receiveToneHeard(Rda1846::DcsInvertedMatch));
+    CHECK_FALSE(chip.receiveToneHeard(Rda1846::DcsMatch));
+    chip.setReceiveTone(Tone{Tone::Kind::Dcs, 023, false});
+    CHECK(chip.receiveToneHeard(Rda1846::DcsMatch));
+    chip.setReceiveTone(Tone{});
+    CHECK(bus.registers[0x3A] == 0x44C0);
+    CHECK(bus.registers[0x4E] == 0x2002);
+    CHECK_FALSE(chip.receiveToneHeard(0xFFFF));
+}
+
+TEST_CASE("the tuning table's detector bits give way to the driver's")
+{
+    LoggingBus bus;
+    Rda1846 chip(bus);
+    chip.setBandwidth(Rda1846::Bandwidth::Narrow);
+    CHECK((bus.registers[0x3A] & 0x1F) == 0);
+}
+
+TEST_CASE("a digital channel takes the tuning's digital column, idle like a narrow one")
+{
+    using Setting = Rda1846::WidthSetting;
+    constexpr Setting Width[] = {{0x0A, 0x4380, 0x43A0, 0x4381}, {0x3C, 0x0408, 0x0408, 0x1A32}};
+    constexpr Setting Receive[] = {{0x0A, 0x4380, 0x43A0, 0x4381}};
+    Rda1846::Tuning tuning = Rda1846::makerTuning();
+    tuning.width = Width;
+    tuning.receive = Receive;
+    LoggingBus bus;
+    Rda1846 chip(bus, tuning);
+    chip.setBandwidth(Rda1846::Bandwidth::Digital);
+    CHECK(bus.registers[0x3C] == 0x1A32);
+    chip.setMode(Rda1846::Mode::Receive);
+    CHECK(bus.registers[0x0A] == 0x4381);
+    CHECK(bus.registers[0x30] == 0x4026);
+    chip.setBandwidth(Rda1846::Bandwidth::Narrow);
+    CHECK(bus.registers[0x3C] == 0x0408);
 }

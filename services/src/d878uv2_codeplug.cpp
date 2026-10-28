@@ -31,6 +31,56 @@ constexpr std::uint32_t ZoneBitmap = 0x024C1300;
 constexpr std::uint32_t ChannelBitmap = 0x024C1500;
 constexpr std::uint32_t VfoA = 0x00FC0800;
 constexpr std::uint32_t VfoB = 0x00FC0840;
+constexpr std::uint32_t ContactBanks = 0x02680000;
+constexpr std::uint32_t ContactBankStride = 0x00040000;
+constexpr unsigned ContactsPerBank = 1000;
+constexpr std::uint32_t ContactBytes = 0x64;
+constexpr std::uint32_t ContactBitmap = 0x02640000;
+constexpr unsigned MaxContacts = 10'000;
+// Every contact's ID, sorted: 8-byte entries, the ID in BCD shifted left
+// by one with the talkgroup flag in bit 0, then the contact index (both
+// little-endian); unused entries are all ones.
+constexpr std::uint32_t ContactIds = 0x04340000;
+constexpr std::uint32_t ContactIdBytes = 8;
+// Receive group lists: 0x200 bytes each, 64 little-endian contact indices
+// first (unused ones all ones); a bitmap of the lists in use.
+constexpr std::uint32_t GroupLists = 0x02980000;
+constexpr std::uint32_t GroupListStride = 0x200;
+constexpr std::uint32_t GroupListBitmap = 0x025C0B10;
+constexpr unsigned MaxGroupLists = 250;
+// The user directory: the number of users; their IDs sorted as in the
+// contact ID table, the index being the user's place in the records; the
+// records packed one after another across banks: call type, BCD ID, flags,
+// then name, city and callsign, each zero-terminated.
+constexpr std::uint32_t UserCount = 0x04840000;
+constexpr unsigned MaxUsers = 500'000;
+constexpr std::uint32_t UserIds = 0x04000000;
+constexpr std::uint32_t UserIdsPerBank = 16'000;
+constexpr std::uint32_t UserRecords = 0x05500000;
+constexpr std::uint32_t UserRecordBank = 100'000;
+constexpr std::uint32_t UserBankStride = 0x00040000;
+constexpr std::uint32_t UserHeaderBytes = 6;
+constexpr std::uint32_t UserCityBytes = 15;
+constexpr std::uint32_t RadioIds = 0x02580000;
+constexpr std::uint32_t RadioIdBytes = 0x20;
+constexpr std::uint32_t RadioIdBitmap = 0x024C1320;
+constexpr unsigned MaxRadioIds = 250;
+// Roaming repeaters, 0x20 bytes each: receive and transmit frequency as
+// eight BCD digits of 10 Hz, big-endian; the colour code (16 = the
+// channel's own); the time slot; the name. Roaming zones, 0x80 bytes each:
+// 64 repeater indices (0xFF unused), then the name. Each has a bitmap of
+// those in use.
+constexpr std::uint32_t RoamingRepeaters = 0x01040000;
+constexpr std::uint32_t RoamingRepeaterBytes = 0x20;
+constexpr std::uint32_t RoamingRepeaterName = 0x0A;
+constexpr std::uint32_t RoamingRepeaterBitmap = 0x01042000;
+constexpr unsigned MaxRoamingRepeaters = 250;
+constexpr std::uint32_t RoamingZones = 0x01043000;
+constexpr std::uint32_t RoamingZoneBytes = 0x80;
+constexpr std::uint32_t RoamingZoneBitmap = 0x01042080;
+constexpr std::uint32_t RoamingZoneName = 0x40;
+// Programmable key function codes.
+constexpr std::uint8_t KeyRoam = 0x24;
 
 constexpr std::uint32_t BlockBytes = 0x20000;
 constexpr std::uint32_t MarkerOffset = BlockBytes - 8;
@@ -43,9 +93,24 @@ constexpr std::uint16_t CtcssTable[] = {625, 670, 693, 719, 744, 770, 797, 825, 
     2541};
 constexpr std::uint8_t CustomCtcss = 51;
 
+// An ID as BCD digits, which sort like the number.
+std::uint32_t bcdKey(std::uint32_t id)
+{
+    std::uint32_t key = 0;
+    for (std::uint32_t v = id, shift = 0; shift < 32; v /= 10, shift += 4) {
+        key |= (v % 10) << shift;
+    }
+    return key;
+}
+
 std::uint16_t le16(const std::uint8_t *p)
 {
     return static_cast<std::uint16_t>(p[0] | p[1] << 8);
+}
+
+std::uint32_t le32(const std::uint8_t *p)
+{
+    return static_cast<std::uint32_t>(le16(p)) | static_cast<std::uint32_t>(le16(p + 2)) << 16;
 }
 
 // Big-endian BCD, eight digits.
@@ -127,6 +192,16 @@ std::optional<Channel> decodeChannel(std::span<const std::uint8_t, 64> r)
     const std::uint16_t custom = le16(&r[0x10]);
     c.receiveTone = decodeTone(r[9] & 3, r[0x0B], le16(&r[0x0E]), custom);
     c.transmitTone = decodeTone((r[9] >> 2) & 3, r[0x0A], le16(&r[0x0C]), custom);
+    // Squelch modes: carrier, tone, signalling, tone and signalling, tone or
+    // signalling. Signalling alone counts as carrier, the others as tone.
+    const unsigned squelch = (r[0x19] >> 4) & 7;
+    c.squelchMode = squelch == 0 || squelch == 2 || c.receiveTone.kind == Tone::Kind::None ? SquelchMode::Carrier
+                                                                                           : SquelchMode::Tone;
+    c.dmr.colourCode = r[0x20] & 0x0F;
+    c.dmr.slot = (r[0x21] & 1) != 0 ? 2 : 1;
+    c.dmr.groupList = r[0x1C];
+    // Bit 2 of byte 0x34 excludes the channel from roaming.
+    c.roaming = c.digital() && (r[0x34] & 0x04) == 0;
     std::size_t n = 0;
     for (; n < Channel::NameBytes && r[0x23 + n] != 0; ++n) {
         c.name[n] = static_cast<char>(r[0x23 + n]);
@@ -166,6 +241,20 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     s.gpsSystems = b[0x35] <= 6 ? static_cast<std::uint8_t>(b[0x35] + 1) : 3;
     // The time zone in half hours from UTC-12:00 (0) through UTC (24).
     s.timeZoneMinutes = b[0x30] <= 52 ? static_cast<std::int16_t>((b[0x30] - 24) * 30) : 0;
+    s.voiceEnhancement = b[0x57] == 1;
+    // Side keys PF1..PF3: short presses, then long presses.
+    for (std::size_t k = 0; k < CodeplugSettings::SideKeys; ++k) {
+        s.sideShort[k] = b[0x10 + k] == KeyRoam ? KeyFunction::Roam : KeyFunction::None;
+        s.sideLong[k] = b[0x41 + k] == KeyRoam ? KeyFunction::Roam : KeyFunction::None;
+    }
+    if (b.size() >= 0xE8) {
+        RoamingSettings &r = s.roaming;
+        r.zone = b[0xDC] < CodeplugSource::MaxRoamingZones ? b[0xDC] : RoamingSettings::NoZone;
+        r.automatic = b[0xE7] == 1;
+        r.start = b[0xE0] == 0 ? RoamingSettings::Start::Periodic : RoamingSettings::Start::OutOfRange;
+        r.periodMinutes = b[0xBA];
+        r.quietS = b[0xBF];
+    }
     return s;
 }
 
@@ -308,27 +397,203 @@ bool D878Uv2Codeplug::bitSet(std::uint32_t bitmap, unsigned index)
     return readable(read(bitmap + index / 8, std::span(&byte, 1))) && (byte >> (index % 8) & 1) != 0;
 }
 
+ChannelLinks channelLinks(std::span<const std::uint8_t, 64> r)
+{
+    return {le32(&r[0x14]), r[0x18]};
+}
+
+std::optional<Channel> D878Uv2Codeplug::readChannel(std::uint32_t address)
+{
+    std::uint8_t r[ChannelBytes];
+    if (!readable(read(address, r))) {
+        return std::nullopt;
+    }
+    const std::span<const std::uint8_t, 64> record(r);
+    std::optional<Channel> c = decodeChannel(record);
+    if (c && c->digital()) {
+        const ChannelLinks links = channelLinks(record);
+        c->dmr.contact = contact(links.contact).value_or(dmr::Target{});
+        c->dmr.ownId = radioId(links.radioId).value_or(0);
+    }
+    return c;
+}
+
 std::optional<Channel> D878Uv2Codeplug::channel(std::uint16_t index)
 {
     if (index >= MaxChannels || !bitSet(ChannelBitmap, index)) {
         return std::nullopt;
     }
+    return readChannel(ChannelBanks + (index / ChannelsPerBank) * ChannelBankStride + (index % ChannelsPerBank) * ChannelBytes);
+}
+
+std::optional<dmr::Target> D878Uv2Codeplug::contact(std::uint32_t index)
+{
+    // The contact bitmap is the one inverted: a clear bit marks a contact.
+    std::uint8_t used = 0xFF;
+    if (index >= MaxContacts || !readable(read(ContactBitmap + index / 8, std::span(&used, 1))) ||
+        (used >> (index % 8) & 1) != 0) {
+        return std::nullopt;
+    }
     const std::uint32_t address =
-        ChannelBanks + (index / ChannelsPerBank) * ChannelBankStride + (index % ChannelsPerBank) * ChannelBytes;
-    std::uint8_t r[ChannelBytes];
+        ContactBanks + (index / ContactsPerBank) * ContactBankStride + (index % ContactsPerBank) * ContactBytes;
+    std::uint8_t r[0x27];
     if (!readable(read(address, r))) {
         return std::nullopt;
     }
-    return decodeChannel(std::span<const std::uint8_t, 64>(r));
+    const auto id = bcd8(&r[0x23]);
+    if (!id || r[0] > 2) {
+        return std::nullopt;
+    }
+    constexpr dmr::CallType Types[] = {dmr::CallType::Private, dmr::CallType::Group, dmr::CallType::All};
+    return dmr::Target{Types[r[0]], *id};
+}
+
+bool D878Uv2Codeplug::contactName(std::uint32_t id, bool group, std::span<char, ContactNameBytes + 1> name)
+{
+    const std::uint32_t key = bcdKey(id);
+    // The first entry with this ID.
+    std::uint32_t low = 0;
+    std::uint32_t high = MaxContacts;
+    std::uint8_t e[ContactIdBytes];
+    while (low < high) {
+        const std::uint32_t mid = (low + high) / 2;
+        if (!readable(read(ContactIds + mid * ContactIdBytes, e))) {
+            return false;
+        }
+        if ((le32(e) >> 1) < key) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    // A private ID and a talkgroup may share the number: take the matching
+    // kind.
+    for (std::uint32_t i = low; i < low + 2 && i < MaxContacts; ++i) {
+        if (!readable(read(ContactIds + i * ContactIdBytes, e)) || (le32(e) >> 1) != key) {
+            return false;
+        }
+        if (((le32(e) & 1) != 0) != group) {
+            continue;
+        }
+        const std::uint32_t index = le32(&e[4]);
+        if (index >= MaxContacts) {
+            return false;
+        }
+        char text[ContactNameBytes];
+        const std::uint32_t address =
+            ContactBanks + (index / ContactsPerBank) * ContactBankStride + (index % ContactsPerBank) * ContactBytes;
+        if (!readable(read(address + 1, std::span(reinterpret_cast<std::uint8_t *>(text), sizeof text)))) {
+            return false;
+        }
+        std::size_t n = 0;
+        for (; n < ContactNameBytes && text[n] != '\0'; ++n) {
+            name[n] = text[n];
+        }
+        name[n] = '\0';
+        return n != 0;
+    }
+    return false;
+}
+
+bool D878Uv2Codeplug::dmrUser(std::uint32_t id, DmrUser &user)
+{
+    std::uint8_t c[4];
+    if (!readable(read(UserCount, c))) {
+        return false;
+    }
+    const std::uint32_t count = le32(c);
+    if (count == 0 || count > MaxUsers) {
+        return false;
+    }
+    const std::uint32_t key = bcdKey(id);
+    const auto entryAt = [](std::uint32_t i) { return UserIds + (i / UserIdsPerBank) * UserBankStride + (i % UserIdsPerBank) * ContactIdBytes; };
+    std::uint32_t low = 0;
+    std::uint32_t high = count;
+    std::uint8_t e[ContactIdBytes];
+    while (low < high) {
+        const std::uint32_t mid = (low + high) / 2;
+        if (!readable(read(entryAt(mid), e))) {
+            return false;
+        }
+        if ((le32(e) >> 1) < key) {
+            low = mid + 1;
+        } else {
+            high = mid;
+        }
+    }
+    if (low >= count || !readable(read(entryAt(low), e)) || (le32(e) >> 1) != key) {
+        return false;
+    }
+    // The record, which may run over into the next bank.
+    std::uint8_t r[UserHeaderBytes + ContactNameBytes + 1 + UserCityBytes + 1 + CallsignBytes + 1];
+    std::uint32_t at = le32(&e[4]);
+    for (std::size_t done = 0; done < sizeof r;) {
+        const std::uint32_t inBank = UserRecordBank - at % UserRecordBank;
+        const std::size_t n = std::min<std::size_t>(sizeof r - done, inBank);
+        if (!readable(read(UserRecords + (at / UserRecordBank) * UserBankStride + at % UserRecordBank, std::span(r + done, n)))) {
+            return false;
+        }
+        done += n;
+        at += static_cast<std::uint32_t>(n);
+    }
+    // Name, city, callsign: each up to its length and zero-terminated.
+    std::size_t i = UserHeaderBytes;
+    const auto take = [&r, &i](std::span<char> out, std::size_t most) {
+        std::size_t n = 0;
+        for (; i < sizeof r && r[i] != 0; ++i) {
+            if (n < most && n + 1 < out.size()) {
+                out[n++] = static_cast<char>(r[i]);
+            }
+        }
+        if (!out.empty()) {
+            out[n] = '\0';
+        }
+        ++i;
+    };
+    char city[UserCityBytes + 1];
+    take(user.name, ContactNameBytes);
+    take(city, UserCityBytes);
+    take(user.callsign, CallsignBytes);
+    return user.name[0] != '\0' || user.callsign[0] != '\0';
+}
+
+std::size_t D878Uv2Codeplug::receiveGroups(std::uint8_t list, std::span<std::uint32_t> out)
+{
+    if (list >= MaxGroupLists || !bitSet(GroupListBitmap, list)) {
+        return 0;
+    }
+    std::uint8_t members[MaxReceiveGroups * 4];
+    if (!readable(read(GroupLists + list * GroupListStride, members))) {
+        return 0;
+    }
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < MaxReceiveGroups && n < out.size(); ++i) {
+        const std::uint32_t index = le32(&members[i * 4]);
+        if (index == 0xFFFFFFFF) {
+            continue;
+        }
+        if (const auto c = contact(index); c && c->type == dmr::CallType::Group) {
+            out[n++] = c->id;
+        }
+    }
+    return n;
+}
+
+std::optional<std::uint32_t> D878Uv2Codeplug::radioId(std::uint8_t index)
+{
+    if (index >= MaxRadioIds || !bitSet(RadioIdBitmap, index)) {
+        return std::nullopt;
+    }
+    std::uint8_t r[4];
+    if (!readable(read(RadioIds + index * RadioIdBytes, r))) {
+        return std::nullopt;
+    }
+    return bcd8(&r[0]);
 }
 
 std::optional<Channel> D878Uv2Codeplug::vfo(bool sideB)
 {
-    std::uint8_t r[ChannelBytes];
-    if (!readable(read(sideB ? VfoB : VfoA, r))) {
-        return std::nullopt;
-    }
-    return decodeChannel(std::span<const std::uint8_t, 64>(r));
+    return readChannel(sideB ? VfoB : VfoA);
 }
 
 std::size_t D878Uv2Codeplug::zonesInUse(std::span<std::uint8_t> out)
@@ -519,6 +784,113 @@ bool D878Uv2CodeplugWriter::finish()
     m_failed = m_failed || !ok;
     m_wrote = false;
     return ok;
+}
+
+std::size_t D878Uv2Codeplug::roamingMembers(std::uint8_t zone, std::span<std::uint8_t, MaxRoamingSites> out)
+{
+    std::uint8_t raw[MaxRoamingSites];
+    if (zone >= MaxRoamingZones || !bitSet(RoamingZoneBitmap, zone) ||
+        !readable(read(RoamingZones + zone * RoamingZoneBytes, raw))) {
+        return 0;
+    }
+    std::size_t n = 0;
+    for (const std::uint8_t index : raw) {
+        if (index < MaxRoamingRepeaters) {
+            out[n++] = index;
+        }
+    }
+    return n;
+}
+
+std::optional<RoamingSite> D878Uv2Codeplug::roamingRepeater(unsigned index)
+{
+    std::uint8_t r[9];
+    if (index >= MaxRoamingRepeaters || !bitSet(RoamingRepeaterBitmap, index) ||
+        !readable(read(RoamingRepeaters + index * RoamingRepeaterBytes, r))) {
+        return std::nullopt;
+    }
+    const auto rx = bcd8(&r[0]);
+    const auto tx = bcd8(&r[4]);
+    if (!rx || !tx || *rx == 0 || *tx == 0) {
+        return std::nullopt;
+    }
+    RoamingSite site;
+    site.receiveHz = *rx * 10;
+    site.transmitHz = *tx * 10;
+    site.colourCode = r[8] <= 15 ? r[8] : RoamingSite::ChannelColourCode;
+    return site;
+}
+
+std::size_t D878Uv2Codeplug::roamingSites(std::uint8_t zone, std::span<RoamingSite> out)
+{
+    std::uint8_t members[MaxRoamingSites];
+    const std::size_t count = roamingMembers(zone, members);
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < count && n < out.size(); ++i) {
+        if (const auto site = roamingRepeater(members[i])) {
+            out[n++] = *site;
+        }
+    }
+    return n;
+}
+
+bool D878Uv2Codeplug::roamingSiteName(std::uint8_t zone, std::size_t position, std::span<char, SiteNameBytes + 1> name)
+{
+    name[0] = '\0';
+    std::uint8_t members[MaxRoamingSites];
+    const std::size_t count = roamingMembers(zone, members);
+    // The position counts the repeaters roamingSites() returns.
+    std::size_t seen = 0;
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!roamingRepeater(members[i])) {
+            continue;
+        }
+        if (seen++ != position) {
+            continue;
+        }
+        std::uint8_t raw[SiteNameBytes];
+        if (!readable(read(RoamingRepeaters + members[i] * RoamingRepeaterBytes + RoamingRepeaterName, raw))) {
+            return false;
+        }
+        std::size_t n = 0;
+        for (; n < SiteNameBytes && raw[n] != 0 && raw[n] != 0xFF; ++n) {
+            name[n] = static_cast<char>(raw[n]);
+        }
+        name[n] = '\0';
+        return true;
+    }
+    return false;
+}
+
+std::size_t D878Uv2Codeplug::roamingZones(std::span<std::uint8_t> out)
+{
+    std::uint8_t bitmap[MaxRoamingZones / 8];
+    if (!readable(read(RoamingZoneBitmap, bitmap))) {
+        return 0;
+    }
+    std::size_t n = 0;
+    for (unsigned z = 0; z < MaxRoamingZones && n < out.size(); ++z) {
+        if ((bitmap[z / 8] >> (z % 8) & 1) != 0) {
+            out[n++] = static_cast<std::uint8_t>(z);
+        }
+    }
+    return n;
+}
+
+bool D878Uv2Codeplug::roamingZoneName(std::uint8_t zone, std::span<char, ZoneNameBytes + 1> name)
+{
+    name[0] = '\0';
+    std::uint8_t raw[ZoneNameBytes];
+    if (zone >= MaxRoamingZones || !bitSet(RoamingZoneBitmap, zone) ||
+        !readable(read(RoamingZones + zone * RoamingZoneBytes + RoamingZoneName, raw))) {
+        return false;
+    }
+    std::size_t n = 0;
+    for (; n < ZoneNameBytes && raw[n] != 0 && raw[n] != 0xFF; ++n) {
+        name[n] = static_cast<char>(raw[n]);
+    }
+    name[n] = '\0';
+    return true;
 }
 
 } // namespace dmm::services

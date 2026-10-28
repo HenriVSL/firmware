@@ -148,14 +148,113 @@ bool Sct3258::receive(Packet &out, unsigned timeoutMs)
     return false;
 }
 
+bool Sct3258::sendFrame(std::uint8_t colourCode, std::uint8_t property, std::span<const std::uint8_t> data,
+    unsigned timeoutMs)
+{
+    constexpr std::size_t MaxData = 36;
+    if (data.size() > MaxData) {
+        return false;
+    }
+    std::uint8_t fields[5 + MaxData] = {DmrColourCode, static_cast<std::uint8_t>(colourCode & 0x0F), DataFrame, property,
+        static_cast<std::uint8_t>(data.size())};
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        fields[5 + i] = data[i];
+    }
+    Packet reply;
+    m_lastFrameReply = -1;
+    if (!request(TypeDmr, std::span(fields, 5 + data.size()), reply, timeoutMs)) {
+        return false;
+    }
+    // The chip acknowledges each frame with the bare DIGC_DATA_FRAME field.
+    if (reply.length >= 1 && reply.fields[0] == DataFrame) {
+        return true;
+    }
+    m_lastFrameReply = reply.type << 8 | (reply.length >= 1 ? reply.fields[0] : 0);
+    return false;
+}
+
+bool Sct3258::awaitSent(unsigned timeoutMs)
+{
+    Packet p;
+    for (int i = 0; i < 2 * MaxStalePackets; ++i) {
+        if (!receive(p, timeoutMs)) {
+            return false;
+        }
+        const auto ack = p.field(AckMessage);
+        if (!ack.empty() && ack[0] == AckAllSent) {
+            return true;
+        }
+        if (isReport(p)) {
+            keep(p);
+        }
+    }
+    return false;
+}
+
+bool Sct3258::isReport(const Packet &p)
+{
+    if ((p.type & TypeFarEnd) != 0) {
+        return true;
+    }
+    const auto ack = p.field(AckMessage);
+    return !p.field(NewEvent).empty() || (!ack.empty() && ack[0] == AckAllSent);
+}
+
+void Sct3258::keep(const Packet &p)
+{
+    if (m_reports.full()) {
+        m_reports.pop(); // the oldest goes
+    }
+    Report r{p.type, static_cast<std::uint8_t>(p.length < ReportBytes ? p.length : ReportBytes), {}};
+    for (std::size_t i = 0; i < r.length; ++i) {
+        r.fields[i] = p.fields[i];
+    }
+    m_reports.push(r);
+}
+
+bool Sct3258::nextReport(Packet &out)
+{
+    if (const auto r = m_reports.pop()) {
+        out.type = r->type;
+        out.length = r->length;
+        for (std::size_t i = 0; i < r->length; ++i) {
+            out.fields[i] = r->fields[i];
+        }
+        return true;
+    }
+    // Each pass reads a bounded number of words, so a long report takes a
+    // few; the bound keeps a stuck status line from holding the caller.
+    for (int i = 0; i < 4 * MaxStalePackets && m_bus.dataWaiting(); ++i) {
+        if (receive(out, 0) && isReport(out)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool Sct3258::request(std::uint8_t type, std::span<const std::uint8_t> fields, Packet &reply, unsigned timeoutMs)
 {
-    // Drop anything left over, such as event reports.
-    Packet stale;
-    for (int i = 0; i < MaxStalePackets && receive(stale, 0); ++i) {
+    // Whatever is waiting now came before the request: keep the reports,
+    // drop the rest.
+    Packet early;
+    for (int i = 0; i < MaxStalePackets && receive(early, 0); ++i) {
+        if (isReport(early)) {
+            keep(early);
+        }
     }
     send(type, fields);
-    return receive(reply, timeoutMs);
+    // Reports may come before the reply; each restarts the wait, a bounded
+    // number of times.
+    for (int i = 0; i < MaxStalePackets; ++i) {
+        if (!receive(reply, timeoutMs)) {
+            return false;
+        }
+        if (!isReport(reply)) {
+            return true;
+        }
+        keep(reply);
+    }
+    return false;
 }
 
 bool Sct3258::dataWaiting()
@@ -189,8 +288,13 @@ bool Sct3258::queryText(std::uint8_t field, char *text, std::size_t capacity)
 
 int Sct3258::control(std::span<const std::uint8_t> fields, unsigned timeoutMs)
 {
+    return control(TypeControl, fields, timeoutMs);
+}
+
+int Sct3258::control(std::uint8_t type, std::span<const std::uint8_t> fields, unsigned timeoutMs)
+{
     Packet reply;
-    if (fields.empty() || !request(TypeControl, fields, reply, timeoutMs)) {
+    if (fields.empty() || !request(type, fields, reply, timeoutMs)) {
         return -1;
     }
     const auto echo = reply.field(fields[0]);

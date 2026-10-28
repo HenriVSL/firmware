@@ -179,28 +179,52 @@ BatteryState batteryState;
 int headerHeight = 8;
 int headerTop = 0;
 
+void fillArea(Display &d, int x, int y, int w, int h, Color c)
+{
+    if (w > 0 && h > 0) {
+        d.fillRect(x, y, w, h, c);
+    }
+}
+
+// The battery at the header's right end, in its own field from 48 pixels
+// before the edge: the voltage, then four bars. Everything is drawn in
+// place with only the gaps painted, so an update does not flicker.
 void drawBattery(Display &d)
 {
     const BatteryState &b = batteryState;
-    const int barsX = d.width() - 13;
+    const int w = d.width();
+    const int fieldX = w - 48;
+    const int barsX = w - 13;
     lib::StaticString<12> text;
     if (b.millivolts > 0) {
         const int cv = (b.millivolts + 5) / 10;
         text << cv / 100 << '.' << static_cast<char>('0' + cv / 10 % 10) << 'V';
     }
     const int textW = static_cast<int>(text.view().size()) * HeaderFont.width;
-    const int x0 = barsX - textW - 2;
-    d.fillRect(x0, 0, d.width() - x0, headerHeight, headerGround);
-    drawText(d, HeaderFont, x0, headerTop, text.view(), b.low ? colors::Red : colors::White, headerGround);
+    const int tx = barsX - textW - 2;
+    const int below = headerTop + HeaderFont.height;
+    drawText(d, HeaderFont, tx, headerTop, text.view(), b.low ? colors::Red : colors::White, headerGround);
+    fillArea(d, fieldX, 0, tx - fieldX, headerHeight, headerGround);
+    fillArea(d, tx, 0, textW, headerTop, headerGround);
+    fillArea(d, tx, below, textW, headerHeight - below, headerGround);
+    fillArea(d, tx + textW, 0, barsX - tx - textW, headerHeight, headerGround);
     if (b.millivolts <= 0) {
+        fillArea(d, barsX, 0, w - barsX, headerHeight, headerGround);
         return;
     }
     const Color on = b.low ? colors::Red : colors::Green;
     for (int i = 0; i < 4; ++i) {
         // The first bar always shows, so an empty battery still has one red bar.
         const bool lit = i == 0 || i <= b.level;
-        d.fillRect(barsX + i * 3, headerTop + 7 - (i + 1) * 2 + 1, 2, (i + 1) * 2 - 1, lit ? on : rgb(60, 60, 60));
+        const int bx = barsX + i * 3;
+        const int by = headerTop + 7 - (i + 1) * 2 + 1;
+        const int bh = (i + 1) * 2 - 1;
+        d.fillRect(bx, by, 2, bh, lit ? on : rgb(60, 60, 60));
+        fillArea(d, bx, 0, 2, by, headerGround);
+        fillArea(d, bx, by + bh, 2, headerHeight - by - bh, headerGround);
+        fillArea(d, bx + 2, 0, 1, headerHeight, headerGround);
     }
+    fillArea(d, barsX + 12, 0, w - barsX - 12, headerHeight, headerGround);
 }
 
 services::KeyLock keyLock;
@@ -235,36 +259,66 @@ void drawHeader(Display &d)
     drawBattery(d);
 }
 
-// A short notice in a band across the middle of the screen.
+// A short notice in a band across the middle of the screen, drawn over
+// what is there without blanking it first.
 void drawNotice(Display &d, std::string_view text)
 {
     const Font &font = fonts::Spleen8x16;
     const int h = font.height + 10;
     const int y = (d.height() - h) / 2;
-    d.fillRect(0, y, d.width(), h, palette::Ground);
-    d.fillRect(0, y, d.width(), 1, palette::Rule);
-    d.fillRect(0, y + h - 1, d.width(), 1, palette::Rule);
-    const int w = static_cast<int>(text.size()) * font.width;
-    drawText(d, font, (d.width() - w) / 2, y + 5, text, palette::Text, palette::Ground);
+    const int w = d.width();
+    const int textW = static_cast<int>(text.size()) * font.width;
+    const int tx = (w - textW) / 2;
+    const int ty = y + 5;
+    drawText(d, font, tx, ty, text, palette::Text, palette::Ground);
+    d.fillRect(0, y, w, 1, palette::Rule);
+    fillArea(d, 0, y + 1, w, ty - y - 1, palette::Ground);
+    fillArea(d, 0, ty, tx, font.height, palette::Ground);
+    fillArea(d, tx + textW, ty, w - tx - textW, font.height, palette::Ground);
+    fillArea(d, 0, ty + font.height, w, y + h - 1 - ty - font.height, palette::Ground);
+    d.fillRect(0, y + h - 1, w, 1, palette::Rule);
 }
 
-// The volume while the knob turns: "Volume" and a 15-segment bar.
-void drawVolumeNotice(Display &d, int step)
+// The volume while the knob turns: "Volume" and a 15-segment bar. With
+// @p frame the whole band is drawn over what is there; without, only the
+// number and the segments change, in place.
+void drawVolumeNotice(Display &d, int step, bool frame)
 {
     const Font &font = fonts::Spleen6x12;
     const int h = font.height + 16;
     const int y = (d.height() - h) / 2;
-    d.fillRect(0, y, d.width(), h, palette::Ground);
-    d.fillRect(0, y, d.width(), 1, palette::Rule);
-    d.fillRect(0, y + h - 1, d.width(), 1, palette::Rule);
+    const int w = d.width();
+    const int labelY = y + 3;
+    const int segY = y + font.height + 6;
+    constexpr int SegH = 5;
+    constexpr int LabelChars = 9; // "Volume 15"
     lib::StaticString<12> label;
     label << "Volume " << step;
-    drawText(d, font, 6, y + 3, label.view(), palette::Text, palette::Ground);
-    constexpr int Segments = 15;
-    const int segW = (d.width() - 12) / Segments;
-    for (int i = 0; i < Segments; ++i) {
-        d.fillRect(6 + i * segW, y + font.height + 6, segW - 2, 5, i < step ? palette::Text : palette::Rule);
+    while (label.view().size() < LabelChars) {
+        label << ' ';
     }
+    drawText(d, font, 6, labelY, label.view(), palette::Text, palette::Ground);
+    constexpr int Segments = 15;
+    const int segW = (w - 12) / Segments;
+    for (int i = 0; i < Segments; ++i) {
+        d.fillRect(6 + i * segW, segY, segW - 2, SegH, i < step ? palette::Text : palette::Rule);
+    }
+    if (!frame) {
+        return;
+    }
+    const int labelEnd = 6 + LabelChars * font.width;
+    d.fillRect(0, y, w, 1, palette::Rule);
+    fillArea(d, 0, y + 1, w, labelY - y - 1, palette::Ground);
+    fillArea(d, 0, labelY, 6, font.height, palette::Ground);
+    fillArea(d, labelEnd, labelY, w - labelEnd, font.height, palette::Ground);
+    fillArea(d, 0, labelY + font.height, w, segY - labelY - font.height, palette::Ground);
+    fillArea(d, 0, segY, 6, SegH, palette::Ground);
+    for (int i = 0; i < Segments; ++i) {
+        fillArea(d, 6 + i * segW + segW - 2, segY, 2, SegH, palette::Ground);
+    }
+    fillArea(d, 6 + Segments * segW, segY, w - 6 - Segments * segW, SegH, palette::Ground);
+    fillArea(d, 0, segY + SegH, w, y + h - 1 - segY - SegH, palette::Ground);
+    d.fillRect(0, y + h - 1, w, 1, palette::Rule);
 }
 
 void logLockSettings()
@@ -276,6 +330,15 @@ void logLockSettings()
 }
 
 // The start screen: the name and version on black.
+// Under the version while the start screen waits for the radio.
+void drawStarting(Display &d)
+{
+    const Font &small = fonts::Spleen6x12;
+    constexpr std::string_view Text = "Please wait...";
+    const int w = static_cast<int>(Text.size()) * small.width;
+    drawText(d, small, (d.width() - w) / 2, d.height() - small.height - 8, Text, colors::Grey, colors::Black);
+}
+
 void drawStartScreen(Display &d)
 {
     d.fillRect(0, 0, d.width(), d.height(), colors::Black);
@@ -348,7 +411,11 @@ std::size_t stationShown = 0;
 enum class MenuItem : std::uint8_t
 {
     Squelch,
+    SquelchMode,
     Power,
+    Roaming,
+    RoamZone,
+    FrequencyOffset,
     Backlight,
     BacklightTime,
     BatterySave,
@@ -383,11 +450,11 @@ enum class MenuGroup : std::uint8_t
 struct GroupInfo
 {
     const char *name;
-    MenuItem items[5];
+    MenuItem items[6];
     std::uint8_t count;
 };
 constexpr GroupInfo Groups[] = {
-    {"Channel", {MenuItem::Squelch, MenuItem::Power}, 2},
+    {"Channel", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::RoamZone, MenuItem::FrequencyOffset}, 6},
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
@@ -453,6 +520,96 @@ lib::StaticString<6> localClockText()
 // The volume step 0..15, -1 until the knob has been read.
 int volumeLevel = -1;
 bool receiving = false;
+// The DMR call on the call screen: while it is heard, then for a moment
+// after it ends, unless a key or a channel change sends the screen back.
+struct HeardCall
+{
+    bool shown = false;
+    bool active = false;
+    bool group = false;
+    std::uint32_t source = 0;
+    std::uint32_t destination = 0;
+    // The caller's callsign (or contact name) and the user's name.
+    char caller[CodeplugSource::ContactNameBytes + 1] = {};
+    char callerName[CodeplugSource::ContactNameBytes + 1] = {};
+    char target[CodeplugSource::ContactNameBytes + 1] = {};
+    os::Ticks started = 0;
+    os::Ticks ended = 0;
+};
+HeardCall heard;
+char callChannel[Channel::NameBytes + 1] = {};
+// Roaming: the roaming zone, how many repeaters it has, and the repeater
+// the radio task last reported.
+std::uint8_t roamingZone = services::RoamingSettings::NoZone;
+std::size_t roamingSites = 0;
+// Roaming switched on in the menu, for this session.
+bool roamingOn = true;
+// The frequency offset set in the menu, in kHz, for this session.
+constexpr int MaxOffsetKhz = 5;
+int offsetKhz = radio::DefaultFrequencyOffsetHz / 1000;
+struct RoamState
+{
+    bool searching = false;
+    int site = -1;
+    std::uint32_t receiveHz = 0;
+    std::uint8_t colourCode = 0;
+    char name[CodeplugSource::SiteNameBytes + 1] = {};
+};
+RoamState roam;
+// Hands the roaming zone's repeaters to the radio task, which then looks
+// for one afresh.
+void loadRoamingSites()
+{
+    radio::setRoamingSites([](std::span<services::RoamingSite> out) {
+        roamingSites = roamingZone != services::RoamingSettings::NoZone && codeplug != nullptr
+            ? codeplug->roamingSites(roamingZone, out)
+            : 0;
+        return roamingSites;
+    });
+}
+// The side keys' functions, and whether a long press has already acted.
+services::KeyFunction sideShort[CodeplugSettings::SideKeys] = {};
+services::KeyFunction sideLong[CodeplugSettings::SideKeys] = {};
+bool sideLongDone[CodeplugSettings::SideKeys] = {};
+constexpr os::Ticks CallHoldMs = 5000;
+constexpr std::uint32_t AllCallId = 0xFFFFFF;
+
+template <std::size_t N>
+void copyName(char (&out)[N], const char *text)
+{
+    std::size_t n = 0;
+    for (; n + 1 < N && text[n] != '\0'; ++n) {
+        out[n] = text[n];
+    }
+    out[n] = '\0';
+}
+
+// Names for a call from the codeplug: the caller's own contact entry
+// first, else the user directory's callsign and name.
+void nameCall(HeardCall &h, CodeplugSource *plug)
+{
+    h.caller[0] = h.callerName[0] = h.target[0] = '\0';
+    if (plug == nullptr) {
+        return;
+    }
+    std::array<char, CodeplugSource::ContactNameBytes + 1> name{};
+    if (plug->contactName(h.destination, h.group, name)) {
+        copyName(h.target, name.data());
+    }
+    CodeplugSource::DmrUser user;
+    const bool known = plug->dmrUser(h.source, user);
+    if (plug->contactName(h.source, false, name)) {
+        copyName(h.caller, name.data());
+    } else if (known && user.callsign[0] != '\0') {
+        copyName(h.caller, user.callsign.data());
+    } else if (known) {
+        copyName(h.caller, user.name.data());
+        return;
+    }
+    if (known && h.caller[0] != '\0' && std::string_view(user.name.data()) != h.caller) {
+        copyName(h.callerName, user.name.data());
+    }
+}
 // The standby screen's quick-key hint.
 lib::StaticString<40> quickKeys;
 // Frequency digits typed on the standby screen.
@@ -624,6 +781,15 @@ void uiMain(void *)
                 aprsStation = a->callsign[0] != '\0';
                 aprs::setStation(*a);
             }
+            if (selector.settings().voiceEnhancement) {
+                radio::post(radio::VoiceEnhancement{true});
+            }
+            const services::RoamingSettings &roaming = selector.settings().roaming;
+            roamingZone = roaming.zone;
+            loadRoamingSites();
+            radio::post(radio::RoamingSetup{roaming});
+            std::copy(std::begin(selector.settings().sideShort), std::end(selector.settings().sideShort), sideShort);
+            std::copy(std::begin(selector.settings().sideLong), std::end(selector.settings().sideLong), sideLong);
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -634,9 +800,11 @@ void uiMain(void *)
 
     View view = View::Start;
     const os::Ticks startUntil = os::nowMs() + StartScreenMs;
+    bool startingShown = false;
     os::Ticks lastSecond = 0;
     os::Ticks noticeUntil = 0;
     bool noticeShown = false;
+    bool volumeNoticeUp = false; // the notice up is the volume one
     constexpr os::Ticks NoticeMs = 1500;
 
     // The standby, log and key test screens take the lock; the zone list,
@@ -649,6 +817,7 @@ void uiMain(void *)
         return c;
     };
     auto notice = [&](std::string_view text) {
+        volumeNoticeUp = false;
         drawNotice(d, text);
         noticeShown = true;
         noticeUntil = os::nowMs() + NoticeMs;
@@ -664,6 +833,17 @@ void uiMain(void *)
         radio::post(radio::BatterySave{mode});
         gps::post(gps::PowerSave{mode != 0});
     };
+    // The radio's chips are up and the start screen is gone.
+    auto hardwareUp = [&] { return view != View::Start && radio::ready(); };
+    // A key or knob turn refused because the chips are not up yet: on the
+    // start screen silently, else with a notice once per press.
+    auto refuseNotReady = [&](bool press) {
+        if (view == View::Start || !press) {
+            return;
+        }
+        log::info("ui") << "key refused: the radio is not ready";
+        notice("Please wait...");
+    };
     auto standbyState = [&] {
         StandbyState s;
         s.transmitting = transmitting;
@@ -676,7 +856,35 @@ void uiMain(void *)
         clockText = localClockText();
         s.clock = clockText.view();
         s.beacons = aprsStation && beaconIntervalS != 0;
+        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        s.roaming = roamingOn && ch && ch->digital() && ch->roaming && roamingSites > 0;
+        s.roamSearching = roam.searching;
+        s.roamHz = roam.receiveHz;
+        s.roamColourCode = roam.colourCode;
+        s.roamSite = roam.name;
         return s;
+    };
+    auto callInfo = [&] {
+        CallInfo c;
+        c.active = heard.active;
+        c.allCall = heard.destination == AllCallId;
+        c.group = heard.group;
+        c.callerName = heard.callerName;
+        c.callerId = heard.source;
+        c.targetName = heard.target;
+        c.targetId = heard.destination;
+        c.callerHeadline = heard.caller;
+        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        if (ch && ch->receiveHz != ch->transmitHz) {
+            c.slot = ch->dmr.slot;
+        }
+        callChannel[0] = '\0';
+        if (ch) {
+            copyName(callChannel, ch->name);
+        }
+        c.channel = callChannel;
+        c.seconds = static_cast<std::uint32_t>(((heard.active ? os::nowMs() : heard.ended) - heard.started) / 1000);
+        return c;
     };
     auto barHeader = [&](bool bar) {
         headerGround = colors::Black;
@@ -685,10 +893,17 @@ void uiMain(void *)
         headerTop = bar ? 2 : 0;
     };
     auto redrawView = [&] {
-        const bool radioScreen = view == View::Standby || view == View::ZonePicker || view == View::Menu ||
-            view == View::MenuValue || view == View::Gps || view == View::Heard || view == View::Station;
+        // A full redraw covers any notice: the next one is drawn whole.
+        noticeShown = false;
+        volumeNoticeUp = false;
+        const bool radioScreen =
+            view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue ||
+            view == View::Gps || view == View::Heard || view == View::Station;
         barHeader(radioScreen);
-        if (view == View::Standby) {
+        if (view == View::Standby && heard.shown) {
+            standby.drawCall(d, standbyState(), callInfo());
+            drawBattery(d);
+        } else if (view == View::Standby) {
             standby.draw(d, *channels, standbyState());
             drawBattery(d);
         } else if (view == View::Gps) {
@@ -755,9 +970,29 @@ void uiMain(void *)
                 value << channels->squelch();
             }
             break;
+        case MenuItem::SquelchMode:
+            label = "Sq type";
+            value << (channels->current() && channels->current()->squelchMode == SquelchMode::Tone ? "Tone" : "Carrier");
+            break;
         case MenuItem::Power:
             label = "Power";
             value << (channels->current() ? Powers[static_cast<int>(channels->current()->power)] : "-");
+            break;
+        case MenuItem::Roaming:
+            label = "Roaming";
+            value << (roamingOn ? "On" : "Off");
+            break;
+        case MenuItem::RoamZone: {
+            label = "Roam zone";
+            std::array<char, CodeplugSource::ZoneNameBytes + 1> name{};
+            value << (roamingZone != services::RoamingSettings::NoZone && codeplug->roamingZoneName(roamingZone, name)
+                    ? std::string_view(name.data())
+                    : std::string_view("-"));
+            break;
+        }
+        case MenuItem::FrequencyOffset:
+            label = "Freq offset";
+            value << (offsetKhz > 0 ? "+" : "") << offsetKhz << " kHz";
             break;
         case MenuItem::Backlight:
             label = "Backlight";
@@ -773,9 +1008,9 @@ void uiMain(void *)
             break;
         case MenuItem::KeyLock:
             label = "Lock covers";
-            value << (k.knob ? "All" : k.keypad && k.side ? "Keys"
+            value << (k.knob ? "All" : k.keypad && k.side ? "Keys+PTT"
                     : k.keypad                            ? "Keypad"
-                                                          : "Side");
+                                                          : "Side+PTT");
             break;
         case MenuItem::AutoLock:
             label = "Auto lock";
@@ -917,6 +1152,14 @@ void uiMain(void *)
             }
             menuValue.select(channels->squelch());
             break;
+        case MenuItem::SquelchMode:
+            menuValue.open("Sq type");
+            menuValue.add(0, "Carrier");
+            menuValue.add(1, "Tone");
+            if (channels->current()) {
+                menuValue.select(channels->current()->squelchMode == SquelchMode::Tone ? 1 : 0);
+            }
+            break;
         case MenuItem::Power:
             menuValue.open("Power");
             menuValue.add(0, "Low");
@@ -926,6 +1169,36 @@ void uiMain(void *)
             if (channels->current()) {
                 menuValue.select(static_cast<std::uint8_t>(channels->current()->power));
             }
+            break;
+        case MenuItem::Roaming:
+            menuValue.open("Roaming");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(roamingOn ? 1 : 0);
+            break;
+        case MenuItem::RoamZone: {
+            menuValue.open("Roam zone");
+            std::uint8_t zones[CodeplugSource::MaxRoamingZones];
+            const std::size_t n = codeplug->roamingZones(zones);
+            for (std::size_t i = 0; i < n; ++i) {
+                std::array<char, CodeplugSource::ZoneNameBytes + 1> name{};
+                codeplug->roamingZoneName(zones[i], name);
+                menuValue.add(zones[i], name.data());
+            }
+            if (n == 0) {
+                menuValue.add(services::RoamingSettings::NoZone, "None");
+            }
+            menuValue.select(roamingZone);
+            break;
+        }
+        case MenuItem::FrequencyOffset:
+            menuValue.open("Freq offset");
+            for (int k = -MaxOffsetKhz; k <= MaxOffsetKhz; ++k) {
+                lib::StaticString<12> s;
+                s << (k > 0 ? "+" : "") << k << " kHz";
+                menuValue.add(static_cast<std::uint8_t>(k + MaxOffsetKhz), s.view());
+            }
+            menuValue.select(static_cast<std::uint8_t>(offsetKhz + MaxOffsetKhz));
             break;
         case MenuItem::Backlight:
             menuValue.open("Backlight");
@@ -948,16 +1221,16 @@ void uiMain(void *)
         case MenuItem::BatterySave:
             menuValue.open("Battery save");
             menuValue.add(0, "Off");
-            menuValue.add(1, "On", "150 ms sleep");
-            menuValue.add(2, "Fast wake", "70 ms sleep");
+            menuValue.add(1, "On", "150 ms");
+            menuValue.add(2, "Fast wake", "70 ms");
             menuValue.select(batterySave);
             break;
         case MenuItem::KeyLock:
             menuValue.open("Lock covers");
-            menuValue.add(0, "All", "keys, PTT, knob");
-            menuValue.add(1, "Keys", "keys and PTT");
-            menuValue.add(2, "Keypad", "front keys");
-            menuValue.add(3, "Side", "side keys, PTT");
+            menuValue.add(0, "All");
+            menuValue.add(1, "Keys+PTT");
+            menuValue.add(2, "Keypad");
+            menuValue.add(3, "Side+PTT");
             break;
         case MenuItem::AutoLock:
             menuValue.open("Auto lock");
@@ -1062,7 +1335,15 @@ void uiMain(void *)
         if (channels == nullptr || !channels->current()) {
             return;
         }
-        radio::post(radio::UseChannel{*channels->current(), channels->squelch()});
+        const Channel &c = *channels->current();
+        static std::uint32_t groups[CodeplugSource::MaxReceiveGroups];
+        std::size_t n = 0;
+        if (c.digital() && c.dmr.groupList != services::dmr::ChannelSettings::NoGroupList && codeplug != nullptr) {
+            n = codeplug->receiveGroups(c.dmr.groupList, groups);
+        }
+        radio::setReceiveGroups(std::span(groups, n));
+        heard.shown = false;
+        radio::post(radio::UseChannel{c, channels->squelch()});
         if (view == View::Standby) {
             redrawView();
         }
@@ -1098,9 +1379,28 @@ void uiMain(void *)
             channels->setSquelch(v);
             log::info("ui") << "squelch " << v;
             break;
+        case MenuItem::SquelchMode:
+            channels->setSquelchMode(v == 1 ? SquelchMode::Tone : SquelchMode::Carrier);
+            log::info("ui") << "squelch opens on " << (v == 1 ? "the tone" : "the carrier");
+            break;
         case MenuItem::Power:
             channels->setPower(static_cast<PowerLevel>(v));
             log::info("ui") << "power " << v;
+            break;
+        case MenuItem::Roaming:
+            roamingOn = v == 1;
+            radio::post(radio::RoamingOn{roamingOn});
+            break;
+        case MenuItem::RoamZone:
+            if (v != roamingZone) {
+                roamingZone = v;
+                loadRoamingSites();
+                log::info("ui") << "roaming zone " << v << ", " << roamingSites << " repeaters";
+            }
+            break;
+        case MenuItem::FrequencyOffset:
+            offsetKhz = static_cast<int>(v) - MaxOffsetKhz;
+            radio::post(radio::FrequencyOffset{offsetKhz * 1000});
             break;
         case MenuItem::Backlight:
             backlightLevel = v;
@@ -1166,7 +1466,8 @@ void uiMain(void *)
         case MenuItem::Count:
             break;
         }
-        if (menuItem == MenuItem::Squelch || menuItem == MenuItem::Power) {
+        if (menuItem == MenuItem::Squelch || menuItem == MenuItem::SquelchMode || menuItem == MenuItem::Power ||
+            menuItem == MenuItem::Roaming || menuItem == MenuItem::RoamZone) {
             useChannel();
         }
         // Back to the list it came from, showing the new value; straight to
@@ -1220,6 +1521,14 @@ void uiMain(void *)
             }
             return;
         }
+        // A key on the call screen goes back to standby; Exit does only that.
+        if (press && heard.shown) {
+            heard.shown = false;
+            redrawView();
+            if (key == Key::Exit) {
+                return;
+            }
+        }
         if (step && (key == Key::Up || key == Key::Down)) {
             entryLength = 0;
             const int dir = key == Key::Up ? 1 : -1;
@@ -1261,6 +1570,25 @@ void uiMain(void *)
         } else if (press && key == Key::Front2) {
             entryLength = 0;
             openGroup(MenuGroup::Channel, true);
+        }
+    };
+    // A side key's function: on the press when it has no long-press
+    // function, else on the release before a long press.
+    auto sideKey = [&](Key key, KeyDebouncer::EventType type) {
+        using Type = KeyDebouncer::EventType;
+        const std::size_t k = static_cast<std::size_t>(key) - static_cast<std::size_t>(Key::Side1);
+        services::KeyFunction f = services::KeyFunction::None;
+        if (type == Type::Press) {
+            sideLongDone[k] = false;
+            f = sideLong[k] == services::KeyFunction::None ? sideShort[k] : services::KeyFunction::None;
+        } else if (type == Type::LongPress) {
+            sideLongDone[k] = true;
+            f = sideLong[k];
+        } else if (type == Type::Release && sideLong[k] != services::KeyFunction::None && !sideLongDone[k]) {
+            f = sideShort[k];
+        }
+        if (f == services::KeyFunction::Roam) {
+            radio::post(radio::RoamNow{});
         }
     };
     auto onLockVerdict = [&](Verdict v) {
@@ -1325,6 +1653,13 @@ void uiMain(void *)
                            [&](const KeyEvent &e) {
                                using Type = KeyDebouncer::EventType;
                                useLight(d);
+                               // Until the radio's chips are up, at start-up or while one
+                               // restarts, every key is refused: nothing may reach them
+                               // half set up. A PTT release still goes through.
+                               if (!hardwareUp() && !(e.key == Key::Ptt && e.type == Type::Release)) {
+                                   refuseNotReady(e.type == Type::Press);
+                                   return;
+                               }
                                if (e.key == Key::Ptt) {
                                    // Press and release only; a refused press never keys
                                    // the radio, a release always reaches it.
@@ -1389,6 +1724,12 @@ void uiMain(void *)
                                    }
                                    return;
                                }
+                               if (e.key >= Key::Side1 && e.key <= Key::Side3) {
+                                   if (channels != nullptr) {
+                                       sideKey(e.key, e.type);
+                                   }
+                                   return;
+                               }
                                if (channels != nullptr && (view == View::Standby || view == View::ZonePicker || view == View::Menu || view == View::MenuValue)) {
                                    channelKey(e.key, e.type);
                                }
@@ -1405,6 +1746,44 @@ void uiMain(void *)
                                receiving = r.on;
                                useLight(d);
                                refreshLockMark();
+                           },
+                           [&](const DmrCall &c) {
+                               if (c.active) {
+                                   heard.shown = true;
+                                   heard.active = true;
+                                   heard.group = c.group;
+                                   heard.source = c.source;
+                                   heard.destination = c.destination;
+                                   heard.started = os::nowMs();
+                                   nameCall(heard, codeplug);
+                                   lastLightUse = os::nowMs();
+                               } else if (heard.active) {
+                                   heard.active = false;
+                                   heard.ended = os::nowMs();
+                               }
+                               if (view == View::Standby && !noticeShown) {
+                                   redrawView();
+                               }
+                           },
+                           [&](const Roaming &r) {
+                               roam.searching = r.searching;
+                               roam.site = r.site;
+                               roam.receiveHz = r.receiveHz;
+                               roam.colourCode = r.colourCode;
+                               roam.name[0] = '\0';
+                               std::array<char, CodeplugSource::SiteNameBytes + 1> name{};
+                               if (r.site >= 0 && codeplug != nullptr &&
+                                   codeplug->roamingSiteName(roamingZone, static_cast<std::size_t>(r.site), name)) {
+                                   copyName(roam.name, name.data());
+                               }
+                               if (view == View::Standby && !heard.shown && !noticeShown) {
+                                   redrawView();
+                               }
+                           },
+                           [&](const Notice &n) {
+                               if (view != View::Start) {
+                                   notice(n.text);
+                               }
                            },
                            [&](const ShowStandby &) {
                                if (channels != nullptr) {
@@ -1426,6 +1805,10 @@ void uiMain(void *)
                            [&](const KeyLockReport &) { logLockSettings(); },
                            [&](const EncoderClicks &c) {
                                useLight(d);
+                               if (!hardwareUp()) {
+                                   refuseNotReady(true);
+                                   return;
+                               }
                                const Verdict v = keyLock.knob(lockContext());
                                if (v != Verdict::Pass) {
                                    onLockVerdict(v);
@@ -1470,10 +1853,13 @@ void uiMain(void *)
                                }
                                volumeLevel = step;
                                if (changed && view == View::Standby) {
-                                   standby.drawStatus(d, standbyState());
-                                   drawBattery(d);
-                                   drawVolumeNotice(d, step);
+                                   // Only what changes: the status bar's volume
+                                   // field, and the notice's number and bar once
+                                   // it is up.
+                                   standby.drawVolume(d, standbyState());
+                                   drawVolumeNotice(d, step, !(noticeShown && volumeNoticeUp));
                                    noticeShown = true;
+                                   volumeNoticeUp = true;
                                    noticeUntil = os::nowMs() + NoticeMs;
                                }
                            },
@@ -1548,9 +1934,17 @@ void uiMain(void *)
         }
         if (noticeShown && static_cast<std::int32_t>(os::nowMs() - noticeUntil) >= 0) {
             noticeShown = false;
+            volumeNoticeUp = false;
             redrawView();
         }
-        if (view == View::Start && static_cast<std::int32_t>(os::nowMs() - startUntil) >= 0) {
+        // The start screen stays until the radio is ready, and at least its
+        // own time.
+        const bool startShown = static_cast<std::int32_t>(os::nowMs() - startUntil) >= 0;
+        if (view == View::Start && startShown && !radio::ready() && !startingShown) {
+            startingShown = true;
+            drawStarting(d);
+        }
+        if (view == View::Start && startShown && radio::ready()) {
             show(channels != nullptr ? View::Standby : View::KeyTest);
             setBatterySave(batterySave);
             gps::post(gps::Systems{gpsSystems});
@@ -1591,6 +1985,18 @@ void uiMain(void *)
                 if (!noticeShown) {
                     refreshLockMark();
                 }
+            }
+        }
+        // The call screen: its time each second, back to standby a moment
+        // after the call.
+        if (view == View::Standby && heard.shown && !noticeShown) {
+            const os::Ticks second = os::nowMs() / 1000;
+            if (!heard.active && os::nowMs() - heard.ended >= CallHoldMs) {
+                heard.shown = false;
+                redrawView();
+            } else if (heard.active && second != lastSecond) {
+                lastSecond = second;
+                standby.drawCallTime(d, callInfo());
             }
         }
         if (view == View::Log) {

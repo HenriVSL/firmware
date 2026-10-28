@@ -92,7 +92,9 @@ class BoardLeds final : public dmm::services::Leds
 public:
     void set(Led led, bool on) override
     {
-        hal::write(led == Led::Red ? RedLed : GreenLed, on);
+        hal::write(led == Led::Red ? RedLed : led == Led::Green ? GreenLed
+                                                                : BlueLed,
+            on);
     }
 };
 
@@ -256,6 +258,16 @@ extern "C" void irq20Handler()
     usbd.handleInterrupt();
 }
 
+extern "C" void irq6Handler()
+{
+    BoardRf::onSlotEdge();
+}
+
+extern "C" void irq55Handler()
+{
+    BoardRf::onRampStep();
+}
+
 extern "C" void irq23Handler()
 {
     BoardInput::onEncoderEdge();
@@ -287,7 +299,7 @@ void hal::boardMain()
     for (Port port : {Port::A, Port::B, Port::C, Port::D, Port::E}) {
         enablePortClock(port);
     }
-    for (Pin pin : {TransmitEnable, PowerAmplifierEnable, SpeakerAmplifier, ReceiveAudioRoute, LinkBoardPower, PowerHold, RedLed, GreenLed, ThirdLed, UsbPullUp}) {
+    for (Pin pin : {TransmitEnable, PowerAmplifierEnable, SpeakerAmplifier, ReceiveAudioRoute, LinkBoardPower, PowerHold, RedLed, GreenLed, BlueLed, UsbPullUp}) {
         outputLow(pin);
     }
     static BoardBaseband basebandBoard;
@@ -342,6 +354,16 @@ void hal::boardMain()
                 return std::nullopt;
             }
             return dmm::services::Sct3258Baseband::Trims{*gains, {codec->leftOut, codec->rightOut, codec->rightInput}};
+        },
+        [](std::uint32_t hz) -> std::optional<dmm::services::Sct3258Baseband::DigitalTrims> {
+            const auto offset = calibration.basebandDcOffset(hz);
+            const auto gain = calibration.basebandDemodGain();
+            const auto modulation = calibration.basebandModGain(hz);
+            if (!offset || !gain || !modulation) {
+                return std::nullopt;
+            }
+            return dmm::services::Sct3258Baseband::DigitalTrims{*offset, *gain, *modulation,
+                calibration.basebandSpeakerGain(), calibration.basebandMicGain(), calibration.basebandSlotTiming()};
         }};
     static dmm::drivers::radio::Rda1846 fmChip{fmBus};
     // Called from the radio task; empty until the system task has read the
@@ -364,7 +386,7 @@ void hal::boardMain()
             if (!trim || !power || !deviation) {
                 return std::nullopt;
             }
-            return Fm::TransmitTrims{*trim, *power, deviation->voice, deviation->ctcss};
+            return Fm::TransmitTrims{*trim, *power, deviation->voice, deviation->ctcss, deviation->dcs};
         }};
     static Fm fm{fmChip, rf, FmPins, [](unsigned ms) { dmm::os::sleepMs(ms); }, fmTrims,
         []() -> const dmm::drivers::radio::Rda1846::Tuning & { return fmTuning(&storage); }};

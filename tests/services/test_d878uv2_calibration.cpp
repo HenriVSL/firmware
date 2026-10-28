@@ -164,3 +164,51 @@ TEST_CASE("an uncalibrated radio gives no RF values")
     CHECK_FALSE(cal.squelchThreshold(440 * MHz, 1).has_value());
     CHECK_FALSE(cal.deviation().has_value());
 }
+
+TEST_CASE("baseband DC offset by band and frequency range, and the demodulator gain")
+{
+    auto d = sample();
+    for (std::uint8_t i = 0; i < 16; ++i) {
+        d[0x80 + i] = static_cast<std::uint8_t>(0x10 + i); // UHF block
+        d[0xC0 + i] = static_cast<std::uint8_t>(0x40 + i); // VHF block
+    }
+    d[0x97] = 0x08;
+    d[0x98] = 0x20;
+    const D878Uv2Calibration cal = loaded(d);
+    const auto u = cal.basebandDcOffset(438'075'000);
+    REQUIRE(u.has_value());
+    CHECK((*u)[0] == 0x10);
+    CHECK((*u)[9] == 0x19);
+    CHECK((*u)[10] == 0x1A); // below 460 MHz: the word at +10
+    CHECK((*u)[11] == 0x1B);
+    CHECK((*cal.basebandDcOffset(470 * MHz))[10] == 0x1C);
+    CHECK((*cal.basebandDcOffset(145 * MHz))[0] == 0x40);
+    CHECK((*cal.basebandDcOffset(145 * MHz))[10] == 0x4A);
+    CHECK((*cal.basebandDcOffset(160 * MHz))[10] == 0x4C);
+    CHECK_FALSE(cal.basebandDcOffset(300 * MHz).has_value());
+    CHECK(*cal.basebandDemodGain() == std::array<std::uint8_t, 2>{0x08, 0x20});
+}
+
+TEST_CASE("the digital voice gains come from the UHF block, nothing when erased")
+{
+    auto d = sample();
+    d[0x99] = 0x05;
+    d[0x9A] = 0x40;
+    const D878Uv2Calibration cal = loaded(d);
+    CHECK(*cal.basebandSpeakerGain() == std::array<std::uint8_t, 2>{0x05, 0x40});
+    d[0x9B] = 0xFF;
+    d[0x9C] = 0xFF;
+    CHECK_FALSE(loaded(d).basebandMicGain().has_value());
+}
+
+TEST_CASE("the slot timing as calibrated, or a default offset")
+{
+    auto d = sample();
+    for (std::uint8_t i = 0; i < 8; ++i) {
+        d[0x100 + i] = static_cast<std::uint8_t>(0x10 + i);
+    }
+    d[0x108] = 'f';
+    CHECK(*loaded(d).basebandSlotTiming() == std::array<std::uint8_t, 8>{0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17});
+    d[0x108] = 0xFF; // not calibrated
+    CHECK(*loaded(d).basebandSlotTiming() == std::array<std::uint8_t, 8>{0x00, 0x6E, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17});
+}

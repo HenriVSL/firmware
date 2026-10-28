@@ -51,6 +51,26 @@ constexpr unsigned PowerStepMs = 1;
     log::info("fm") << what << ' ' << value << unit;
 }
 
+// The chip takes CTCSS in 0.01 Hz units.
+Chip::SubTone chipTone(const Tone &tone)
+{
+    switch (tone.kind) {
+    case Tone::Kind::Ctcss:
+        return {Chip::SubTone::Kind::Ctcss, static_cast<std::uint16_t>(tone.value * 10), false};
+    case Tone::Kind::Dcs:
+        return {Chip::SubTone::Kind::Dcs, tone.value, tone.inverted};
+    case Tone::Kind::None:
+        break;
+    }
+    return {};
+}
+
+Chip::Bandwidth bandwidth(const FmChannel &channel)
+{
+    return channel.digital ? Chip::Bandwidth::Digital : channel.wide ? Chip::Bandwidth::Wide
+                                                                     : Chip::Bandwidth::Narrow;
+}
+
 } // namespace
 
 Rda1846Transceiver::Rda1846Transceiver(Chip &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
@@ -107,19 +127,20 @@ const char *Rda1846Transceiver::receive(const FmChannel &channel, int squelchLev
     m_rf.setReceiveTune(trims->frontEndTune);
     m_tune = trims->frontEndTune;
     m_chip.setFrequency(hz);
-    m_chip.setBandwidth(channel.wide ? Chip::Bandwidth::Wide : Chip::Bandwidth::Narrow);
+    m_chip.setBandwidth(bandwidth(channel));
     m_wide = channel.wide;
     m_chip.setSquelch(trims->squelchOpenDbm, trims->squelchOpenDbm - SquelchHysteresisDb);
     const int noiseOpen = squelchOpenNoiseDb(channel.wide, squelchLevel);
     m_chip.setNoiseSquelch(noiseOpen, noiseOpen - SquelchHysteresisDb);
     logSquelch(trims->squelchOpenDbm, noiseOpen);
+    m_chip.setReceiveTone(chipTone(channel.digital ? Tone{} : channel.receiveTone));
     m_chip.setMode(Chip::Mode::Receive);
     m_receiveHz = hz;
     setPin(frontEnd(), true);
     return nullptr;
 }
 
-const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel level, std::uint16_t ctcssCentiHz)
+const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel level)
 {
     const std::uint32_t hz = channel.transmitHz;
     const auto trims = m_trims.transmit != nullptr ? m_trims.transmit(hz, level) : std::nullopt;
@@ -134,16 +155,43 @@ const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel le
     setPin(m_pins.receiveLowBand, false);
     setPin(m_pins.transmitMidBand, hz >= m_pins.midLowHz && hz <= m_pins.splitHz);
     m_rf.setReferenceTrim(trims->referenceTrim);
-    m_rf.setTransmitPath(true);
+    // FM: the transmit path now, the microphone straight in. Digital: the
+    // modulation comes from the baseband, and the path and amplifier
+    // follow its transmit slots.
+    const bool slotted = channel.digital && !channel.continuous;
+    if (!slotted) {
+        m_rf.setTransmitPath(true);
+    }
+    // The microphone input stays open on every transmission; on digital
+    // channels the deviation below is zero, so nothing from it reaches the
+    // air.
     muteMicrophone(false);
     m_chip.setFrequency(hz);
-    m_chip.setBandwidth(channel.wide ? Chip::Bandwidth::Wide : Chip::Bandwidth::Narrow);
-    m_chip.setDeviation(trims->voiceDeviation, ctcssCentiHz != 0 ? trims->ctcssDeviation : 0);
-    m_chip.setTransmitTone(ctcssCentiHz);
+    m_chip.setBandwidth(bandwidth(channel));
+    const Tone &tone = channel.transmitTone;
+    const std::uint8_t toneDeviation = tone.kind == Tone::Kind::Ctcss ? trims->ctcssDeviation
+        : tone.kind == Tone::Kind::Dcs                                ? trims->dcsDeviation
+                                                                      : 0;
+    // Digital: no deviation of the transceiver's own at all. The baseband
+    // modulates the RF itself; any voice or tone deviation here would put
+    // analog FM on top of the DMR signal.
+    if (channel.digital) {
+        m_chip.setDeviation(0, 0);
+    } else {
+        m_chip.setDeviation(trims->voiceDeviation, toneDeviation);
+    }
+    m_chip.setTransmitTone(channel.digital ? Chip::SubTone{} : chipTone(tone));
     m_chip.setMode(Chip::Mode::Transmit);
     setPin(m_pins.transmitHighBand, hz > m_pins.splitHz);
     // Power last.
     m_sleepMs(TransmitSettleMs);
+    if (slotted) {
+        // Shaped at the higher levels.
+        m_rf.setSlotKeying(power, level == PowerLevel::High || level == PowerLevel::Turbo);
+        m_power = power;
+        logNumber("power control by slot", m_power, "");
+        return nullptr;
+    }
     m_rf.setPowerAmplifier(true);
     m_sleepMs(AmplifierSettleMs);
     m_rf.setPowerControl(static_cast<std::uint16_t>(power / 3));
@@ -159,7 +207,7 @@ const char *Rda1846Transceiver::transmit(const FmChannel &channel, PowerLevel le
 void Rda1846Transceiver::endTransmit()
 {
     idle();
-    m_chip.setTransmitTone(0);
+    m_chip.setTransmitTone(Chip::SubTone{});
     muteMicrophone(true);
     setPin(m_pins.transmitHighBand, false);
     setPin(m_pins.transmitMidBand, false);
@@ -169,6 +217,7 @@ void Rda1846Transceiver::idle()
 {
     // The power amplifier goes off before the transceiver stops
     // transmitting.
+    m_rf.setSlotKeying(0, false);
     m_rf.setPowerAmplifier(false);
     m_rf.setTransmitPath(false);
     m_rf.setPowerControl(0);
@@ -206,8 +255,9 @@ FmReceiveStatus Rda1846Transceiver::status()
 {
     const int quality = m_chip.signalQuality();
     const bool strong = quality < (m_wide ? StrongQualityWide : StrongQualityNarrow);
-    const bool flag = (m_chip.flags() & Chip::SquelchOpen) != 0;
-    return {flag || strong, m_chip.rssiDbm()};
+    const std::uint16_t flags = m_chip.flags();
+    const bool flag = (flags & Chip::SquelchOpen) != 0;
+    return {flag || strong, m_chip.rssiDbm(), m_chip.receiveToneHeard(flags)};
 }
 
 void Rda1846Transceiver::logStatus(std::string_view what)

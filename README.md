@@ -15,8 +15,34 @@ endorsed by AnyTone or the makers of the chips it drives.
 ## Features
 
 **FM radio.** Receive and transmit using the radio's own factory
-calibration. Squelch levels, repeater offsets, CTCSS transmit tones, four
-power levels, a transmit timeout and amateur-band limits.
+calibration. Squelch levels, repeater offsets, four power levels, a
+transmit timeout and amateur-band limits. CTCSS and DCS tones both ways,
+with the codeplug's squelch mode (implemented, not yet tested on the
+radio).
+
+**DMR radio.** Voice calls so far: receive and transmit through a
+repeater, using the radio's own calibration. Calls on the channel's
+talkgroup, its receive group list or to the radio itself are heard,
+others stay muted; through a repeater only the channel's slot. A heard call fills the screen with the
+caller's callsign and name from the codeplug's contacts and user
+directory. PTT wakes an idle repeater and calls the channel's contact.
+Direct (simplex) calls, voice enhancement and the shaped amplifier
+keying at High and Turbo are implemented, not yet tested on the radio.
+
+**Frequency offset.** The Channel menu shifts every receive and transmit
+frequency by up to 5 kHz, for a radio whose frequency reference has
+drifted; the console's `fm offset` sets it in hertz. It lasts until the
+radio restarts; `DefaultFrequencyOffsetHz` sets the one it starts with.
+
+**Roaming.** A DMR channel with roaming on works through whichever
+repeater of the codeplug's roaming zone answers best, so one channel per
+talkgroup covers a whole network. The radio tries each repeater, waking
+quiet ones, on a side key the codeplug sets to roaming, when PTT finds
+no repeater, and by itself as the codeplug's roaming settings say
+(implemented, not yet tested on the radio). The Channel menu turns
+roaming off, or picks another roaming zone, for the session. This is basic roaming, by
+signal strength in the way the factory firmware does it; roaming as the
+ETSI DMR standards describe it is still to come.
 
 **Channels.** Channels, zones and the VFO come from the codeplug already
 on the radio. Pick zones from a list, step channels with the knob, or type
@@ -67,16 +93,18 @@ radio face.
 
 ## Roadmap
 
-1. CTCSS and DCS decoding, DCS transmit
-2. DMR receive and transmit
-3. Refined user interface: screen layouts, menus, icons and fonts tuned
+1. Audio level adjustment: volume range and steps, FM and DMR levels in
+   both directions, beeps and tones
+2. Refined user interface: screen layouts, menus, icons and fonts tuned
    as features are added
-4. Programming over USB, compatible with existing codeplug tools
-5. Scan and dual watch
-6. Clock from GPS time, with the codeplug's time zone
-7. Calibration tool
-8. APRS, Bluetooth, recording, DTMF and selective calling
-9. DMR roaming and SMS
+3. Programming over USB, compatible with existing codeplug tools
+4. Scan and dual watch
+5. GPS
+6. Calibration tool
+7. APRS, Bluetooth, recording, DTMF and selective calling
+8. Complete DMR: talkgroups and contacts picked on the radio, private
+   call set-up and replies, call log, talker alias, radio check and the
+   other DMR functions, roaming, SMS and data
 
 ## Getting started
 
@@ -100,6 +128,11 @@ Firmware, with the Arm GNU Toolchain 14.2 or newer on `PATH` or in
 cmake --preset fw-d878uv2-release -DDMM_STOCK_FIRMWARE=/path/to/firmware.CDD
 cmake --build --preset fw-d878uv2-release
 ```
+
+If a configure failed, for example before the toolchain was found,
+configure again from scratch with `--fresh` (or delete the build folder):
+a failed first configure can leave the build without optimisation, and
+such firmware does not start.
 
 The D878UVII's DMR baseband chip, the SCT3258, needs a 2 KB boot program
 made for that chip, loaded into it at every power-on. The build takes it

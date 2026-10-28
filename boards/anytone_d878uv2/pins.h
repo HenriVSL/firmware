@@ -26,7 +26,7 @@ inline constexpr std::uint32_t WatchdogTimeoutMs = 2500;
 // Front-panel LEDs, high = on.
 inline constexpr Pin RedLed{Port::E, 5};
 inline constexpr Pin GreenLed{Port::E, 3};
-inline constexpr Pin ThirdLed{Port::E, 4};
+inline constexpr Pin BlueLed{Port::E, 4};
 
 // High keeps the radio powered after the power knob is turned off.
 inline constexpr Pin PowerHold{Port::C, 3};
@@ -98,6 +98,9 @@ inline constexpr Pin PowerAmplifierEnable{Port::E, 6};
 inline constexpr Pin SpeakerAmplifier{Port::A, 7};  // high = on
 inline constexpr Pin ReceiveAudioRoute{Port::E, 0}; // high = codec output to the amplifier
 inline constexpr Pin LinkBoardPower{Port::A, 1};    // high = on
+// The baseband's transmit slot timing: high while its slot is on air.
+inline constexpr Pin TransmitSlot{Port::D, 0};
+inline constexpr unsigned TransmitSlotIrqPriority = 1;
 
 // RF controls. PA4 (DAC0) sets the power amplifier's output; PA5 (DAC1)
 // trims the reference oscillator; PA6 (TIMER2 channel 0) tunes the receive

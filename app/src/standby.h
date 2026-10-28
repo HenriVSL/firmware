@@ -58,6 +58,35 @@ struct StandbyState
     std::string_view clock;
     /// APRS beacons go out on their own.
     bool beacons = false;
+    /// The channel roams: a search under way, or the repeater in use (its
+    /// output frequency, 0 = the channel's own; its colour code; its name,
+    /// or empty).
+    bool roaming = false;
+    bool roamSearching = false;
+    std::uint32_t roamHz = 0;
+    std::uint8_t roamColourCode = 0;
+    std::string_view roamSite;
+};
+
+/// A DMR call for the call screen.
+struct CallInfo
+{
+    /// Heard now; else the last call, shown for a moment after it ended.
+    bool active = false;
+    bool group = false;
+    bool allCall = false;
+    /// The caller's callsign or contact name, the user's name under it;
+    /// empty when not known.
+    std::string_view callerHeadline;
+    std::string_view callerName;
+    std::uint32_t callerId = 0;
+    std::string_view targetName;
+    std::uint32_t targetId = 0;
+    /// The receive slot, 0 when both are heard.
+    std::uint8_t slot = 0;
+    /// How long the call has lasted, or lasted.
+    std::uint32_t seconds = 0;
+    std::string_view channel;
 };
 
 /// The radio's main screen: status bar, zone, channel name, frequency,
@@ -72,6 +101,13 @@ public:
     /// Only the status bar (transmit, receive, lock); battery is drawn by
     /// the caller at the right end.
     void drawStatus(services::Display &d, const StandbyState &s);
+    /// The call screen in place of the channel: call type, caller, target,
+    /// and the call's time in the bottom bar.
+    void drawCall(services::Display &d, const StandbyState &s, const CallInfo &c);
+    /// Only the call screen's bottom bar, for the running time.
+    void drawCallTime(services::Display &d, const CallInfo &c);
+    /// Only the status bar's volume field, in place.
+    void drawVolume(services::Display &d, const StandbyState &s);
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
 };
@@ -100,7 +136,9 @@ public:
     static constexpr std::size_t TextBytes = 17;
 
     void open(std::string_view title);
-    /// An item: @p text on the left, @p value (if any) right-aligned.
+    /// An item: @p text on the left, @p value (if any) right-aligned. Both
+    /// are cut to fit their buffers: keep @p text to 16 characters and
+    /// @p value to 8.
     void add(std::uint8_t id, std::string_view text, std::string_view value = {});
     void select(std::uint8_t id);
     void move(int steps);

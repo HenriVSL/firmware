@@ -54,6 +54,13 @@ public:
         }
         return list.size();
     }
+    bool contactName(std::uint32_t, bool, std::span<char, ContactNameBytes + 1>) override { return false; }
+    std::size_t receiveGroups(std::uint8_t, std::span<std::uint32_t>) override { return 0; }
+    bool dmrUser(std::uint32_t, DmrUser &) override { return false; }
+    std::size_t roamingSites(std::uint8_t, std::span<dmm::services::RoamingSite>) override { return 0; }
+    bool roamingSiteName(std::uint8_t, std::size_t, std::span<char, SiteNameBytes + 1>) override { return false; }
+    std::size_t roamingZones(std::span<std::uint8_t>) override { return 0; }
+    bool roamingZoneName(std::uint8_t, std::span<char, ZoneNameBytes + 1>) override { return false; }
     std::uint16_t zoneSelection(std::uint8_t zone, bool sideB) override
     {
         const auto it = (sideB ? selectionB : selectionA).find(zone);
@@ -216,7 +223,7 @@ TEST_CASE("a codeplug set to the VFO starts there, and no zones means VFO only")
     CHECK_FALSE(none.step(1));
 }
 
-TEST_CASE("squelch and power can be changed for the session")
+TEST_CASE("squelch, power and squelch mode can be changed for the session")
 {
     FakeCodeplug cp = sample();
     ChannelSelector sel(cp);
@@ -230,4 +237,8 @@ TEST_CASE("squelch and power can be changed for the session")
     CHECK(sel.current()->power == dmm::services::PowerLevel::Turbo);
     REQUIRE(sel.step(1)); // a new channel brings its own power back
     CHECK(sel.current()->power == dmm::services::PowerLevel::Low);
+    sel.setSquelchMode(dmm::services::SquelchMode::Tone);
+    CHECK(sel.current()->squelchMode == dmm::services::SquelchMode::Tone);
+    REQUIRE(sel.step(-1));
+    CHECK(sel.current()->squelchMode == dmm::services::SquelchMode::Carrier);
 }

@@ -24,8 +24,21 @@ constexpr std::uint32_t DeviationAt = 6;
 constexpr std::uint32_t SquelchBaseAt = 9;
 constexpr std::uint32_t TunePointsAt = 10;
 constexpr std::uint32_t BasebandGainsAt = 0x040;
-// In the first 39-byte modulator block: codec trims at +0x12..+0x14.
-constexpr std::uint32_t CodecTrimsAt = 0x080 + 0x12;
+// Two 39-byte baseband blocks, UHF then VHF. In each: converter offsets
+// and gains at +0..+9, last-word bases per frequency range at +10, +12
+// (and +14 on VHF); in the UHF block, codec trims at +0x12..+0x14 and the
+// demodulator gain at +0x17.
+constexpr std::uint32_t UhfBasebandBlock = 0x080;
+constexpr std::uint32_t VhfBasebandBlock = 0x0C0;
+constexpr std::uint32_t CodecTrimsAt = UhfBasebandBlock + 0x12;
+constexpr std::uint32_t DemodGainAt = UhfBasebandBlock + 0x17;
+// The digital voice gains, also in the UHF block, for both bands.
+constexpr std::uint32_t SpeakerGainAt = UhfBasebandBlock + 0x19;
+constexpr std::uint32_t MicGainAt = UhfBasebandBlock + 0x1B;
+constexpr std::uint32_t ModGainAt = 0x10; // in each baseband block
+// Slot timing: four big-endian words, then 'f' when written.
+constexpr std::uint32_t SlotTimingAt = 0x100;
+constexpr std::uint8_t SlotTimingValid = 'f';
 
 // The calibration's slot for each power level, low to turbo.
 unsigned powerSlot(PowerLevel level)
@@ -222,6 +235,78 @@ std::optional<D878Uv2Calibration::Deviation> D878Uv2Calibration::deviation() con
     }
     const std::uint8_t *d = m_data + UhfBlock + DeviationAt;
     return Deviation{d[0], d[1], d[2]};
+}
+
+std::optional<std::array<std::uint8_t, 12>> D878Uv2Calibration::basebandDcOffset(std::uint32_t hz) const
+{
+    if (!present() || bandFor(hz) == nullptr) {
+        return std::nullopt;
+    }
+    // Last-word ranges: UHF below and from 460 MHz; VHF below 155 MHz,
+    // to 200 MHz and from 200 MHz.
+    const bool uhf = hz >= 300 * MHz;
+    const std::uint32_t block = uhf ? UhfBasebandBlock : VhfBasebandBlock;
+    const unsigned range = uhf ? (hz >= 460 * MHz ? 1 : 0) : (hz >= 200 * MHz ? 2 : hz >= 155 * MHz ? 1
+                                                                                                    : 0);
+    std::array<std::uint8_t, 12> d{};
+    for (std::size_t i = 0; i < 10; ++i) {
+        d[i] = m_data[block + i];
+    }
+    d[10] = m_data[block + 10 + 2 * range];
+    d[11] = m_data[block + 11 + 2 * range];
+    return d;
+}
+
+std::optional<std::array<std::uint8_t, 2>> D878Uv2Calibration::basebandDemodGain() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    return std::array<std::uint8_t, 2>{m_data[DemodGainAt], m_data[DemodGainAt + 1]};
+}
+
+std::optional<std::array<std::uint8_t, 2>> D878Uv2Calibration::word(std::uint32_t at) const
+{
+    if (!present() || (m_data[at] == 0xFF && m_data[at + 1] == 0xFF)) {
+        return std::nullopt;
+    }
+    return std::array<std::uint8_t, 2>{m_data[at], m_data[at + 1]};
+}
+
+std::optional<std::array<std::uint8_t, 2>> D878Uv2Calibration::basebandSpeakerGain() const
+{
+    return word(SpeakerGainAt);
+}
+
+std::optional<std::array<std::uint8_t, 2>> D878Uv2Calibration::basebandMicGain() const
+{
+    return word(MicGainAt);
+}
+
+std::optional<std::array<std::uint8_t, 2>> D878Uv2Calibration::basebandModGain(std::uint32_t hz) const
+{
+    if (!present() || bandFor(hz) == nullptr) {
+        return std::nullopt;
+    }
+    const std::uint32_t at = (hz >= 300 * MHz ? UhfBasebandBlock : VhfBasebandBlock) + ModGainAt;
+    return std::array<std::uint8_t, 2>{m_data[at], m_data[at + 1]};
+}
+
+std::optional<std::array<std::uint8_t, 8>> D878Uv2Calibration::basebandSlotTiming() const
+{
+    if (!present()) {
+        return std::nullopt;
+    }
+    std::array<std::uint8_t, 8> t{};
+    for (std::size_t i = 0; i < t.size(); ++i) {
+        t[i] = m_data[SlotTimingAt + i];
+    }
+    // Not calibrated: a default offset, the rest as stored.
+    if (m_data[SlotTimingAt + 8] != SlotTimingValid) {
+        t[0] = 0x00;
+        t[1] = 0x6E;
+    }
+    return t;
 }
 
 std::optional<std::array<std::uint8_t, 10>> D878Uv2Calibration::basebandAnalogGains() const

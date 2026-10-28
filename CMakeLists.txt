@@ -3,15 +3,15 @@
 
 cmake_minimum_required(VERSION 3.25)
 project(deltamm
-    VERSION 0.18.0
+    VERSION 0.20.3
     DESCRIPTION "Open firmware for DMR and FM handheld radios"
     LANGUAGES C CXX)
 
 # This fork's releases: <upstream version>-6HL-<release>. The release
 # number counts from the upstream version named here and starts again at 1
 # when that version changes.
-set(DMM_FORK_BASE 0.18.0)
-set(DMM_FORK_RELEASE 6)
+set(DMM_FORK_BASE 0.20.3)
+set(DMM_FORK_RELEASE 1)
 if(NOT PROJECT_VERSION VERSION_EQUAL DMM_FORK_BASE)
     message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}, the fork's release number counts from "
                         "${DMM_FORK_BASE}: set DMM_FORK_BASE to ${PROJECT_VERSION} and DMM_FORK_RELEASE to 1.")

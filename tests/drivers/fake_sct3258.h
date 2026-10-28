@@ -5,6 +5,7 @@
 
 #include "dmm/hal/host_port_bus.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <string>
@@ -21,6 +22,9 @@ public:
     std::vector<std::vector<std::uint8_t>> packets; // fields of each packet received, type first
     std::size_t bootBytes = 0;
     bool oddWriteSeen = false;
+    /// Packets (type, fields) the chip sends after the next request, before
+    /// its reply.
+    std::vector<std::pair<std::uint8_t, std::vector<std::uint8_t>>> reportsBeforeReply;
 
     void write(const std::uint8_t *bytes, std::size_t count) override
     {
@@ -82,6 +86,10 @@ private:
 
     void answer(const std::vector<std::uint8_t> &p)
     {
+        for (const auto &[t, f] : reportsBeforeReply) {
+            queue(t, f);
+        }
+        reportsBeforeReply.clear();
         const std::uint8_t type = p[0];
         const std::uint8_t field = p.size() > 1 ? p[1] : 0;
         if (type == 0x40) {
@@ -94,6 +102,8 @@ private:
             std::vector<std::uint8_t> reply = {field, static_cast<std::uint8_t>(text.size())};
             reply.insert(reply.end(), text.begin(), text.end());
             queue(0x20, reply);
+        } else if (type == 0x08 && std::find(p.begin(), p.end(), std::uint8_t{0x43}) != p.end()) {
+            queue(0x20, {0x43}); // a data frame taken for sending
         } else if (field == 0x7E) {
             queue(0x00, {0x17, 0x04}); // unknown command
         } else {

@@ -42,6 +42,9 @@ public:
         /// Receive levels with the microphone off: at start and after
         /// transmit.
         std::span<const CodecWrite> receive;
+        /// Receive levels on digital channels, where the voice comes from
+        /// the chip's vocoder.
+        std::span<const CodecWrite> digitalReceive;
         /// Connects the microphone for transmit, in order.
         std::span<const CodecWrite> transmit;
         /// The speaker volume register, its muted value and its value for
@@ -52,6 +55,25 @@ public:
         std::array<std::uint8_t, SpeakerVolumeSteps> speakerSteps;
         /// The registers the calibrated codec trims go to.
         std::array<CodecRegister, 3> trims;
+        /// SQ_LEVEL for the chip's own carrier squelch, on digital and on
+        /// analog channels: gain adjust, LNA, forced RF gain, check
+        /// interval, then the digital and analog noise thresholds (high,
+        /// low; big-endian words). Empty: the chip's defaults.
+        std::span<const std::uint8_t> digitalSquelch;
+        std::span<const std::uint8_t> analogSquelch;
+        /// The board's FM demodulator output reaches the chip with its
+        /// polarity reversed; digital receive tells the chip so.
+        bool demodulatorInverted;
+        /// Voice enhancement: up to three peaking bands on the transmitted
+        /// voice, each with a broadband level. A band at 0 Hz is unused.
+        struct EqualizerBand
+        {
+            float hz;
+            float gainDb;
+            float q;
+            float levelDb;
+        };
+        std::array<EqualizerBand, 3> transmitEqualizer{};
     };
 
     /// The radio's calibrated values for the chip and codec.
@@ -65,8 +87,26 @@ public:
     /// The calibrated values, or nothing until a calibration has been read.
     using TrimsSource = std::optional<Trims> (*)();
 
+    /// The radio's calibrated values for digital receive at one frequency.
+    struct DigitalTrims
+    {
+        /// DC_OFFSET: converter offsets and output gains.
+        std::array<std::uint8_t, 12> dcOffset;
+        /// DEMOD_GAIN.
+        std::array<std::uint8_t, 2> demodGain;
+        /// MOD_GAIN, for transmit.
+        std::array<std::uint8_t, 2> modGain;
+        /// DIGI_SPEAKER_GAIN and DIGI_MIC_GAIN; nothing keeps the chip's
+        /// own.
+        std::optional<std::array<std::uint8_t, 2>> speakerGain;
+        std::optional<std::array<std::uint8_t, 2>> micGain;
+        /// DMR_OFFSET: transmit slot timing.
+        std::optional<std::array<std::uint8_t, 8>> slotTiming;
+    };
+    using DigitalTrimsSource = std::optional<DigitalTrims> (*)(std::uint32_t hz);
+
     Sct3258Baseband(drivers::baseband::Sct3258 &chip, BasebandBoard &board, std::span<const std::uint8_t> bootBlob,
-        const Audio &audio, TrimsSource trims);
+        const Audio &audio, TrimsSource trims, DigitalTrimsSource digitalTrims = nullptr);
 
     /// Also writes the codec trims if the calibration has been read.
     bool start();
@@ -76,8 +116,17 @@ public:
     /// Also writes the codec trims if start() could not.
     bool setAnalog(bool wide);
     bool setWorkMode(BasebandWorkMode mode);
+    bool setVoiceEnhancement(bool on);
     bool setCarrier(bool present);
     bool setMicrophone(bool on);
+    /// Also switches the vocoder over (a few seconds the first time) and
+    /// sets the DMR call options once after start().
+    bool setDigital(const dmr::ChannelSettings &settings, std::uint32_t receiveHz, bool repeater);
+    bool nextEvent(dmr::Event &event);
+    bool startDigitalCall(const dmr::ChannelSettings &settings, const dmr::FullLc &lc, std::uint32_t transmitHz, bool timed,
+        PowerLevel level);
+    bool endDigitalCall(const dmr::ChannelSettings &settings, const dmr::FullLc &lc);
+    bool wakeRepeater(const dmr::ChannelSettings &settings, std::uint32_t source);
     /// "codec <page> <reg> <value>", "packet <type> <bytes>" (hex).
     bool debugCommand(std::string_view command);
     const char *debugHelp() const;
@@ -94,15 +143,32 @@ public:
 private:
     bool fail(const char *problem);
     bool write(std::span<const CodecWrite> writes);
+    /// Hands over the first frame after the switch to transmit, again if
+    /// the chip does not take it.
+    bool sendFirstFrame(std::uint8_t colourCode, std::uint8_t property, std::span<const std::uint8_t> data);
+    /// MOD_GAIN, DIGI_MIC_GAIN and DMR_OFFSET for transmitting at
+    /// @p transmitHz and power @p level.
+    void sendTransmitTrims(std::uint32_t transmitHz, PowerLevel level);
+    /// Tells the chip the carrier is gone, then puts it in transmit mode.
+    bool leaveReceive();
+    bool enterTransmit();
+    /// The codec's receive levels for the current mode.
+    std::span<const CodecWrite> receiveWrites() const;
     void writeTrims(const Trims &trims);
+    bool selectVocoder(std::uint8_t vocoder);
+    bool toEvent(const drivers::baseband::Packet &report, dmr::Event &event) const;
 
     drivers::baseband::Sct3258 &m_chip;
     BasebandBoard &m_board;
     std::span<const std::uint8_t> m_blob;
     const Audio &m_audio;
     TrimsSource m_trims;
+    DigitalTrimsSource m_digitalTrims;
     BasebandInfo m_info;
     bool m_trimsWritten = false;
+    std::uint8_t m_vocoder = 0;
+    bool m_voiceEnhancement = false;
+    bool m_callOptionsSet = false;
 };
 
 } // namespace dmm::services
