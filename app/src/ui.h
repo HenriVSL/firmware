@@ -138,8 +138,29 @@ struct ClockCalibration
     std::uint8_t minutes;
 };
 
+/// Whether a queued packet went out, or was given up.
+struct Packet
+{
+    bool sent;
+};
+/// The APRS heard list changed.
+struct AprsHeard
+{
+};
+/// An APRS beacon could not be queued.
+struct AprsProblem
+{
+    enum class Kind : std::uint8_t
+    {
+        NoCallsign,
+        NoFix,
+        Busy,
+    };
+    Kind kind;
+};
+
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.

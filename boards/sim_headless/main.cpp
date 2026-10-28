@@ -154,6 +154,8 @@ int main(int argc, char *argv[])
     static SimFm fm;
     static SimGps gps;
     static SimRtc rtc;
+    static SimModem modem;
+    static SimAprsLink aprsLink;
     static dmm::app::Platform platform{
         .leds = leds,
         .logSink = logSink,
@@ -169,6 +171,8 @@ int main(int argc, char *argv[])
         .codeplug = &codeplug,
         .gps = &gps,
         .rtc = &rtc,
+        .modem = &modem,
+        .aprsLink = &aprsLink,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

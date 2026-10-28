@@ -3,6 +3,7 @@
 
 #include "dmm/app/app.h"
 
+#include "aprs.h"
 #include "audio.h"
 #include "gps.h"
 #include "input.h"
@@ -318,6 +319,7 @@ void runCommand(std::string_view command)
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>";
         log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
+        log::info("console") << aprs::consoleHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
@@ -393,6 +395,7 @@ void runCommand(std::string_view command)
             log::info("console") << "no GPS receiver";
         }
     } else if (radioCommand(command)) {
+    } else if (aprs::runCommand(command)) {
     } else if (!command.empty()) {
         log::info("console") << "unknown command, try help";
     }
@@ -500,7 +503,8 @@ void start(Platform &p)
     if (p.audio != nullptr) {
         audio::start(*p.audio);
     }
-    radio::start(p.fm, p.baseband);
+    radio::start(p.fm, p.baseband, p.modem);
+    aprs::start(p.aprsLink);
     if (p.gps != nullptr) {
         gps::start(*p.gps);
     }
