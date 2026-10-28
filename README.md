@@ -29,6 +29,11 @@ directory. PTT wakes an idle repeater and calls the channel's contact.
 Direct (simplex) calls, voice enhancement and the shaped amplifier
 keying at High and Turbo are implemented, not yet tested on the radio.
 
+**Frequency offset.** The Channel menu shifts every receive and transmit
+frequency by up to 5 kHz, for a radio whose frequency reference has
+drifted; the console's `fm offset` sets it in hertz. It lasts until the
+radio restarts; `DefaultFrequencyOffsetHz` sets the one it starts with.
+
 **Roaming.** A DMR channel with roaming on works through whichever
 repeater of the codeplug's roaming zone answers best, so one channel per
 talkgroup covers a whole network. The radio tries each repeater, waking

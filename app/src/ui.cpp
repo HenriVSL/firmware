@@ -401,6 +401,7 @@ enum class MenuItem : std::uint8_t
     SquelchMode,
     Power,
     Roaming,
+    FrequencyOffset,
     Backlight,
     BacklightTime,
     BatterySave,
@@ -423,11 +424,11 @@ enum class MenuGroup : std::uint8_t
 struct GroupInfo
 {
     const char *name;
-    MenuItem items[4];
+    MenuItem items[5];
     std::uint8_t count;
 };
 constexpr GroupInfo Groups[] = {
-    {"Channel", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming}, 4},
+    {"Channel", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::FrequencyOffset}, 5},
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
@@ -473,6 +474,9 @@ std::uint8_t roamingZone = services::RoamingSettings::NoZone;
 std::size_t roamingSites = 0;
 // Roaming switched on in the menu, for this session.
 bool roamingOn = true;
+// The frequency offset set in the menu, in kHz, for this session.
+constexpr int MaxOffsetKhz = 5;
+int offsetKhz = radio::DefaultFrequencyOffsetHz / 1000;
 struct RoamState
 {
     bool searching = false;
@@ -860,6 +864,10 @@ void uiMain(void *)
             label = "Roaming";
             value << (roamingOn ? "On" : "Off");
             break;
+        case MenuItem::FrequencyOffset:
+            label = "Freq offset";
+            value << (offsetKhz > 0 ? "+" : "") << offsetKhz << " kHz";
+            break;
         case MenuItem::Backlight:
             label = "Backlight";
             value << backlightLevel;
@@ -955,6 +963,15 @@ void uiMain(void *)
             menuValue.add(0, "Off");
             menuValue.add(1, "On");
             menuValue.select(roamingOn ? 1 : 0);
+            break;
+        case MenuItem::FrequencyOffset:
+            menuValue.open("Freq offset");
+            for (int k = -MaxOffsetKhz; k <= MaxOffsetKhz; ++k) {
+                lib::StaticString<12> s;
+                s << (k > 0 ? "+" : "") << k << " kHz";
+                menuValue.add(static_cast<std::uint8_t>(k + MaxOffsetKhz), s.view());
+            }
+            menuValue.select(static_cast<std::uint8_t>(offsetKhz + MaxOffsetKhz));
             break;
         case MenuItem::Backlight:
             menuValue.open("Backlight");
@@ -1061,6 +1078,10 @@ void uiMain(void *)
         case MenuItem::Roaming:
             roamingOn = v == 1;
             radio::post(radio::RoamingOn{roamingOn});
+            break;
+        case MenuItem::FrequencyOffset:
+            offsetKhz = static_cast<int>(v) - MaxOffsetKhz;
+            radio::post(radio::FrequencyOffset{offsetKhz * 1000});
             break;
         case MenuItem::Backlight:
             backlightLevel = v;
