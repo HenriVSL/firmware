@@ -18,7 +18,7 @@ screen:
 - choices that carry notes (Calibrate) as a list.
 
 The knob or Up/Down move, Menu sets the value and Exit goes back without
-changing it. The zone list (P1) and Roam status use the same list style.
+changing it. On the large value Up raises it and Down lowers it. The zone list (P1) and Roam status use the same list style.
 The menu's rows are drawn from the item table, so the menu no longer keeps
 a copy of its rows.
 
@@ -29,7 +29,7 @@ a copy of its rows.
 | 1 | Menu | `Menu 1/5`, Channel to Tools, the panel says what Channel holds; the hint bar reads `Menu: open   Exit: back` |
 | 2 | Down through the groups | The panel follows the chosen group |
 | 3 | Menu on Channel, then Menu on Squelch | `Channel > Squelch`, the level large between arrows, a scale of six steps, `In use: n` |
-| 4 | Turn the knob, then Exit | The value and scale move; Exit leaves the squelch as it was |
+| 4 | Up, Down, turn the knob, then Exit | Up raises the level, Down lowers it, the scale follows; Exit leaves the squelch as it was |
 | 5 | Menu on Squelch again, a step, Menu | Back in the list with the new value; it takes effect |
 | 6 | Menu on Power | Four large buttons, the power in use starred; Menu sets the one chosen |
 | 7 | Menu > Position | Seven rows, five shown with a scroll bar; GPS status opens the GPS screen, Exit returns to Position |

@@ -1486,16 +1486,17 @@ void uiMain(void *)
     };
     // A value screen: large buttons for a few values, a large spinner for
     // many, and a list where the values carry notes.
+    auto menuValueSpinner = [] { return !menuValue.hasValues() && menuValue.size() > 4; };
     auto drawMenuValue = [&] {
         standby.drawStatus(d, standbyState());
         drawBattery(d);
         constexpr std::string_view Hint = "Menu: set   Exit: back";
-        if (menuValue.hasValues()) {
-            menuValue.draw(d, StandbyScreen::StatusH, Hint);
-        } else if (menuValue.size() <= 4) {
-            drawValueButtons(d, menuValue, menuValueInUse, Hint);
-        } else {
+        if (menuValueSpinner()) {
             drawValueSpinner(d, menuValue, menuValueInUse, Hint);
+        } else if (menuValue.hasValues()) {
+            menuValue.draw(d, StandbyScreen::StatusH, Hint);
+        } else {
+            drawValueButtons(d, menuValue, menuValueInUse, Hint);
         }
     };
     // The key hint under the zone list and the roaming status.
@@ -2036,7 +2037,10 @@ void uiMain(void *)
                 if (view == View::Menu) {
                     moveMenu(key == Key::Up ? -1 : 1);
                 } else {
-                    menuValue.move(key == Key::Up ? -1 : 1);
+                    // On the spinner Up raises the value; buttons and lists
+                    // move the way they are drawn.
+                    const int up = menuValueSpinner() ? 1 : -1;
+                    menuValue.move(key == Key::Up ? up : -up);
                     drawMenuValue();
                 }
             } else if (press && key == Key::Menu) {
