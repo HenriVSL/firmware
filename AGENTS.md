@@ -5,6 +5,25 @@ desktop simulator and PC tools. `README.md` has the overview,
 `ARCHITECTURE.md` the structure. This file covers rules that are easy to
 break by accident.
 
+## This fork (`oh6hl-main`)
+
+`oh6hl-main` is the HenriVSL fork's own line; `main` mirrors upstream
+(deltamm-org) unchanged. On `oh6hl-main` some rules below are relaxed:
+
+- Docs and comments may compare with other firmware and systems (the
+  factory firmware, Motorola, MMDVMHost and so on) and may describe
+  protocols and behaviour found by reverse engineering, as observed.
+- Values for the fork owner's own radio may live here (such as its
+  default frequency offset).
+
+Still never, here too: vendor firmware bytes, vendor tools, or code taken
+from decompiled vendor firmware; files under a copyleft licence; other
+people's personal data.
+
+Work meant for upstream goes on a separate branch from upstream's base,
+with the full rules below: no comparisons, no codeplug addresses in docs,
+no values from a real codeplug or radio.
+
 ## Setup commands
 
 ```sh
