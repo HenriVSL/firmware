@@ -999,8 +999,9 @@ void drawDigitsEntry(Display &d, std::string_view title, std::string_view text, 
     const int bodyTop = top + TitleH;
     const int bodyEnd = d.height() - StandbyScreen::HintH;
     // The value large: the typed part bright, the rest dim, the unit after.
-    const std::string_view done = text.substr(0, std::min(typed, text.size()));
-    const std::string_view rest = text.substr(done.size());
+    const std::size_t split = std::min(typed, text.size());
+    const std::string_view done(text.data(), split);
+    const std::string_view rest(text.data() + split, text.size() - split);
     constexpr int X = 8;
     const int y = bodyTop + 10;
     const int restX = X + textWidth(Large, done);
@@ -1070,7 +1071,7 @@ void drawTextEntry(Display &d, std::string_view title, std::string_view text, st
     for (int i = 0; i < n; ++i) {
         const bool on = static_cast<std::size_t>(i) == chosen;
         const Color fill = on ? p::Text : palette::Panel;
-        const std::string_view letter = letters.substr(static_cast<std::size_t>(i), 1);
+        const std::string_view letter(letters.data() + i, 1);
         band(d, keysY, BoxH,
             {{x + (BoxW - Medium.width) / 2, keysY + (BoxH - Medium.height) / 2, letter, &Medium,
                 on ? p::Ground : p::Text}},
