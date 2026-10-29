@@ -426,8 +426,7 @@ enum class MenuItem : std::uint8_t
     ClockZone,
     ClockShown, // local time or UTC on the screen
     ClockCalibration,
-    AprsHeard, // opens the heard list
-    AprsSend,  // queues a beacon
+    AprsSend, // queues a beacon
     AprsBeacon,
     AprsPower,
     AprsReceive,
@@ -465,7 +464,7 @@ constexpr GroupInfo Groups[] = {
         {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone, MenuItem::ClockShown,
             MenuItem::ClockCalibration},
         6},
-    {"APRS", {MenuItem::AprsHeard, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 5},
+    {"APRS", {MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 4},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -535,11 +534,13 @@ lib::StaticString<7> clockText(std::uint32_t agoS = 0)
     return s;
 }
 
-// What happened, for the activity list: calls, transmissions, roaming,
-// beacons, fixes. One buffer; other lists may show some of its kinds.
-services::EventLog eventLog;
-// The first row the activity list shows.
-std::size_t activityTop = 0;
+// What happened, for the pages under P2: calls heard and made; and roaming,
+// beacons and fixes. Each keeps what fits on its page.
+services::EventLog<LogRows> callLog;
+services::EventLog<LogRows> systemLog;
+// The page P2 opens: 0 calls, 1 system, 2 APRS stations heard.
+constexpr int LogPages = 3;
+int logPage = 0;
 
 std::uint32_t uptimeS()
 {
@@ -1064,15 +1065,17 @@ void uiMain(void *)
         headerHeight = bar ? StandbyScreen::StatusH - 1 : HeaderFont.height;
         headerTop = bar ? 2 : 0;
     };
-    // The activity list: what happened, newest first, a row per event.
-    // Names are looked up as the rows are drawn; the log holds numbers.
+    // The calls or system page: what happened, newest first, a row per
+    // event. Names are looked up as the rows are drawn; the logs hold
+    // numbers.
     auto drawActivity = [&] {
-        drawLogFrame(d, "Activity", "newest first", "Knob: scroll   P2: back");
+        const auto &log = logPage == 0 ? callLog : systemLog;
+        drawLogFrame(d, logPage == 0 ? "Calls" : "System", logPage == 0 ? "1/3" : "2/3", "Up/Down: page   P2: back");
         const std::uint32_t now = uptimeS();
         for (int row = 0; row < LogRows; ++row) {
-            const services::EventLog::Entry *e = eventLog.newest(activityTop + static_cast<std::size_t>(row));
+            const auto *e = log.newest(static_cast<std::size_t>(row));
             if (e == nullptr) {
-                const bool empty = row == 0 && eventLog.count() == 0;
+                const bool empty = row == 0 && log.count() == 0;
                 drawLogRow(d, row, {}, empty ? "Nothing yet" : "", palette::Dim);
                 continue;
             }
@@ -1082,7 +1085,7 @@ void uiMain(void *)
             }
             lib::StaticString<40> what;
             Color ink = palette::Text;
-            using Kind = services::EventLog::Kind;
+            using Kind = services::EventKind;
             switch (e->kind()) {
             case Kind::CallIn: {
                 // Off the UI task's small stack.
@@ -1134,19 +1137,12 @@ void uiMain(void *)
             drawLogRow(d, row, when.view(), what.view(), ink);
         }
     };
-    // Moves the activity list by @p rows, within the log.
-    auto scrollActivity = [&](int rows) {
-        const std::size_t n = eventLog.count();
-        const std::size_t last = n > static_cast<std::size_t>(LogRows) ? n - static_cast<std::size_t>(LogRows) : 0;
-        const long top = static_cast<long>(activityTop) + rows;
-        activityTop = top < 0 ? 0 : std::min(static_cast<std::size_t>(top), last);
-        drawActivity();
-    };
     // Logs an event, and shows it at once when the list is open.
-    auto logEvent = [&](services::EventLog::Kind kind, std::uint32_t a = 0, std::uint32_t b = 0, unsigned value = 0,
+    auto logEvent = [&](services::EventKind kind, std::uint32_t a = 0, std::uint32_t b = 0, unsigned value = 0,
                         bool group = false) {
-        eventLog.add(kind, uptimeS(), a, b, value, group);
-        if (view == View::Activity && !noticeShown) {
+        const bool call = kind == services::EventKind::CallIn || kind == services::EventKind::CallOut;
+        (call ? callLog : systemLog).add(kind, uptimeS(), a, b, value, group);
+        if (view == View::Activity && logPage == (call ? 0 : 1) && !noticeShown) {
             drawActivity();
         }
     };
@@ -1339,10 +1335,6 @@ void uiMain(void *)
         case MenuItem::AprsSend:
             label = "Send now";
             break;
-        case MenuItem::AprsHeard:
-            label = "Heard";
-            value << aprs::heardCount();
-            break;
         case MenuItem::AprsReceive:
             label = "Receive";
             value << (aprsReceive ? "On" : "Off");
@@ -1390,7 +1382,7 @@ void uiMain(void *)
     // The heard list, newest first: callsign and age, distance on the
     // right. The station named @p keep stays chosen.
     auto openHeard = [&](std::string_view keep) {
-        menuValue.open("Heard");
+        menuValue.open("APRS heard 3/3");
         const std::uint32_t now = os::nowMs();
         heardShownCount = 0;
         aprs::HeardStation s;
@@ -1413,6 +1405,15 @@ void uiMain(void *)
         }
         view = View::Heard;
         redrawView();
+    };
+    // Page @p page under P2, counting round: calls, system, APRS heard.
+    auto openLogPage = [&](int page) {
+        logPage = (page % LogPages + LogPages) % LogPages;
+        if (logPage == 2) {
+            openHeard({});
+        } else {
+            show(View::Activity);
+        }
     };
     auto openMenuValue = [&](MenuItem item) {
         menuItem = item;
@@ -1597,9 +1598,6 @@ void uiMain(void *)
             aprs::post(aprs::BeaconNow{});
             notice("Beacon queued");
             return;
-        case MenuItem::AprsHeard:
-            openHeard({});
-            return;
         case MenuItem::AprsReceive:
             menuValue.open("Receive");
             menuValue.add(0, "Off");
@@ -1762,7 +1760,6 @@ void uiMain(void *)
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
-        case MenuItem::AprsHeard:
         case MenuItem::Count:
             break;
         }
@@ -1821,7 +1818,7 @@ void uiMain(void *)
         }
         if (view == View::Activity) {
             if (step && (key == Key::Up || key == Key::Down)) {
-                scrollActivity(key == Key::Up ? -1 : 1);
+                openLogPage(logPage + (key == Key::Up ? -1 : 1));
             } else if (press && (key == Key::Front2 || key == Key::Exit || key == Key::Menu)) {
                 show(View::Standby);
             }
@@ -1888,8 +1885,7 @@ void uiMain(void *)
             openZonePicker();
         } else if (press && key == Key::Front2) {
             entryLength = 0;
-            activityTop = 0;
-            show(View::Activity);
+            openLogPage(logPage);
         }
     };
     // A side key's function: on the press when it has no long-press
@@ -2018,16 +2014,16 @@ void uiMain(void *)
                                    return;
                                }
                                const bool step = e.type == Type::Press || e.type == Type::Repeat;
+                               // The APRS page under P2: the knob picks a station,
+                               // Menu opens it, Up/Down change the page.
                                if (view == View::Heard) {
                                    if (step && (e.key == Key::Up || e.key == Key::Down)) {
-                                       menuValue.move(e.key == Key::Up ? -1 : 1);
-                                       menuValue.draw(d, StandbyScreen::StatusH);
+                                       openLogPage(logPage + (e.key == Key::Up ? -1 : 1));
                                    } else if (e.type == Type::Press && e.key == Key::Menu && menuValue.chosen() < heardShownCount) {
                                        stationShown = menuValue.chosen();
                                        show(View::Station);
-                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
-                                       menuItem = MenuItem::AprsHeard;
-                                       openGroup(MenuGroup::Aprs, false);
+                                   } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Front2)) {
+                                       show(View::Standby);
                                    }
                                    return;
                                }
@@ -2057,7 +2053,7 @@ void uiMain(void *)
                            [&](const Transmitting &t) {
                                const bool wasCall = transmitting && transmitCall;
                                transmitting = t.on;
-                               using Kind = services::EventLog::Kind;
+                               using Kind = services::EventKind;
                                if (t.on && t.call) {
                                    transmitCall = true;
                                    transmitStarted = os::nowMs();
@@ -2071,7 +2067,7 @@ void uiMain(void *)
                                    }
                                } else if (!t.on && wasCall) {
                                    transmitCall = false;
-                                   eventLog.update(Kind::CallOut,
+                                   callLog.update(Kind::CallOut,
                                        static_cast<unsigned>((os::nowMs() - transmitStarted) / 1000));
                                    if (view == View::Activity && !noticeShown) {
                                        drawActivity();
@@ -2095,9 +2091,9 @@ void uiMain(void *)
                            },
                            [&](const DmrCall &c) {
                                if (c.active && !heard.active) {
-                                   logEvent(services::EventLog::Kind::CallIn, c.source, c.destination, 0, c.group);
+                                   logEvent(services::EventKind::CallIn, c.source, c.destination, 0, c.group);
                                } else if (!c.active && heard.active) {
-                                   eventLog.update(services::EventLog::Kind::CallIn,
+                                   callLog.update(services::EventKind::CallIn,
                                        static_cast<unsigned>((os::nowMs() - heard.started) / 1000));
                                    if (view == View::Activity && !noticeShown) {
                                        drawActivity();
@@ -2124,7 +2120,7 @@ void uiMain(void *)
                                // A move to another repeater is logged once.
                                if (!r.searching && r.site >= 0 && r.site != roamLogged) {
                                    roamLogged = r.site;
-                                   logEvent(services::EventLog::Kind::RoamMove, static_cast<std::uint32_t>(r.site) + 1);
+                                   logEvent(services::EventKind::RoamMove, static_cast<std::uint32_t>(r.site) + 1);
                                }
                                roam.searching = r.searching;
                                roam.site = r.site;
@@ -2185,7 +2181,10 @@ void uiMain(void *)
                                        list.move(moved);
                                        list.draw(d, StandbyScreen::StatusH);
                                    } else if (view == View::Activity) {
-                                       scrollActivity(moved);
+                                       openLogPage(logPage + (moved > 0 ? 1 : -1));
+                                   } else if (view == View::Heard) {
+                                       menuValue.move(moved);
+                                       menuValue.draw(d, StandbyScreen::StatusH);
                                    } else if (view == View::Standby) {
                                        entryLength = 0;
                                        if (channels->vfoMode()) {
@@ -2237,7 +2236,7 @@ void uiMain(void *)
                                if (g.fix.valid && !gpsState.fix.valid && !g.asleep &&
                                    (fixLoggedS == 0 || uptimeS() - fixLoggedS >= 600)) {
                                    fixLoggedS = uptimeS();
-                                   logEvent(services::EventLog::Kind::GpsFix);
+                                   logEvent(services::EventKind::GpsFix);
                                }
                                gpsState = {g.on, g.receiving, g.fix, g.asleep};
                                if (view == View::Gps) {
@@ -2274,7 +2273,7 @@ void uiMain(void *)
                            },
                            [&](const Packet &p) {
                                if (p.sent) {
-                                   logEvent(services::EventLog::Kind::AprsBeacon);
+                                   logEvent(services::EventKind::AprsBeacon);
                                }
                                notice(p.sent ? "Beacon sent" : "Beacon not sent");
                            },
