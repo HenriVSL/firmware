@@ -834,6 +834,8 @@ void D878Uv2PlugEditor::showIn(std::size_t i, std::int32_t v, const std::uint8_t
     case Codec::IndexByte:
         if (v < 0) {
             put(out, "None");
+        } else if (!inUse(f->link, static_cast<std::size_t>(v))) {
+            put(out, '#', v + 1, ", unused");
         } else if (!title(f->link, static_cast<std::size_t>(v), out)) {
             put(out, '#', v + 1);
         }
@@ -877,11 +879,58 @@ bool D878Uv2PlugEditor::changed(std::size_t i) const
     return valueIn(i, m_record) != valueIn(i, m_read);
 }
 
+// The bytes a field's value is kept in.
+bool D878Uv2PlugEditor::holds(const Field &f, std::size_t byte) const
+{
+    const auto within = [byte](std::size_t at, std::size_t n) { return byte >= at && byte < at + n; };
+    switch (f.codec) {
+    case Codec::Bits:
+    case Codec::NotBit:
+    case Codec::TimeZone:
+    case Codec::KeyCode:
+    case Codec::IndexByte:
+        return within(f.at, 1);
+    case Codec::Frequency:
+    case Codec::BcdNumber:
+    case Codec::Index32:
+        return within(f.at, 4);
+    case Codec::RxFrequency:
+        return within(0x00, 9);
+    case Codec::TxFrequency:
+        return within(0x04, 5);
+    case Codec::Text:
+    case Codec::PaddedText:
+        return within(f.at, f.bits);
+    case Codec::RxTone:
+        return within(0x09, 1) || within(0x0B, 1) || within(0x0E, 2);
+    case Codec::TxTone:
+        return within(0x09, 1) || within(0x0A, 1) || within(0x0C, 2);
+    }
+    return false;
+}
+
+bool D878Uv2PlugEditor::listed(std::size_t i) const
+{
+    if (!changed(i)) {
+        return false;
+    }
+    if (named(i) != nullptr) {
+        return true;
+    }
+    const std::size_t byte = i - namedCount();
+    for (std::size_t k = 0; k < namedCount(); ++k) {
+        if (changed(k) && holds(*named(k), byte)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::size_t D878Uv2PlugEditor::changes() const
 {
     std::size_t n = 0;
     for (std::size_t i = 0; i < fields(); ++i) {
-        n += changed(i) ? 1 : 0;
+        n += listed(i) ? 1 : 0;
     }
     return n;
 }

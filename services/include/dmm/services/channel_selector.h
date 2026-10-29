@@ -44,6 +44,9 @@ public:
     /// selected channel.
     bool stepZone(int steps);
     bool selectZone(std::uint8_t zone);
+    /// Reads the zone and the channel in use again, after the codeplug
+    /// changed.
+    bool reload() { return loadZone(m_zone, static_cast<std::uint16_t>(m_position)); }
     /// Every zone in use; returns how many.
     std::size_t zones(std::span<std::uint8_t> out) { return m_codeplug.zonesInUse(out); }
     /// A zone's name, zero-terminated (empty if unreadable).

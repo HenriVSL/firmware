@@ -58,6 +58,10 @@ public:
     void showValue(std::size_t i, std::int32_t v, plug::Text out);
     std::size_t choices(std::size_t i) const;
     bool changed(std::size_t i) const;
+    /// A change to list when saving: a changed named field, or a changed
+    /// byte that no changed named field holds.
+    bool listed(std::size_t i) const;
+    /// How many changes are listed.
     std::size_t changes() const;
     void revert();
     SaveResult save();
@@ -79,6 +83,7 @@ private:
     std::int32_t valueIn(std::size_t i, const std::uint8_t *record) const;
     void textIn(std::size_t i, const std::uint8_t *record, plug::Text out) const;
     void showIn(std::size_t i, std::int32_t v, const std::uint8_t *record, plug::Text out);
+    bool holds(const Field &f, std::size_t byte) const;
 
     D878Uv2Codeplug &m_codeplug;
     Writer m_write;

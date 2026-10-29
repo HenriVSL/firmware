@@ -190,6 +190,11 @@ TEST_CASE("tones, choices, text and bytes change in the record")
     CHECK(text(e, tone) == "Off");
     REQUIRE(e.setValue(find(e, "Power"), 0));
     CHECK(text(e, find(e, "Power")) == "Low");
+    // The power's byte changed too, but the save lists only the receive
+    // tone and the power.
+    CHECK(e.changed(find(e, "Squelch") + 1 + 8));
+    CHECK_FALSE(e.listed(find(e, "Squelch") + 1 + 8));
+    CHECK(e.changes() == 2);
     REQUIRE(e.setText(find(e, "Name"), "Local"));
     CHECK(text(e, find(e, "Name")) == "Local");
     const std::size_t byte0 = find(e, "Squelch") + 1;
