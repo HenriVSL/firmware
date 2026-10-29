@@ -56,6 +56,9 @@ struct KeyEvent
 struct Transmitting
 {
     bool on;
+    /// A call or an FM transmission of the user's, not a repeater wake-up
+    /// or a packet.
+    bool call;
 };
 /// A DMR call is heard (active) or over: who is calling and whom.
 struct DmrCall
