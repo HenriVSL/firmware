@@ -34,15 +34,17 @@ frequency by up to 5 kHz, for a radio whose frequency reference has
 drifted; the console's `fm offset` sets it in hertz. It lasts until the
 radio restarts; `DefaultFrequencyOffsetHz` sets the one it starts with.
 
-**Roaming.** A DMR channel with roaming on works through whichever
-repeater of the codeplug's roaming zone answers best, so one channel per
-talkgroup covers a whole network. The radio tries each repeater, waking
-quiet ones, on a side key the codeplug sets to roaming, when PTT finds
-no repeater, and by itself as the codeplug's roaming settings say
-(implemented, not yet tested on the radio). The Channel menu turns
-roaming off, or picks another roaming zone, for the session. This is basic roaming, by
-signal strength in the way the factory firmware does it; roaming as the
-ETSI DMR standards describe it is still to come.
+**Roaming.** A DMR channel with roaming on works through a repeater of
+the codeplug's roaming zone, so one channel per talkgroup covers a whole
+network. Between calls the radio learns the repeaters' beacons and
+visits the others briefly to keep their levels, and with the codeplug's
+automatic roaming on it moves to a clearly better repeater by itself.
+Searches, on a side key set to roaming or when PTT finds no repeater,
+try the most likely repeaters first. The codeplug's repeater range check
+is followed. Menu > Channel turns roaming off or picks another roaming
+zone for the session, and Roam status shows what the radio hears. The
+design is in `docs/roaming.md`; moving between two real repeaters is
+still to be tested.
 
 **Channels.** Channels, zones and the VFO come from the codeplug already
 on the radio. Pick zones from a list, step channels with the knob, or type
