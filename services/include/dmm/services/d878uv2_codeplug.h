@@ -71,6 +71,13 @@ public:
     std::size_t roamingZones(std::span<std::uint8_t> out) override;
     bool roamingZoneName(std::uint8_t zone, std::span<char, ZoneNameBytes + 1> name) override;
 
+    /// Forgets which copy of each block is valid, after the codeplug was
+    /// written through another reader.
+    void forgetCopies() { m_cachedCount = 0; }
+    /// Where codeplug address @p address is kept now: in the valid copy of
+    /// its block.
+    std::optional<std::uint32_t> storageAddress(std::uint32_t address);
+
     /// Contact @p index, if it is in use.
     std::optional<dmr::Target> contact(std::uint32_t index);
     /// The DMR ID in radio ID list entry @p index, if it is in use.
