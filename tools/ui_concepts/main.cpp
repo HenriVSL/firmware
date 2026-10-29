@@ -409,7 +409,7 @@ void saver(ImageDisplay &d, const Strip &)
 {
     d.fillRect(0, 0, 160, 128, p::Ground);
     centre(d, Large, 34, "14:32", p::Dim, p::Ground);
-    centre(d, Small, 62, "1132Z", p::Rule, p::Ground);
+    centre(d, Small, 62, "11:32Z", p::Rule, p::Ground);
     centre(d, Body, 82, "TG 244 Finland", p::Dim, p::Ground);
     centre(d, Small, 112, "7.9V", p::Rule, p::Ground);
 }
@@ -448,7 +448,7 @@ int main(int argc, char **argv)
     };
     const Screen screens[] = {
         {"e-home", home, {}},
-        {"e-home-marks", home, {"1132Z", true, true}},
+        {"e-home-marks", home, {"11:32Z", true, true}},
         {"f-receiving", receiving, {}},
         {"g-transmitting", transmitting, {}},
         {"h-log", log, {}},
