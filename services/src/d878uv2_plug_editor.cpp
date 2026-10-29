@@ -73,6 +73,7 @@ constexpr const char *Bandwidths[] = {"12.5 kHz", "25 kHz"};
 constexpr const char *Slots[] = {"TS1", "TS2"};
 constexpr const char *SquelchModes[] = {"Carrier", "Tone", "Signalling", "Tone and sig.", "Tone or sig."};
 constexpr const char *CallTypes[] = {"Private", "Group", "All call"};
+constexpr const char *Admits[] = {"Always", "Channel free", "Colour code"};
 constexpr const char *BatterySaves[] = {"Off", "On", "Fast wake"};
 constexpr const char *LightTimes[] = {"Always", "5 s", "10 s", "15 s", "20 s", "25 s", "30 s", "1 min", "2 min",
     "3 min", "4 min", "5 min", "15 min", "30 min", "45 min", "1 h"};
@@ -189,6 +190,8 @@ constexpr Field ChannelFields[] = {
     link("Radio ID", "DMR", 0x18, Book::RadioIds),
     link("RX group", "DMR", 0x1C, Book::GroupLists),
     onOff("Roaming", "DMR", 0x34, 2, true),
+    choice("Admit", "DMR", 0x1A, 0, 8, Admits),
+    onOff("Talkaround", "DMR", 0x09, 7),
     special("RX tone", "FM", FieldKind::Choice, Codec::RxTone, 0, ToneChoices - 1),
     special("TX tone", "FM", FieldKind::Choice, Codec::TxTone, 0, ToneChoices - 1),
     choice("Squelch", "FM", 0x19, 4, 3, SquelchModes),

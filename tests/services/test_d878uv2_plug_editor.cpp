@@ -148,6 +148,8 @@ TEST_CASE("a channel's fields read as names, frequencies and tones")
     CHECK(text(e, find(e, "RX tone")) == "D023I");
     CHECK(text(e, find(e, "TX tone")) == "88.5 Hz");
     CHECK(text(e, find(e, "RX group")) == "None");
+    CHECK(text(e, find(e, "Admit")) == "Always");
+    CHECK(text(e, find(e, "Talkaround")) == "Off");
     CHECK(e.field(find(e, "TX tone")).kind == FieldKind::Choice);
     CHECK(e.choices(find(e, "TX tone")) == 261);
     // Every byte follows the named fields.
@@ -201,6 +203,10 @@ TEST_CASE("tones, choices, text and bytes change in the record")
     CHECK(text(e, byte0) == "14  20");
     CHECK(e.value(find(e, "Roaming")) == 1);
     REQUIRE(e.setValue(find(e, "Roaming"), 0));
+    REQUIRE(e.setValue(find(e, "Talkaround"), 1));
+    REQUIRE(e.setValue(find(e, "Admit"), 2));
+    CHECK(text(e, find(e, "Admit")) == "Colour code");
+    CHECK(text(e, find(e, "RX tone")) == "Off"); // the talkaround bit leaves the tone bits alone
     CHECK(e.changed(find(e, "Roaming")));
     CHECK(e.changes() >= 4);
 }
