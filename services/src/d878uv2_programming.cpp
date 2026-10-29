@@ -3,6 +3,9 @@
 
 #include "dmm/services/d878uv2_programming.h"
 
+#include "dmm/lib/format.h"
+#include "dmm/services/log.h"
+
 #include <string_view>
 
 namespace dmm::services {
@@ -112,8 +115,12 @@ void D878Uv2Programming::command(Writer write)
         for (std::size_t i = 1; i < 22; ++i) {
             sum = static_cast<std::uint8_t>(sum + m_command[i]);
         }
-        const bool ok = m_command[5] == 16 && m_command[22] == sum && m_command[23] == Ack &&
-            m_writer.write(bigEndian(&m_command[1]), std::span<const std::uint8_t>(&m_command[6], 16));
+        const bool valid = m_command[5] == 16 && m_command[22] == sum && m_command[23] == Ack;
+        if (valid && m_watch) {
+            noteChanges(bigEndian(&m_command[1]), std::span<const std::uint8_t, 16>(&m_command[6], 16));
+        }
+        const bool ok =
+            valid && m_writer.write(bigEndian(&m_command[1]), std::span<const std::uint8_t>(&m_command[6], 16));
         write(std::span(ok ? &Ack : &Refused, 1));
     } else if (first == static_cast<std::uint8_t>(Leave[0])) {
         if (m_command[m_have - 1] != static_cast<std::uint8_t>(Leave[m_have - 1])) {
@@ -121,6 +128,11 @@ void D878Uv2Programming::command(Writer write)
         } else if (m_have == Leave.size()) {
             const bool wrote = m_writer.wrote();
             const bool ok = m_writer.finish();
+            if (m_watch) {
+                log::info("plug") << "the PC changed " << m_changedBytes << " bytes";
+                m_changedBytes = 0;
+                m_changeLines = 0;
+            }
             m_changed = m_changed || wrote;
             leave();
             write(std::span(ok ? &Ack : &Refused, 1));
@@ -129,6 +141,51 @@ void D878Uv2Programming::command(Writer write)
         // Not a command: skipped.
         m_have = 0;
     }
+}
+
+void D878Uv2Programming::noteChanges(std::uint32_t address, std::span<const std::uint8_t, 16> data)
+{
+    constexpr std::size_t MaxLines = 200;
+    std::uint8_t old[16];
+    if (!readable(m_codeplug.read(address, old))) {
+        return;
+    }
+    // One line per run of changed bytes: old, then new.
+    for (std::size_t i = 0; i < data.size();) {
+        if (old[i] == data[i]) {
+            ++i;
+            continue;
+        }
+        std::size_t end = i;
+        while (end < data.size() && old[end] != data[end]) {
+            ++end;
+        }
+        m_changedBytes += end - i;
+        if (m_changeLines++ < MaxLines) {
+            auto line = log::info("plug");
+            line << "changed " << lib::hex(address + static_cast<std::uint32_t>(i)) << ':';
+            for (std::size_t k = i; k < end; ++k) {
+                line << ' ' << lib::hex(old[k], 2);
+            }
+            line << " ->";
+            for (std::size_t k = i; k < end; ++k) {
+                line << ' ' << lib::hex(data[k], 2);
+            }
+        }
+        i = end;
+    }
+}
+
+bool D878Uv2Programming::debugCommand(std::string_view text)
+{
+    if (text == "watch on" || text == "watch off") {
+        m_watch = text == "watch on";
+        m_changedBytes = 0;
+        m_changeLines = 0;
+        log::info("plug") << "watching writes from the PC " << (m_watch ? "on" : "off");
+        return true;
+    }
+    return false;
 }
 
 } // namespace dmm::services

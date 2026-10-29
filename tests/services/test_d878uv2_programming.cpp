@@ -159,3 +159,27 @@ TEST_CASE("programming: failed reads are not answered; a half command is dropped
     s.now += D878Uv2Programming::CommandTimeoutMs;
     CHECK(s.send(Bytes{0x02}).size() == 16);
 }
+
+TEST_CASE("programming: watching the PC's writes leaves them as they are")
+{
+    Session s;
+    CHECK(s.p.debugCommand("watch on"));
+    CHECK_FALSE(s.p.debugCommand("watch"));
+    s.send("PROGRAM");
+    // The same bytes as already there, then changed ones.
+    Bytes same = writeCommand(Block + 0x100, 0);
+    for (std::size_t i = 0; i < 16; ++i) {
+        same[6 + i] = static_cast<std::uint8_t>(Block + 0x100 + i + 1);
+    }
+    std::uint8_t sum = 0;
+    for (std::size_t i = 1; i < 22; ++i) {
+        sum = static_cast<std::uint8_t>(sum + same[i]);
+    }
+    same[22] = sum;
+    CHECK(s.send(same) == Bytes{0x06});
+    CHECK(s.send(writeCommand(Block + 0x110, 0x6B)) == Bytes{0x06});
+    CHECK(s.send("END") == Bytes{0x06});
+    s.send("PROGRAM");
+    CHECK(s.read(Block + 0x110) == Bytes(16, 0x6B));
+    CHECK(s.p.debugCommand("watch off"));
+}

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 namespace dmm::services {
 
@@ -52,6 +53,11 @@ public:
     /// In program mode, where the port carries only this protocol.
     bool active(os::Ticks now);
 
+    /// The console's commands, answered in the log:
+    ///   watch on|off   logs the bytes each write from the PC changes, to
+    ///                  learn what a setting changes in the codeplug
+    bool debugCommand(std::string_view text);
+
     /// True once after a program mode in which the codeplug was written:
     /// the radio should start again with it.
     bool takeCodeplugChanged()
@@ -64,11 +70,16 @@ public:
 private:
     void command(Writer write);
     void leave();
+    // Logs the bytes of a 16-byte write that differ from the codeplug.
+    void noteChanges(std::uint32_t address, std::span<const std::uint8_t, 16> data);
 
     D878Uv2Codeplug &m_codeplug;
     D878Uv2CodeplugWriter &m_writer;
     bool m_program = false;
     bool m_changed = false;
+    bool m_watch = false;
+    std::size_t m_changedBytes = 0; // in this program mode, while watching
+    std::size_t m_changeLines = 0;
     std::size_t m_matched = 0; // of "PROGRAM", outside program mode
     std::uint8_t m_command[24]{};
     std::size_t m_have = 0;

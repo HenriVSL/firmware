@@ -73,7 +73,8 @@ effect at once; settings and APRS restart the radio. Saving takes the same
 path as a write from the PC, never while one runs, and reaches only the
 codeplug's own blocks. The console's `plug peek <address> [count]` and
 `plug poke <address> <byte>...` (hexadecimal) read and write codeplug
-bytes the same way.
+bytes the same way. `prog watch on` logs each run of bytes a write
+from the PC changes, old and new, to learn where a setting lives.
 
 **Battery.** Battery save cycles the receiver while the radio is idle,
 with the codeplug's setting, and the backlight goes off after its light

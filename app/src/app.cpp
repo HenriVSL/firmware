@@ -366,6 +366,10 @@ bool radioCommand(std::string_view command)
         posted = chipCommand(radio::ChipCommand::Chip::Fm, command, 3);
     } else if (lib::startsWith(command, "bb ")) {
         posted = chipCommand(radio::ChipCommand::Chip::Baseband, command, 3);
+    } else if (lib::startsWith(command, "prog ") && platform->programming != nullptr) {
+        if (!platform->programming->debugCommand(std::string_view(command.data() + 5, command.size() - 5))) {
+            log::info("console") << "unknown command";
+        }
     } else if (lib::startsWith(command, "plug ")) {
         posted = ui::plugCommand(std::string_view(command.data() + 5, command.size() - 5));
     } else {
