@@ -188,27 +188,41 @@ void fillArea(Display &d, int x, int y, int w, int h, Color c)
     }
 }
 
-// The battery voltage at the header's right end, in its own field from 48
-// pixels before the edge, red when low. Drawn in place with only the gaps
-// painted, so an update does not flicker.
+// A battery at the header's right end, one segment per level, red when
+// low, in its own field from 48 pixels before the edge. Every pixel is
+// painted once, so an update does not flicker.
 void drawBattery(Display &d)
 {
     const BatteryState &b = batteryState;
     const int w = d.width();
     const int fieldX = w - 48;
-    lib::StaticString<12> text;
-    if (b.millivolts > 0) {
-        const int cv = (b.millivolts + 5) / 10;
-        text << cv / 100 << '.' << static_cast<char>('0' + cv / 10 % 10) << 'V';
+    constexpr int BodyW = 15;
+    constexpr int BodyH = 7;
+    const int x = w - 5 - BodyW;
+    const int y = headerTop == 0 ? 0 : headerTop + 1;
+    const Color frame = b.low ? colors::Red : palette::Dim;
+    const Color fill = b.low ? colors::Red : palette::Text;
+    fillArea(d, fieldX, 0, x - fieldX, headerHeight, headerGround);
+    fillArea(d, x, 0, w - x, y, headerGround);
+    fillArea(d, x, y + BodyH, w - x, headerHeight - y - BodyH, headerGround);
+    d.fillRect(x, y, BodyW, 1, frame);
+    d.fillRect(x, y + BodyH - 1, BodyW, 1, frame);
+    d.fillRect(x, y + 1, 1, BodyH - 2, frame);
+    d.fillRect(x + BodyW - 1, y + 1, 1, BodyH - 2, frame);
+    d.fillRect(x + BodyW, y + 2, 2, 3, frame);
+    fillArea(d, x + BodyW, y, 2, 2, headerGround);
+    fillArea(d, x + BodyW, y + 5, 2, BodyH - 5, headerGround);
+    fillArea(d, x + BodyW + 2, y, w - x - BodyW - 2, BodyH, headerGround);
+    fillArea(d, x + 1, y + 1, BodyW - 2, 1, headerGround);
+    fillArea(d, x + 1, y + BodyH - 2, BodyW - 2, 1, headerGround);
+    for (int i = 0; i < 3; ++i) {
+        // A low battery keeps one red segment.
+        const bool lit = b.millivolts > 0 && (i < b.level || (i == 0 && b.low));
+        const int sx = x + 2 + i * 4;
+        fillArea(d, sx - 1, y + 2, 1, 3, headerGround);
+        d.fillRect(sx, y + 2, 3, 3, lit ? fill : headerGround);
     }
-    const int textW = static_cast<int>(text.view().size()) * HeaderFont.width;
-    const int tx = w - 3 - textW;
-    const int below = headerTop + HeaderFont.height;
-    drawText(d, HeaderFont, tx, headerTop, text.view(), b.low ? colors::Red : palette::Dim, headerGround);
-    fillArea(d, fieldX, 0, tx - fieldX, headerHeight, headerGround);
-    fillArea(d, tx, 0, textW, headerTop, headerGround);
-    fillArea(d, tx, below, textW, headerHeight - below, headerGround);
-    fillArea(d, tx + textW, 0, w - tx - textW, headerHeight, headerGround);
+    fillArea(d, x + BodyW - 2, y + 2, 1, 3, headerGround);
 }
 
 services::KeyLock keyLock;

@@ -4,8 +4,8 @@ The standby screen is now one working screen:
 
 - A status strip: LOCK, `GPS..` (on, still looking for a fix) and `APRS`
   (beacons going out by themselves) on the left, only while they apply;
-  the battery voltage on the right. The line under it turns red while
-  transmitting and green while receiving.
+  a battery with one segment per level on the right, red when low. The
+  line under it turns red while transmitting and green while receiving.
 - The channel's name large, or the contact's (Menu > Display > Big name),
   with the talkgroup number (`TG 244`) small above it; a channel without
   a contact, or an FM channel, says `CHANNEL` there. The time on the
