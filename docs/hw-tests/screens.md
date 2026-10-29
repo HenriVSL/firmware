@@ -22,11 +22,14 @@ the same large name with the talkgroup number under it (or the FM
 channel), and the time on the air. Repeater
 wake-ups and APRS packets do not.
 
-P2 opens Activity: what happened lately, newest first, with the time (or
-how long ago without a clock): calls heard and made with their length,
-roaming moves, APRS beacons sent, GPS fixes. The knob or Up/Down scroll,
-P2, Exit or Menu go back. The log keeps the last 32 events in 384 bytes,
-numbers only; names are looked up as the list is drawn.
+P2 opens Activity, three pages that Up/Down (or the knob) switch between:
+calls heard and made with their length, newest first, with the time (or
+how long ago without a clock); system events (roaming moves, APRS beacons
+sent, GPS fixes); and the APRS stations heard, where the knob moves the
+selection and Menu opens a station. P2 or Exit go back. Each of the two
+logs keeps only the eight entries that fit on the screen, numbers only;
+names are looked up as the list is drawn. APRS heard is no longer in the
+menu.
 
 ## Steps
 
@@ -39,6 +42,7 @@ numbers only; names are looked up as the list is drawn.
 | 5 | GPS on, indoors | `GPS..` in amber in the strip until a fix |
 | 6 | PTT on the DMR channel | `TRANSMITTING`, the talkgroup, the time on the air counting; a red line under the strip; back to the working screen on release |
 | 7 | A call heard | `RECEIVING`, the caller, name and ID, the talk time; `LAST CALL` for a moment after |
-| 8 | P2 | Activity lists the call heard and the transmission with their lengths, newest first |
-| 9 | Roam to a repeater (PF3) | Activity gets `ROAM repeater N` |
-| 10 | Read the latest uptime line | Every task above 50 unused stack words |
+| 8 | P2 | Calls (1/3) lists the call heard and the transmission with their lengths, newest first |
+| 9 | Roam to a repeater (PF3), then P2 and Down | System (2/3) shows `ROAM repeater N` |
+| 10 | Down again | APRS heard (3/3); the knob moves the selection, Menu opens a station, Up goes back to System |
+| 11 | Read the latest uptime line | Every task above 50 unused stack words |

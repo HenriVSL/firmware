@@ -22,7 +22,6 @@ add_library(dmm_services STATIC
     src/clock.cpp
     src/gps_schedule.cpp
     src/power.cpp
-    src/event_log.cpp
     src/roaming.cpp
     src/audio.cpp
     src/rda1846_transceiver.cpp

@@ -5,8 +5,8 @@
 
 #include <doctest/doctest.h>
 
-using dmm::services::EventLog;
-using Kind = EventLog::Kind;
+using Kind = dmm::services::EventKind;
+using EventLog = dmm::services::EventLog<32>;
 
 TEST_CASE("the event log keeps entries newest first, 12 bytes each")
 {
@@ -70,4 +70,17 @@ TEST_CASE("a call still going on updates its length; long values are held at 127
     CHECK(log.newest(1)->value() == 127);
     log.update(Kind::GpsFix, 3); // none of that kind: nothing changes
     CHECK(log.newest(0)->value() == 0);
+}
+
+TEST_CASE("a log the size of a screen holds the last eight")
+{
+    dmm::services::EventLog<8> log;
+    CHECK(sizeof(log) <= 8 * 12 + 2 * sizeof(std::size_t));
+    for (std::uint32_t i = 1; i <= 10; ++i) {
+        log.add(Kind::CallOut, i, 0, i);
+    }
+    CHECK(log.count() == 8);
+    CHECK(log.newest(0)->b() == 10);
+    CHECK(log.newest(7)->b() == 3);
+    CHECK(log.newest(8) == nullptr);
 }
