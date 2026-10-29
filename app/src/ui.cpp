@@ -397,7 +397,6 @@ enum class View : std::uint8_t
 ChannelSelector *channels = nullptr;
 StandbyScreen standby;
 ListPicker zonePicker;
-ListPicker menu;
 ListPicker menuValue;
 // The heard list's callsigns as last shown, the one chosen or open on its
 // screen, and the first row on the screen.
@@ -414,8 +413,7 @@ bool isList(View v)
 }
 ListPicker &listOf(View v)
 {
-    return v == View::Menu ? menu : v == View::MenuValue ? menuValue
-                                                         : zonePicker;
+    return v == View::MenuValue ? menuValue : zonePicker;
 }
 
 // The settings menu: one flat list, each item a list of values.
@@ -445,46 +443,123 @@ enum class MenuItem : std::uint8_t
     AprsBeacon,
     AprsPower,
     AprsReceive,
+    ToolLog,  // opens the log
+    ToolKeys, // opens the key test
+    Version,
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
 
-// Menu groups and their items. Settings of the current channel come first
-// and also open directly from the standby screen (Front2).
+// Menu groups and their items, by what the user is doing.
 enum class MenuGroup : std::uint8_t
 {
     Channel,
-    Display,
-    Keys,
-    Battery,
-    Gps,
-    Aprs,
+    Roaming,
+    Position,
+    Radio,
+    Tools,
     Count,
 };
 struct GroupInfo
 {
     const char *name;
-    MenuItem items[7];
+    // Two lines about the group for the menu's panel.
+    const char *about1;
+    const char *about2;
+    MenuItem items[10];
     std::uint8_t count;
 };
 constexpr GroupInfo Groups[] = {
-    {"Channel",
-        {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::RoamZone,
-            MenuItem::RoamStatus, MenuItem::FrequencyOffset},
+    {"Channel", "Squelch, power and offset", "of the channel in use",
+        {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::FrequencyOffset}, 4},
+    {"Roaming", "Moving between repeaters", "of the roaming zone",
+        {MenuItem::Roaming, MenuItem::RoamZone, MenuItem::RoamStatus}, 3},
+    {"Position", "The GPS receiver and", "APRS position beacons",
+        {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::AprsBeacon, MenuItem::AprsPower,
+            MenuItem::AprsReceive, MenuItem::AprsSend},
         7},
-    {"Display", {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName, MenuItem::BesidePower}, 4},
-    {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
-    {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS and time",
-        {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone, MenuItem::ClockShown,
+    {"Radio", "Display, keys, battery", "and the clock",
+        {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName, MenuItem::BesidePower, MenuItem::KeyLock,
+            MenuItem::AutoLock, MenuItem::BatterySave, MenuItem::ClockZone, MenuItem::ClockShown,
             MenuItem::ClockCalibration},
-        6},
-    {"APRS", {MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 4},
+        10},
+    {"Tools", "The log, the key test", "and the version", {MenuItem::ToolLog, MenuItem::ToolKeys, MenuItem::Version},
+        3},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
+// Two lines about an item for the menu's panel.
+struct ItemAbout
+{
+    const char *line1;
+    const char *line2;
+};
+ItemAbout itemAbout(MenuItem item)
+{
+    switch (item) {
+    case MenuItem::Squelch:
+        return {"Open, or 1 to 5: higher", "needs a stronger signal"};
+    case MenuItem::SquelchMode:
+        return {"Carrier opens on any", "signal, Tone on its tone"};
+    case MenuItem::Power:
+        return {"Transmit power of this", "channel, this session"};
+    case MenuItem::FrequencyOffset:
+        return {"Corrects the radio's", "frequency error"};
+    case MenuItem::Roaming:
+        return {"Use the roaming zone's", "repeaters on this channel"};
+    case MenuItem::RoamZone:
+        return {"The repeaters to move", "between, this session"};
+    case MenuItem::RoamStatus:
+        return {"Repeaters heard and", "their levels; search now"};
+    case MenuItem::Backlight:
+        return {"Display brightness", ""};
+    case MenuItem::BacklightTime:
+        return {"How long the light stays", "on after a key"};
+    case MenuItem::BigName:
+        return {"Large on the main screen:", "channel or contact name"};
+    case MenuItem::BesidePower:
+        return {"Next to the power: the", "battery voltage or volume"};
+    case MenuItem::BatterySave:
+        return {"Sleep between checks for", "a signal while quiet"};
+    case MenuItem::KeyLock:
+        return {"What the key lock covers", ""};
+    case MenuItem::AutoLock:
+        return {"Lock the keys after this", "long without use"};
+    case MenuItem::Gps:
+        return {"The GPS receiver", "on or off"};
+    case MenuItem::GpsSystems:
+        return {"Satellite systems the", "receiver uses"};
+    case MenuItem::GpsStatus:
+        return {"Position, satellites", "and time from the GPS"};
+    case MenuItem::ClockZone:
+        return {"Local time's offset", "from UTC"};
+    case MenuItem::ClockShown:
+        return {"The main screen's time:", "local or UTC"};
+    case MenuItem::ClockCalibration:
+        return {"Measure the clock's rate", "against GPS time"};
+    case MenuItem::AprsSend:
+        return {"Send the position once,", "now"};
+    case MenuItem::AprsBeacon:
+        return {"How often the position", "is sent by itself"};
+    case MenuItem::AprsPower:
+        return {"Transmit power of the", "APRS beacons"};
+    case MenuItem::AprsReceive:
+        return {"Listen for APRS stations", "(heard list under P2)"};
+    case MenuItem::ToolLog:
+        return {"The radio's log; hold", "Exit for the next screen"};
+    case MenuItem::ToolKeys:
+        return {"Shows each key pressed;", "hold Exit for the next"};
+    case MenuItem::Version:
+    case MenuItem::Count:
+        break;
+    }
+    return {"", ""};
+}
 MenuGroup menuGroup = MenuGroup::Channel;
-// Showing the group list (true) or one group's items.
+// Showing the group list (true) or one group's items, and the row chosen.
 bool menuAtGroups = true;
+std::uint8_t menuRow = 0;
+// The value in use when a value screen opened.
+std::size_t menuValueInUse = 0;
 // The items were opened straight from the standby screen: leaving them
 // returns there.
 bool menuQuick = false;
@@ -1198,77 +1273,6 @@ void uiMain(void *)
             drawActivity();
         }
     };
-    // The working screen is up, not a call or transmit screen over it.
-    auto workingScreen = [&] { return view == View::Standby && !(transmitting && transmitCall) && !heard.shown; };
-    auto redrawView = [&] {
-        // A full redraw covers any notice: the next one is drawn whole.
-        noticeShown = false;
-        volumeNoticeUp = false;
-        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Heard ||
-            view == View::Station || view == View::Activity;
-        barHeader(radioScreen);
-        if (view == View::Standby && transmitting && transmitCall) {
-            standby.drawTransmit(d, standbyState(), transmitInfo());
-            drawBattery(d);
-        } else if (view == View::Activity) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-            drawActivity();
-        } else if (view == View::Standby && heard.shown) {
-            standby.drawCall(d, standbyState(), callInfo());
-            drawBattery(d);
-        } else if (view == View::Standby) {
-            standby.draw(d, *channels, standbyState());
-            drawBattery(d);
-        } else if (view == View::Gps) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-            drawGpsScreen(d, gpsState, true);
-        } else if (view == View::Station) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-            aprs::HeardStation s;
-            if (stationShown < heardShownCount && aprs::heardStation(heardCalls[stationShown], s)) {
-                drawAprsStation(d, s, gpsState, os::nowMs());
-            }
-        } else if (view == View::Heard) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-            drawHeard();
-        } else if (isList(view)) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-            listOf(view).draw(d, StandbyScreen::StatusH);
-        } else if (view == View::Log) {
-            showLog(d);
-        } else if (view == View::KeyTest) {
-            keyTest.draw(d);
-        }
-    };
-    auto show = [&](View v) {
-        view = v;
-        redrawView();
-    };
-    // The next screen in Exit-held order: standby, log, key test.
-    auto nextView = [&] {
-        if (view == View::Standby || view == View::Gps) {
-            return View::Log;
-        }
-        if (view == View::Log) {
-            return View::KeyTest;
-        }
-        return channels != nullptr ? View::Standby : View::Log;
-    };
-    using Verdict = services::KeyLock::Verdict;
-    auto refreshLockMark = [&] {
-        if (view == View::Log || view == View::KeyTest) {
-            drawLockMark(d);
-        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity) {
-            standby.drawStatus(d, standbyState());
-            drawBattery(d);
-        }
-    };
-    // One item's label and current value.
     auto itemRow = [&](MenuItem item, const char *&label, lib::StaticString<12> &value) {
         constexpr const char *Powers[] = {"Low", "Mid", "High", "Turbo"};
         const services::KeyLockSettings &k = keyLock.settings();
@@ -1282,7 +1286,7 @@ void uiMain(void *)
             }
             break;
         case MenuItem::SquelchMode:
-            label = "Sq type";
+            label = "Squelch type";
             value << (channels->current() && channels->current()->squelchMode == SquelchMode::Tone ? "Tone" : "Carrier");
             break;
         case MenuItem::Power:
@@ -1354,7 +1358,7 @@ void uiMain(void *)
             value << services::gps_systems::name(gpsSystems);
             break;
         case MenuItem::ClockZone:
-            label = "Zone";
+            label = "Time zone";
             value << zoneText(timeZoneMinutes).view();
             break;
         case MenuItem::ClockShown:
@@ -1372,7 +1376,7 @@ void uiMain(void *)
             }
             break;
         case MenuItem::GpsStatus:
-            label = "Status";
+            label = "GPS status";
             value << (!gpsState.on ? "Off" : gpsState.asleep ? "Sleeping"
                     : gpsState.fix.valid                     ? "Fix"
                     : gpsState.receiving                     ? "Searching"
@@ -1387,27 +1391,195 @@ void uiMain(void *)
             }
             break;
         case MenuItem::AprsPower:
-            label = "Power";
+            label = "Beacon power";
             value << Powers[static_cast<int>(beaconPower) & 3];
             break;
         case MenuItem::AprsSend:
-            label = "Send now";
+            label = "Send beacon";
             break;
         case MenuItem::AprsReceive:
-            label = "Receive";
+            label = "APRS receive";
             value << (aprsReceive ? "On" : "Off");
+            break;
+        case MenuItem::ToolLog:
+            label = "Log";
+            break;
+        case MenuItem::ToolKeys:
+            label = "Key test";
+            break;
+        case MenuItem::Version:
+            label = "Version";
             break;
         case MenuItem::Count:
             break;
         }
     };
+    // Whether Menu on @p item opens a screen of its own rather than values.
+    auto itemOpens = [](MenuItem item) {
+        return item == MenuItem::RoamStatus || item == MenuItem::GpsStatus || item == MenuItem::ToolLog ||
+            item == MenuItem::ToolKeys;
+    };
+    // The menu as it stands: the groups, or one group's items with their
+    // values, five rows around the chosen one and a panel about it.
+    auto drawMenu = [&] {
+        const GroupInfo &g = Groups[static_cast<int>(menuGroup)];
+        const std::size_t count = menuAtGroups ? std::size(Groups) : g.count;
+        if (menuRow >= count) {
+            menuRow = 0;
+        }
+        std::size_t first = 0;
+        if (count > static_cast<std::size_t>(MenuRows) && menuRow > MenuRows / 2) {
+            first = std::min<std::size_t>(menuRow - MenuRows / 2, count - MenuRows);
+        }
+        MenuRow rows[MenuRows];
+        lib::StaticString<12> values[MenuRows];
+        int shown = 0;
+        for (; shown < MenuRows && first + static_cast<std::size_t>(shown) < count; ++shown) {
+            const std::size_t i = first + static_cast<std::size_t>(shown);
+            if (menuAtGroups) {
+                rows[shown] = {Groups[i].name, {}, true};
+                continue;
+            }
+            const char *label = "";
+            itemRow(g.items[i], label, values[shown]);
+            rows[shown] = {label, values[shown].view(), itemOpens(g.items[i])};
+        }
+        std::string_view about1;
+        std::string_view about2;
+        static lib::StaticString<24> uptime;
+        if (menuAtGroups) {
+            about1 = Groups[menuRow].about1;
+            about2 = Groups[menuRow].about2;
+        } else if (g.items[menuRow] == MenuItem::Version) {
+            uptime.clear();
+            uptime << "up " << os::nowMs() / 60'000 << " min";
+            about1 = Version;
+            about2 = uptime.view();
+        } else {
+            const ItemAbout a = itemAbout(g.items[menuRow]);
+            about1 = a.line1;
+            about2 = a.line2;
+        }
+        std::string_view hint = "Menu: change   Exit: back";
+        if (menuAtGroups || itemOpens(g.items[menuRow])) {
+            hint = "Menu: open   Exit: back";
+        } else if (g.items[menuRow] == MenuItem::AprsSend) {
+            hint = "Menu: send   Exit: back";
+        } else if (g.items[menuRow] == MenuItem::Version) {
+            hint = "Exit: back";
+        }
+        lib::StaticString<24> title;
+        if (menuAtGroups) {
+            title << "Menu";
+        } else {
+            title << "Menu > " << g.name;
+        }
+        standby.drawStatus(d, standbyState());
+        drawBattery(d);
+        drawMenuScreen(d, title.view(), menuRow, count, rows, shown, static_cast<int>(menuRow - first), about1,
+            about2, hint);
+    };
+    auto moveMenu = [&](int steps) {
+        const int count = static_cast<int>(menuAtGroups ? std::size(Groups) : Groups[static_cast<int>(menuGroup)].count);
+        menuRow = static_cast<std::uint8_t>(((menuRow + steps) % count + count) % count);
+        drawMenu();
+    };
+    // A value screen: large buttons for a few values, a large spinner for
+    // many, and a list where the values carry notes.
+    auto drawMenuValue = [&] {
+        standby.drawStatus(d, standbyState());
+        drawBattery(d);
+        constexpr std::string_view Hint = "Menu: set   Exit: back";
+        if (menuValue.hasValues()) {
+            menuValue.draw(d, StandbyScreen::StatusH, Hint);
+        } else if (menuValue.size() <= 4) {
+            drawValueButtons(d, menuValue, menuValueInUse, Hint);
+        } else {
+            drawValueSpinner(d, menuValue, menuValueInUse, Hint);
+        }
+    };
+    // The key hint under the zone list and the roaming status.
+    auto listHint = [&]() -> std::string_view {
+        return view == View::RoamStatus ? "Menu: search   Exit: back" : "Menu: use   Exit: back";
+    };
+    // The working screen is up, not a call or transmit screen over it.
+    auto workingScreen = [&] { return view == View::Standby && !(transmitting && transmitCall) && !heard.shown; };
+    auto redrawView = [&] {
+        // A full redraw covers any notice: the next one is drawn whole.
+        noticeShown = false;
+        volumeNoticeUp = false;
+        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Heard ||
+            view == View::Station || view == View::Activity;
+        barHeader(radioScreen);
+        if (view == View::Standby && transmitting && transmitCall) {
+            standby.drawTransmit(d, standbyState(), transmitInfo());
+            drawBattery(d);
+        } else if (view == View::Activity) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawActivity();
+        } else if (view == View::Standby && heard.shown) {
+            standby.drawCall(d, standbyState(), callInfo());
+            drawBattery(d);
+        } else if (view == View::Standby) {
+            standby.draw(d, *channels, standbyState());
+            drawBattery(d);
+        } else if (view == View::Gps) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawGpsScreen(d, gpsState, true);
+        } else if (view == View::Station) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            aprs::HeardStation s;
+            if (stationShown < heardShownCount && aprs::heardStation(heardCalls[stationShown], s)) {
+                drawAprsStation(d, s, gpsState, os::nowMs());
+            }
+        } else if (view == View::Heard) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawHeard();
+        } else if (view == View::Menu) {
+            drawMenu();
+        } else if (view == View::MenuValue) {
+            drawMenuValue();
+        } else if (isList(view)) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            listOf(view).draw(d, StandbyScreen::StatusH, listHint());
+        } else if (view == View::Log) {
+            showLog(d);
+        } else if (view == View::KeyTest) {
+            keyTest.draw(d);
+        }
+    };
+    auto show = [&](View v) {
+        view = v;
+        redrawView();
+    };
+    // The next screen in Exit-held order: standby, log, key test.
+    auto nextView = [&] {
+        if (view == View::Standby || view == View::Gps) {
+            return View::Log;
+        }
+        if (view == View::Log) {
+            return View::KeyTest;
+        }
+        return channels != nullptr ? View::Standby : View::Log;
+    };
+    using Verdict = services::KeyLock::Verdict;
+    auto refreshLockMark = [&] {
+        if (view == View::Log || view == View::KeyTest) {
+            drawLockMark(d);
+        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+        }
+    };
+    // One item's label and current value.
     // The top of the menu: the groups.
     auto openMenu = [&] {
-        menu.open("Menu");
-        for (std::uint8_t g = 0; g < static_cast<std::uint8_t>(MenuGroup::Count); ++g) {
-            menu.add(g, Groups[g].name, ">");
-        }
-        menu.select(static_cast<std::uint8_t>(menuGroup));
+        menuRow = static_cast<std::uint8_t>(menuGroup);
         menuAtGroups = true;
         menuQuick = false;
         view = View::Menu;
@@ -1417,14 +1589,12 @@ void uiMain(void *)
     auto openGroup = [&](MenuGroup group, bool quick) {
         const GroupInfo &g = Groups[static_cast<int>(group)];
         menuGroup = group;
-        menu.open(g.name);
+        menuRow = 0;
         for (std::uint8_t i = 0; i < g.count; ++i) {
-            const char *label = "";
-            lib::StaticString<12> value;
-            itemRow(g.items[i], label, value);
-            menu.add(static_cast<std::uint8_t>(g.items[i]), label, value.view());
+            if (g.items[i] == menuItem) {
+                menuRow = i;
+            }
         }
-        menu.select(static_cast<std::uint8_t>(menuItem));
         menuAtGroups = false;
         menuQuick = quick;
         view = View::Menu;
@@ -1432,9 +1602,8 @@ void uiMain(void *)
     };
     // Redraws the GPS group's values when it is open, keeping the cursor.
     auto refreshGpsGroup = [&] {
-        if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Gps) {
-            menuItem = static_cast<MenuItem>(menu.chosen());
-            openGroup(MenuGroup::Gps, menuQuick);
+        if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Position && !noticeShown) {
+            drawMenu();
         }
     };
     // The heard list, newest first. The station named @p keep stays
@@ -1656,6 +1825,14 @@ void uiMain(void *)
             aprs::post(aprs::BeaconNow{});
             notice("Beacon queued");
             return;
+        case MenuItem::ToolLog:
+            show(View::Log);
+            return;
+        case MenuItem::ToolKeys:
+            show(View::KeyTest);
+            return;
+        case MenuItem::Version:
+            return;
         case MenuItem::AprsReceive:
             menuValue.open("Receive");
             menuValue.add(0, "Off");
@@ -1665,6 +1842,15 @@ void uiMain(void *)
         case MenuItem::Count:
             return;
         }
+        {
+            const char *label = "";
+            lib::StaticString<12> value;
+            itemRow(item, label, value);
+            lib::StaticString<ListPicker::TitleBytes> title;
+            title << Groups[static_cast<int>(menuGroup)].name << " > " << label;
+            menuValue.retitle(title.view());
+        }
+        menuValueInUse = menuValue.cursor();
         view = View::MenuValue;
         redrawView();
     };
@@ -1821,6 +2007,9 @@ void uiMain(void *)
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
+        case MenuItem::ToolLog:
+        case MenuItem::ToolKeys:
+        case MenuItem::Version:
         case MenuItem::Count:
             break;
         }
@@ -1843,17 +2032,20 @@ void uiMain(void *)
         const bool press = type == Type::Press;
         const bool step = press || type == Type::Repeat;
         if (view == View::Menu || view == View::MenuValue) {
-            ListPicker &list = view == View::Menu ? menu : menuValue;
             if (step && (key == Key::Up || key == Key::Down)) {
-                list.move(key == Key::Up ? -1 : 1);
-                list.draw(d, StandbyScreen::StatusH);
+                if (view == View::Menu) {
+                    moveMenu(key == Key::Up ? -1 : 1);
+                } else {
+                    menuValue.move(key == Key::Up ? -1 : 1);
+                    drawMenuValue();
+                }
             } else if (press && key == Key::Menu) {
                 if (view == View::MenuValue) {
                     applyMenuValue();
                 } else if (menuAtGroups) {
-                    openGroup(static_cast<MenuGroup>(menu.chosen()), false);
+                    openGroup(static_cast<MenuGroup>(menuRow), false);
                 } else {
-                    openMenuValue(static_cast<MenuItem>(menu.chosen()));
+                    openMenuValue(Groups[static_cast<int>(menuGroup)].items[menuRow]);
                 }
             } else if (press && key == Key::Exit) {
                 if (view == View::MenuValue) {
@@ -1869,7 +2061,7 @@ void uiMain(void *)
         if (view == View::RoamStatus) {
             if (step && (key == Key::Up || key == Key::Down)) {
                 zonePicker.move(key == Key::Up ? -1 : 1);
-                zonePicker.draw(d, StandbyScreen::StatusH);
+                zonePicker.draw(d, StandbyScreen::StatusH, listHint());
             } else if (press && key == Key::Menu && zonePicker.chosen() == SearchNowRow) {
                 radio::post(radio::RoamNow{});
             } else if (press && key == Key::Exit) {
@@ -1888,7 +2080,7 @@ void uiMain(void *)
         if (view == View::ZonePicker) {
             if (step && (key == Key::Up || key == Key::Down)) {
                 zonePicker.move(key == Key::Up ? -1 : 1);
-                zonePicker.draw(d, StandbyScreen::StatusH);
+                zonePicker.draw(d, StandbyScreen::StatusH, listHint());
             } else if (press && (key == Key::Menu || key == Key::Front1)) {
                 channels->selectZone(zonePicker.chosen());
                 show(View::Standby);
@@ -2070,7 +2262,7 @@ void uiMain(void *)
                                }
                                if (view == View::Gps) {
                                    if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
-                                       openGroup(MenuGroup::Gps, false);
+                                       openGroup(MenuGroup::Position, false);
                                    }
                                    return;
                                }
@@ -2235,10 +2427,15 @@ void uiMain(void *)
                                keyTest.setClicks(c.clicks);
                                refreshValues();
                                if (channels != nullptr && moved != 0) {
-                                   if (isList(view)) {
+                                   if (view == View::Menu) {
+                                       moveMenu(moved);
+                                   } else if (view == View::MenuValue) {
+                                       menuValue.move(moved);
+                                       drawMenuValue();
+                                   } else if (isList(view)) {
                                        ListPicker &list = listOf(view);
                                        list.move(moved);
-                                       list.draw(d, StandbyScreen::StatusH);
+                                       list.draw(d, StandbyScreen::StatusH, listHint());
                                    } else if (view == View::Heard && heardShownCount > 0) {
                                        const int last = static_cast<int>(heardShownCount) - 1;
                                        stationShown = static_cast<std::size_t>(
@@ -2445,7 +2642,7 @@ void uiMain(void *)
             if (second != lastSecond) {
                 lastSecond = second;
                 fillRoamStatus(zonePicker);
-                zonePicker.draw(d, StandbyScreen::StatusH);
+                zonePicker.draw(d, StandbyScreen::StatusH, listHint());
             }
         }
         if (view == View::Log) {

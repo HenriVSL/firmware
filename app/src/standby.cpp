@@ -691,6 +691,11 @@ void ListPicker::open(std::string_view title)
     copyText(m_title, title);
 }
 
+void ListPicker::retitle(std::string_view title)
+{
+    copyText(m_title, title);
+}
+
 void ListPicker::add(std::uint8_t id, std::string_view text, std::string_view value)
 {
     if (m_count >= MaxItems) {
@@ -720,34 +725,193 @@ void ListPicker::move(int steps)
     m_cursor = static_cast<std::size_t>(((static_cast<int>(m_cursor) + steps) % n + n) % n);
 }
 
-void ListPicker::draw(Display &d, int top)
+bool ListPicker::hasValues() const
+{
+    for (std::size_t i = 0; i < m_count; ++i) {
+        if (m_value[i][0] != '\0') {
+            return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+constexpr int ListRowH = 13;
+constexpr int TitleH = ListRowH;
+
+// The title band under the status strip: where we are, and the place in
+// the list on the right.
+void drawTitleBand(Display &d, int top, std::string_view title, std::size_t index, std::size_t count)
+{
+    lib::StaticString<10> place;
+    if (count > 1) {
+        place << index + 1 << '/' << count;
+    }
+    band(d, top, TitleH,
+        {{4, top + 1, cut(title, 18), &Body, p::Dim}, {d.width() - 4 - textWidth(Body, place.view()), top + 1, place.view(), &Body, p::Rule}},
+        palette::Panel);
+}
+
+void drawHintBar(Display &d, std::string_view hint)
 {
     const int w = d.width();
-    const int rowH = Body.height + 2;
-    d.fillRect(0, top, w, rowH - 1, p::Ground);
-    drawText(d, Body, 4, top + 1, m_title, p::Dim, p::Ground);
-    d.fillRect(0, top + rowH - 1, w, 1, p::Rule);
-    const int first = m_cursor < static_cast<std::size_t>(Rows) ? 0 : static_cast<int>(m_cursor) - Rows + 1;
+    const int h = d.height();
+    d.fillRect(0, h - StandbyScreen::HintH, w, 1, p::Rule);
+    band(d, h - StandbyScreen::HintH + 1, StandbyScreen::HintH - 1, {{3, h - StandbyScreen::HintH + 2, hint, &Small, p::Dim}});
+}
+
+// A scroll bar at the right edge when @p count rows do not fit in @p shown.
+void drawScrollBar(Display &d, int top, int h, std::size_t first, int shown, std::size_t count)
+{
+    const int x = d.width() - 3;
+    if (count <= static_cast<std::size_t>(shown)) {
+        d.fillRect(x, top, 3, h, p::Ground);
+        return;
+    }
+    const int barH = std::max(4, h * shown / static_cast<int>(count));
+    const int barY = top + (h - barH) * static_cast<int>(first) / (static_cast<int>(count) - shown);
+    d.fillRect(x, top, 1, h, p::Ground);
+    d.fillRect(x + 1, top, 2, h, palette::Panel);
+    d.fillRect(x + 1, barY, 2, barH, p::Dim);
+}
+
+// A list row: the text on the left, the value right-aligned, inverted when
+// chosen.
+void drawListRow(Display &d, int y, int right, std::string_view text, std::string_view value, bool on)
+{
+    const Color fill = on ? p::Text : p::Ground;
+    d.fillRect(0, y, right, ListRowH, fill);
+    drawText(d, Body, 6, y + 1, text, on ? p::Ground : p::Text, fill);
+    if (!value.empty()) {
+        drawText(d, Body, right - 4 - textWidth(Body, value), y + 1, value, on ? p::Ground : p::Dim, fill);
+    }
+}
+
+std::size_t firstShown(std::size_t cursor, std::size_t count, int rows)
+{
+    if (count <= static_cast<std::size_t>(rows) || cursor < static_cast<std::size_t>(rows) / 2) {
+        return 0;
+    }
+    return std::min(cursor - static_cast<std::size_t>(rows) / 2, count - static_cast<std::size_t>(rows));
+}
+
+} // namespace
+
+void ListPicker::draw(Display &d, int top, std::string_view hint)
+{
+    const int w = d.width();
+    drawTitleBand(d, top, m_title, m_cursor, m_count);
+    const int listTop = top + TitleH;
+    const std::size_t first = firstShown(m_cursor, m_count, Rows);
     for (int r = 0; r < Rows; ++r) {
-        const int y = top + rowH * (r + 1);
-        const int i = first + r;
-        if (i >= static_cast<int>(m_count)) {
-            d.fillRect(0, y, w, rowH, p::Ground);
+        const int y = listTop + r * ListRowH;
+        const std::size_t i = first + static_cast<std::size_t>(r);
+        if (i >= m_count) {
+            d.fillRect(0, y, w - 3, ListRowH, p::Ground);
             continue;
         }
-        const bool on = static_cast<std::size_t>(i) == m_cursor;
-        const Color fill = on ? p::Text : p::Ground;
-        d.fillRect(0, y, w, rowH, fill);
-        drawText(d, Body, 6, y + 1, m_text[i], on ? p::Ground : p::Text, fill);
-        const std::string_view value(m_value[i]);
-        if (!value.empty()) {
-            drawText(d, Body, w - 6 - textWidth(Body, value), y + 1, value, on ? p::Ground : p::Dim, fill);
+        drawListRow(d, y, w - 3, m_text[i], m_value[i], i == m_cursor);
+    }
+    const int end = listTop + Rows * ListRowH;
+    drawScrollBar(d, listTop, end - listTop, first, Rows, m_count);
+    d.fillRect(0, end, w, d.height() - StandbyScreen::HintH - end, p::Ground);
+    drawHintBar(d, hint);
+}
+
+void drawMenuScreen(Display &d, std::string_view title, std::size_t index, std::size_t count, const MenuRow *rows,
+    int rowCount, int chosen, std::string_view about1, std::string_view about2, std::string_view hint)
+{
+    const int w = d.width();
+    const int top = StandbyScreen::StatusH;
+    drawTitleBand(d, top, title, index, count);
+    const int listTop = top + TitleH;
+    for (int r = 0; r < MenuRows; ++r) {
+        const int y = listTop + r * ListRowH;
+        if (r >= rowCount) {
+            d.fillRect(0, y, w - 3, ListRowH, p::Ground);
+            continue;
+        }
+        const MenuRow &row = rows[r];
+        drawListRow(d, y, w - 3, row.label, row.value.empty() && row.opens ? std::string_view(">") : row.value,
+            r == chosen);
+    }
+    const int panelTop = listTop + MenuRows * ListRowH;
+    drawScrollBar(d, listTop, panelTop - listTop, index - static_cast<std::size_t>(chosen), MenuRows, count);
+    const int panelH = d.height() - StandbyScreen::HintH - panelTop;
+    d.fillRect(0, panelTop, w, 1, p::Ground);
+    band(d, panelTop + 1, ListRowH, {{4, panelTop + 2, about1, &Body, p::Dim}}, palette::Panel);
+    band(d, panelTop + 1 + ListRowH, panelH - 1 - ListRowH, {{4, panelTop + 1 + ListRowH, about2, &Body, p::Dim}},
+        palette::Panel);
+    drawHintBar(d, hint);
+}
+
+void drawValueButtons(Display &d, const ListPicker &values, std::size_t inUse, std::string_view hint)
+{
+    const int w = d.width();
+    const int top = StandbyScreen::StatusH;
+    drawTitleBand(d, top, values.title(), 0, 0);
+    const int bodyTop = top + TitleH;
+    const int bodyH = d.height() - StandbyScreen::HintH - bodyTop;
+    d.fillRect(0, bodyTop, w, bodyH, p::Ground);
+    constexpr int ButtonH = 20;
+    constexpr int Pitch = 22;
+    const int n = static_cast<int>(values.size());
+    const int y0 = bodyTop + (bodyH - n * Pitch + (Pitch - ButtonH)) / 2;
+    for (int i = 0; i < n; ++i) {
+        const int y = y0 + i * Pitch;
+        const bool on = static_cast<std::size_t>(i) == values.cursor();
+        const Color fill = on ? p::Text : palette::Panel;
+        d.fillRect(20, y, w - 40, ButtonH, fill);
+        const std::string_view label = values.text(static_cast<std::size_t>(i));
+        const Font &f = textWidth(Medium, label) <= w - 60 ? Medium : Body;
+        drawText(d, f, (w - textWidth(f, label)) / 2, y + (ButtonH - f.height) / 2, label, on ? p::Ground : p::Text,
+            fill);
+        if (static_cast<std::size_t>(i) == inUse) {
+            drawText(d, Body, w - 32, y + (ButtonH - Body.height) / 2, "*", on ? p::Ground : p::Dim, fill);
         }
     }
-    const int end = top + rowH * (Rows + 1);
-    if (end < d.height()) {
-        d.fillRect(0, end, w, d.height() - end, p::Ground);
+    drawHintBar(d, hint);
+}
+
+void drawValueSpinner(Display &d, const ListPicker &values, std::size_t inUse, std::string_view hint)
+{
+    const int w = d.width();
+    const int top = StandbyScreen::StatusH;
+    drawTitleBand(d, top, values.title(), values.cursor(), values.size());
+    const int bodyTop = top + TitleH;
+    const int bodyH = d.height() - StandbyScreen::HintH - bodyTop;
+    d.fillRect(0, bodyTop, w, bodyH, p::Ground);
+    // The value, as large as it fits between the arrows.
+    const std::string_view value = values.text(values.cursor());
+    const int room = w - 2 * 22;
+    const Font &f = textWidth(Large, value) <= room ? Large : textWidth(Medium, value) <= room ? Medium
+                                                                                               : Body;
+    const int valueY = bodyTop + 12 + (Large.height - f.height) / 2;
+    drawText(d, Large, 6, bodyTop + 12, "<", p::Dim, p::Ground);
+    drawText(d, Large, w - 6 - Large.width, bodyTop + 12, ">", p::Dim, p::Ground);
+    drawText(d, f, (w - textWidth(f, value)) / 2, valueY, value, p::Text, p::Ground);
+    // The place on a scale: a step per value while they fit, else a marker
+    // on a track.
+    const int scaleY = bodyTop + 46;
+    const int n = static_cast<int>(values.size());
+    const int at = static_cast<int>(values.cursor());
+    if (n <= 16) {
+        const int pitch = (w - 40) / n;
+        for (int i = 0; i < n; ++i) {
+            d.fillRect(20 + i * pitch, scaleY, pitch - 2, 8, i <= at ? p::Text : palette::Panel);
+        }
+    } else {
+        d.fillRect(20, scaleY + 3, w - 40, 2, palette::Panel);
+        d.fillRect(20 + (w - 46) * at / (n - 1), scaleY, 6, 8, p::Text);
     }
+    if (inUse < values.size()) {
+        lib::StaticString<24> was;
+        was << "In use: " << values.text(inUse);
+        drawText(d, Body, (w - textWidth(Body, was.view())) / 2, scaleY + 18, was.view(),
+            inUse == values.cursor() ? p::Rule : p::Dim, p::Ground);
+    }
+    drawHintBar(d, hint);
 }
 
 } // namespace dmm::app::ui

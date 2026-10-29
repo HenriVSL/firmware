@@ -41,7 +41,7 @@ visits the others briefly to keep their levels, and with the codeplug's
 automatic roaming on it moves to a clearly better repeater by itself.
 Searches, on a side key set to roaming or when PTT finds no repeater,
 try the most likely repeaters first. The codeplug's repeater range check
-is followed. Menu > Channel turns roaming off or picks another roaming
+is followed. Menu > Roaming turns roaming off or picks another roaming
 zone for the session, and Roam status shows what the radio hears. The
 design is in `docs/roaming.md`; moving between two real repeaters is
 still to be tested.
@@ -50,9 +50,13 @@ still to be tested.
 on the radio. Pick zones from a list, step channels with the knob, or type
 a frequency on the keypad.
 
-**Interface.** A first version of the user interface: a standby screen
-with zone, channel, frequency, tones, power, volume and battery, and a
-short grouped settings menu. Key lock
+**Interface.** A working screen with the channel or contact name large,
+the talkgroup, time, frequency, slot, power and battery voltage; call and
+transmit screens; and activity pages under P2. The menu has five groups
+(Channel, Roaming, Position, Radio, Tools). Each list shows five rows and
+a panel saying what the chosen item does; a value changes on its own
+screen, as large buttons for a few choices or a large value on a scale
+for many. Key lock
 covers the keypad, side keys and knob, with auto lock and forced lock.
 
 **Battery.** Battery save cycles the receiver while the radio is idle,
@@ -69,7 +73,7 @@ it sleeps.
 
 **Clock.** The radio's real-time clock keeps UTC while the radio is off; a
 GPS fix corrects it. The status bar shows the local time from the
-codeplug's time zone. Menu, GPS and time, Calibrate measures the clock
+codeplug's time zone. Menu > Radio > Calibrate measures the clock
 against GPS time for 60 or 30 minutes and corrects its rate, so it keeps
 time between fixes and while the radio is off. The receiver's timing
 wanders by a few milliseconds, so a 30-minute run gets the rate to within
@@ -196,21 +200,22 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | P2 | Activity pages, Up/Down to switch: calls heard and made; roaming moves, beacons and GPS fixes; APRS stations heard |
 | Menu | Settings menu |
 | Hold `*` | Lock keys; Menu then `*` unlocks |
-| Hold Exit | Cycle standby, log and key test screens |
+| Hold Exit | Cycle standby, log and key test screens (also Menu > Tools) |
 
-Menu, GPS and time holds the receiver's on/off setting, its satellite
-systems, its status and the time zone; choosing Status opens the GPS
-screen, and Exit or Menu goes back to the list. The console's `gps raw on`
+Menu > Position holds the receiver's on/off setting, its satellite
+systems and its status; choosing GPS status opens the GPS screen, and
+Exit or Menu goes back to the list. The time zone and the clock are under
+Menu > Radio. The console's `gps raw on`
 logs every sentence the receiver sends; `gps query`, `gps restart` and
 `gps send` talk to the receiver itself; `gps need <s>` asks for a
 position every so many seconds (0: none). `time` logs the clock, and
 `time set YYYY-MM-DD HH:MM:SS` sets it (UTC); `time cal <min>` runs a
 calibration (0 stops it) and `time cal reset` clears the correction.
 
-Menu, APRS holds Heard (the stations heard, newest first: choose one for
-its position, distance and bearing, altitude, speed and text), Send now,
-Beacon (the interval, Off to stop), Power (the beacon power) and Receive
-(the board on or off). An A in the status bar shows that beacons go out
+Menu > Position also holds Beacon (the interval, Off to stop), Beacon
+power, APRS receive (the board on or off) and Send beacon. The stations
+heard are the third page under P2: choose one for its position, distance
+and bearing, altitude, speed and text. An A in the status bar shows that beacons go out
 on their own. The console's `aprs` logs the station and the beacon state,
 `aprs send` sends a beacon (`aprs send here`: on the current channel, for
 tests), `aprs every <s>` sets the interval, and

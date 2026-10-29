@@ -172,16 +172,20 @@ lib::StaticString<8> ageText(std::uint32_t thenMs, std::uint32_t nowMs);
 /// altitude, speed, its text and the way it came.
 void drawAprsStation(services::Display &d, const aprs::HeardStation &s, const GpsState &gps, std::uint32_t nowMs);
 
-/// A list to pick one item from, drawn over the screen body: a title bar
-/// and up to Rows rows, the chosen one inverted.
+/// A list to pick one item from, drawn over the screen body: a title band
+/// with the place in the list, up to Rows rows with the chosen one
+/// inverted and a scroll bar, and a hint bar.
 class ListPicker
 {
 public:
     static constexpr int Rows = 7;
     static constexpr std::size_t MaxItems = 250;
     static constexpr std::size_t TextBytes = 17;
+    static constexpr std::size_t TitleBytes = 27;
 
     void open(std::string_view title);
+    /// Gives the open list another title, keeping its items.
+    void retitle(std::string_view title);
     /// An item: @p text on the left, @p value (if any) right-aligned. Both
     /// are cut to fit their buffers: keep @p text to 16 characters and
     /// @p value to 8.
@@ -190,10 +194,17 @@ public:
     void move(int steps);
     bool empty() const { return m_count == 0; }
     std::uint8_t chosen() const { return m_ids[m_cursor]; }
-    void draw(services::Display &d, int top);
+    std::size_t size() const { return m_count; }
+    std::size_t cursor() const { return m_cursor; }
+    std::string_view title() const { return m_title; }
+    std::string_view text(std::size_t i) const { return m_text[i]; }
+    std::string_view value(std::size_t i) const { return m_value[i]; }
+    /// Whether any item has a value beside its text.
+    bool hasValues() const;
+    void draw(services::Display &d, int top, std::string_view hint);
 
 private:
-    char m_title[TextBytes] = {};
+    char m_title[TitleBytes] = {};
     std::uint8_t m_ids[MaxItems] = {};
     char m_text[MaxItems][TextBytes] = {};
     static constexpr std::size_t ValueBytes = 10;
@@ -201,5 +212,27 @@ private:
     std::size_t m_count = 0;
     std::size_t m_cursor = 0;
 };
+
+/// One row of the menu: a label, its value or empty, and whether Menu
+/// opens a screen of its own.
+struct MenuRow
+{
+    std::string_view label;
+    std::string_view value;
+    bool opens = false;
+};
+inline constexpr int MenuRows = 5;
+/// The menu: a title band with @p title and the place @p index of
+/// @p count, up to MenuRows @p rows with @p chosen inverted, a panel of two
+/// lines about the chosen row, and a hint bar.
+void drawMenuScreen(services::Display &d, std::string_view title, std::size_t index, std::size_t count,
+    const MenuRow *rows, int rowCount, int chosen, std::string_view about1, std::string_view about2,
+    std::string_view hint);
+/// A few values as large buttons, the chosen one inverted and the one in
+/// use starred.
+void drawValueButtons(services::Display &d, const ListPicker &values, std::size_t inUse, std::string_view hint);
+/// One value of many, large between arrows, with its place on a scale and
+/// the value in use under it.
+void drawValueSpinner(services::Display &d, const ListPicker &values, std::size_t inUse, std::string_view hint);
 
 } // namespace dmm::app::ui
