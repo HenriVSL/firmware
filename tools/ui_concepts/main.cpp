@@ -290,8 +290,8 @@ void utility(ImageDisplay &d, State s)
 // --- Second round: one working screen, call screens in the clean style,
 // the activity list behind a key, and a screen saver. ---
 
-// What the status strip shows: time (local or UTC) and battery on the
-// ends; in between only marks that matter now.
+// What the status strip shows: marks that matter now on the left, the
+// battery on the right. The time is the working screen's own.
 struct Strip
 {
     const char *time = "14:32";
@@ -301,9 +301,8 @@ struct Strip
 
 void strip(ImageDisplay &d, const Strip &st)
 {
-    text(d, Small, 4, 2, st.time, p::Dim, p::Ground);
     right(d, Small, 156, 2, "7.9V", p::Dim, p::Ground);
-    int x = 64;
+    int x = 4;
     if (st.gpsSearch) {
         text(d, Small, x, 2, "GPS..", p::Warn, p::Ground);
         x += 32;
@@ -327,7 +326,7 @@ void home(ImageDisplay &d, const Strip &st)
     strip(d, st);
     // The talkgroup, as large as fits, its name beside it.
     text(d, Small, 4, 16, "TALKGROUP", p::Dim, p::Ground);
-    right(d, Small, 156, 16, "DMR  3/13", p::Rule, p::Ground);
+    right(d, Medium, 156, 14, st.time, p::Text, p::Ground);
     text(d, Large, 4, 27, "TG 244", p::Text, p::Ground);
     text(d, Body, 84, 38, "Finland", p::Dim, p::Ground);
     hline(d, 0, 55, 160, p::Rule);
