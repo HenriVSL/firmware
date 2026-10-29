@@ -188,41 +188,39 @@ void fillArea(Display &d, int x, int y, int w, int h, Color c)
     }
 }
 
-// A battery at the header's right end, one segment per level, red when
-// low, in its own field from 48 pixels before the edge. Every pixel is
-// painted once, so an update does not flicker.
+// A battery at the header's right end, filled by its level from the left
+// so the outline shows as it drains, red when low; in its own field from 48
+// pixels before the edge. Every pixel is painted once, so an update does
+// not flicker.
 void drawBattery(Display &d)
 {
     const BatteryState &b = batteryState;
     const int w = d.width();
     const int fieldX = w - 48;
-    constexpr int BodyW = 15;
-    constexpr int BodyH = 7;
+    constexpr int BodyW = 21;
+    constexpr int BodyH = 9;
+    constexpr int InnerW = BodyW - 2;
     const int x = w - 5 - BodyW;
-    const int y = headerTop == 0 ? 0 : headerTop + 1;
-    const Color frame = b.low ? colors::Red : palette::Dim;
-    const Color fill = b.low ? colors::Red : palette::Text;
+    const int y = headerTop == 0 ? 0 : 1;
+    const Color ink = b.low ? colors::Red : palette::Text;
+    int filled = 0;
+    if (b.millivolts > 0) {
+        // A low battery keeps a sliver.
+        filled = std::max(b.level * InnerW / 3, b.low ? 3 : 0);
+    }
     fillArea(d, fieldX, 0, x - fieldX, headerHeight, headerGround);
     fillArea(d, x, 0, w - x, y, headerGround);
     fillArea(d, x, y + BodyH, w - x, headerHeight - y - BodyH, headerGround);
-    d.fillRect(x, y, BodyW, 1, frame);
-    d.fillRect(x, y + BodyH - 1, BodyW, 1, frame);
-    d.fillRect(x, y + 1, 1, BodyH - 2, frame);
-    d.fillRect(x + BodyW - 1, y + 1, 1, BodyH - 2, frame);
-    d.fillRect(x + BodyW, y + 2, 2, 3, frame);
+    d.fillRect(x, y, BodyW, 1, ink);
+    d.fillRect(x, y + BodyH - 1, BodyW, 1, ink);
+    d.fillRect(x, y + 1, 1, BodyH - 2, ink);
+    d.fillRect(x + BodyW - 1, y + 1, 1, BodyH - 2, ink);
+    fillArea(d, x + 1, y + 1, filled, BodyH - 2, ink);
+    fillArea(d, x + 1 + filled, y + 1, InnerW - filled, BodyH - 2, headerGround);
+    d.fillRect(x + BodyW, y + 2, 2, BodyH - 4, ink);
     fillArea(d, x + BodyW, y, 2, 2, headerGround);
-    fillArea(d, x + BodyW, y + 5, 2, BodyH - 5, headerGround);
+    fillArea(d, x + BodyW, y + BodyH - 2, 2, 2, headerGround);
     fillArea(d, x + BodyW + 2, y, w - x - BodyW - 2, BodyH, headerGround);
-    fillArea(d, x + 1, y + 1, BodyW - 2, 1, headerGround);
-    fillArea(d, x + 1, y + BodyH - 2, BodyW - 2, 1, headerGround);
-    for (int i = 0; i < 3; ++i) {
-        // A low battery keeps one red segment.
-        const bool lit = b.millivolts > 0 && (i < b.level || (i == 0 && b.low));
-        const int sx = x + 2 + i * 4;
-        fillArea(d, sx - 1, y + 2, 1, 3, headerGround);
-        d.fillRect(sx, y + 2, 3, 3, lit ? fill : headerGround);
-    }
-    fillArea(d, x + BodyW - 2, y + 2, 1, 3, headerGround);
 }
 
 services::KeyLock keyLock;
