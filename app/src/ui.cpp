@@ -416,6 +416,7 @@ enum class MenuItem : std::uint8_t
     RoamStatus, // opens the roaming status screen
     Backlight,
     BacklightTime,
+    BigName, // the channel's name or the contact's, large
     BatterySave,
     KeyLock,
     AutoLock,
@@ -457,7 +458,7 @@ constexpr GroupInfo Groups[] = {
         {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::RoamZone,
             MenuItem::RoamStatus, MenuItem::FrequencyOffset},
         7},
-    {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
+    {"Display", {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName}, 3},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
     {"GPS and time",
@@ -515,6 +516,8 @@ lib::StaticString<10> zoneText(int minutes)
 // The local time as "HH:MM", or empty while the clock does not know it.
 // The time is shown in UTC ("11:32Z") instead of local time.
 bool clockUtc = false;
+// A DMR channel's large name is its contact's, not the channel's own.
+bool bigContactName = false;
 
 // The time @p agoS seconds ago as "14:32", or "11:32Z" in UTC; empty while
 // the clock does not know it.
@@ -1002,6 +1005,7 @@ void uiMain(void *)
             nameTalkgroup(ch->dmr.contact);
             s.talkgroup = talkgroupText;
             s.talkgroupName = talkgroupName;
+            s.contactNameLarge = bigContactName;
         }
         return s;
     };
@@ -1019,10 +1023,13 @@ void uiMain(void *)
         if (ch->digital()) {
             t.slot = ch->dmr.slot;
         }
+        copyName(callChannel, ch->name);
         if (hasTalkgroup(*ch)) {
             nameTalkgroup(ch->dmr.contact);
-            t.target = talkgroupText;
-            t.name = talkgroupName;
+            t.target = bigContactName && talkgroupName[0] != '\0' ? std::string_view(talkgroupName)
+                : callChannel[0] != '\0'                          ? std::string_view(callChannel)
+                                                                  : std::string_view(talkgroupText);
+            t.name = talkgroupText;
         } else {
             copyName(callChannel, ch->name);
             t.target = callChannel[0] != '\0' ? std::string_view(callChannel) : std::string_view("FM");
@@ -1262,6 +1269,10 @@ void uiMain(void *)
             label = "Light time";
             value << durationText(backlightS).view();
             break;
+        case MenuItem::BigName:
+            label = "Big name";
+            value << (bigContactName ? "Contact" : "Channel");
+            break;
         case MenuItem::BatterySave:
             label = "Battery save";
             value << batterySaveText(batterySave);
@@ -1487,6 +1498,12 @@ void uiMain(void *)
                 }
             }
             break;
+        case MenuItem::BigName:
+            menuValue.open("Big name");
+            menuValue.add(0, "Channel");
+            menuValue.add(1, "Contact");
+            menuValue.select(bigContactName ? 1 : 0);
+            break;
         case MenuItem::BatterySave:
             menuValue.open("Battery save");
             menuValue.add(0, "Off");
@@ -1686,6 +1703,9 @@ void uiMain(void *)
         case MenuItem::BacklightTime:
             backlightS = BacklightTimes[v < std::size(BacklightTimes) ? v : 0];
             log::info("ui") << "light time " << durationText(backlightS).view();
+            break;
+        case MenuItem::BigName:
+            bigContactName = v == 1;
             break;
         case MenuItem::BatterySave:
             setBatterySave(v);

@@ -63,6 +63,8 @@ struct StandbyState
     /// contact's name, or empty.
     std::string_view talkgroup;
     std::string_view talkgroupName;
+    /// The contact's name large instead of the channel's.
+    bool contactNameLarge = false;
     /// APRS beacons go out on their own.
     bool beacons = false;
     /// The channel roams: a search under way, or the repeater in use (its
@@ -99,8 +101,9 @@ struct CallInfo
 /// What the transmit screen shows.
 struct TransmitInfo
 {
-    /// "TG 244", "PC 2440001", or the FM channel's name or frequency.
+    /// The channel's or the contact's name, large; on FM the channel's.
     std::string_view target;
+    /// Under it: "TG 244" on DMR.
     std::string_view name;
     std::uint32_t seconds = 0;
     /// The DMR slot, 0 on FM.

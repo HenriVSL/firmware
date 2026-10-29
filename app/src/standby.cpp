@@ -248,24 +248,25 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     } else if (sel.vfoMode()) {
         label = "VFO";
     } else if (c && !c->analog() && !s.talkgroup.empty()) {
-        label = "TALKGROUP";
+        label = s.talkgroup;
     }
+    const bool talkgroup = c && !c->analog() && !s.talkgroup.empty() && s.entry.empty() && !sel.vfoMode();
     band(d, LabelY, NameY - LabelY, {{4, LabelY + 4, label, &Small, p::Dim}}, p::Ground, 0, RightX);
     drawClock(d, s);
 
-    // The one thing that matters most, large: the talkgroup, the channel's
-    // name, or the frequency; a name beside it when there is room.
+    // The one thing that matters most, large: the channel's or the
+    // contact's name, or the frequency.
     std::string_view primary;
-    std::string_view secondary;
     lib::StaticString<12> f;
     if (!s.entry.empty()) {
         f = entryText(s.entry);
         primary = f.view();
     } else if (c) {
         f = mhz(c->receiveHz);
-        if (label == "TALKGROUP") {
+        if (talkgroup && (s.contactNameLarge || c->name[0] == '\0') && !s.talkgroupName.empty()) {
+            primary = s.talkgroupName;
+        } else if (talkgroup && c->name[0] == '\0') {
             primary = s.talkgroup;
-            secondary = s.talkgroupName;
         } else if (sel.vfoMode() || c->name[0] == '\0') {
             primary = f.view();
         } else {
@@ -278,11 +279,7 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     const bool large = textWidth(Large, primary) <= w - 8;
     const Font &pf = large ? Large : Medium;
     const int py = NameY + (Large.height - pf.height) / 2 + 1;
-    const int sx = 4 + textWidth(pf, primary) + 8;
-    const bool besides = !secondary.empty() && sx + textWidth(Body, secondary) <= w - 4;
-    band(d, NameY, nameH,
-        {{4, py, primary, &pf, p::Text},
-            {sx, NameY + Large.height - Body.height, besides ? secondary : std::string_view{}, &Body, p::Dim}});
+    band(d, NameY, nameH, {{4, py, primary, &pf, p::Text}});
     d.fillRect(0, PanelY - 1, w, 1, p::Rule);
 
     // Frequency and slot on a panel.
@@ -341,9 +338,10 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
             info << (up ? '+' : '-') << mhz(off).view();
         }
     } else if (c && !sel.vfoMode()) {
-        // Under a talkgroup, the channel; under the channel, its zone.
-        info << cut(label == "TALKGROUP" ? std::string_view(c->name) : sel.zoneName(), 16) << "  " << sel.position()
-             << '/' << sel.zoneSize();
+        // The channel's name when the contact's is large; else the zone.
+        const bool contactLarge = talkgroup && s.contactNameLarge && !s.talkgroupName.empty();
+        info << cut(contactLarge ? std::string_view(c->name) : sel.zoneName(), 16) << "  " << sel.position() << '/'
+             << sel.zoneSize();
     }
     if (c && c->receiveOnly) {
         info << "  RX ONLY";

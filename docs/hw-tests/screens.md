@@ -6,10 +6,10 @@ The standby screen is now one working screen:
   (beacons going out by themselves) on the left, only while they apply;
   the battery voltage on the right. The line under it turns red while
   transmitting and green while receiving.
-- The talkgroup large (`TG 244`), with the contact's name beside it when
-  it fits; a channel without a contact, or an FM channel, shows the
-  channel's name. The time on the right, local or UTC (`11:32Z`): Menu >
-  GPS and time > Show time.
+- The channel's name large, or the contact's (Menu > Display > Big name),
+  with the talkgroup number (`TG 244`) small above it; a channel without
+  a contact, or an FM channel, says `CHANNEL` there. The time on the
+  right, local or UTC (`11:32Z`): Menu > GPS and time > Show time.
 - Frequency, slot and the colour code (dim) on a panel; power and volume
   on one line; the repeater a roaming channel works through, or the zone
   and the channel's place in it, or an FM channel's tones and offset.
@@ -18,7 +18,8 @@ A call that is heard takes the screen: `RECEIVING` and the talkgroup in
 green, the caller's callsign from the user directory (else a contact's
 name, else the ID) large, the name and the ID under it, and the talk time.
 A transmission of the user's takes the screen too: `TRANSMITTING` in red,
-the talkgroup (or the FM channel), and the time on the air. Repeater
+the same large name with the talkgroup number under it (or the FM
+channel), and the time on the air. Repeater
 wake-ups and APRS packets do not.
 
 P2 opens Activity: what happened lately, newest first, with the time (or
@@ -31,7 +32,7 @@ numbers only; names are looked up as the list is drawn.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Start on a DMR channel with a talkgroup | `TALKGROUP`, the talkgroup large, its name beside it, the time on the right; frequency, TS and CC; power and volume |
+| 1 | Start on a DMR channel with a talkgroup | `TG <number>` small, the channel's name large, the time on the right; frequency, TS and CC; power and volume. Menu > Display > Big name: Contact shows the contact's name large instead |
 | 2 | Turn the volume | Only the volume value changes, without flicker |
 | 3 | Wait for the minute to change | Only the time changes |
 | 4 | Menu > GPS and time > Show time: UTC | The time shows as `hh:mmZ` |
