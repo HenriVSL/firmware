@@ -22,6 +22,7 @@
 #include "dmm/version.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 #include <iterator>
 #include <string_view>
@@ -36,6 +37,10 @@ namespace log = services::log;
 
 os::Task<768> uiTask;
 os::Queue<Message, 16> inbox;
+// The codeplug editor, and a console command waiting for it.
+board::PlugEditor *plugEditor = nullptr;
+lib::StaticString<128> plugCommandText;
+std::atomic<bool> plugCommandWaiting{false};
 Display *display = nullptr;
 CodeplugSource *codeplug = nullptr;
 const board::Input *input = nullptr;
@@ -2523,6 +2528,12 @@ void uiMain(void *)
                                }
                            },
                            [&](const ClockRate &) { refreshCalibration(); },
+                           [&](const PlugCommand &) {
+                               if (!plugEditor->debugCommand(plugCommandText.view())) {
+                                   log::info("console") << "unknown command";
+                               }
+                               plugCommandWaiting.store(false);
+                           },
                            [&](const ClockCalibration &c) {
                                clockCalibration = c;
                                refreshCalibration();
@@ -2669,11 +2680,12 @@ void uiMain(void *)
 
 } // namespace
 
-void start(Display &d, CodeplugSource *c, const board::Input *i)
+void start(Display &d, CodeplugSource *c, const board::Input *i, board::PlugEditor *e)
 {
     display = &d;
     codeplug = c;
     input = i;
+    plugEditor = e;
     log::setTap(onLogLine);
     uiTask.start("ui", 4, uiMain, nullptr);
 }
@@ -2684,6 +2696,21 @@ bool post(const Message &message)
         return false;
     }
     return inbox.send(message);
+}
+
+bool plugCommand(std::string_view text)
+{
+    if (plugEditor == nullptr || plugCommandWaiting.load()) {
+        return false;
+    }
+    plugCommandText.clear();
+    plugCommandText << text;
+    plugCommandWaiting.store(true);
+    if (!post(PlugCommand{})) {
+        plugCommandWaiting.store(false);
+        return false;
+    }
+    return true;
 }
 
 } // namespace dmm::app::ui

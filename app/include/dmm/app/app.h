@@ -50,6 +50,8 @@ struct Platform
     board::Calibration *calibration = nullptr;
     /// The radio's channels, zones and settings, or nullptr.
     services::CodeplugSource *codeplug = nullptr;
+    /// Edits the codeplug on the radio, or nullptr.
+    board::PlugEditor *plugEditor = nullptr;
     /// The GPS receiver's serial link, or nullptr.
     board::Gps *gps = nullptr;
     /// The real-time clock, or nullptr.

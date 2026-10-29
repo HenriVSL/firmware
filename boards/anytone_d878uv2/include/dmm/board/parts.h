@@ -14,6 +14,7 @@
 #include "dmm/services/casic_receiver.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_link_board.h"
+#include "dmm/services/d878uv2_plug_editor.h"
 #include "dmm/services/d878uv2_programming.h"
 #include "dmm/services/packet_modem.h"
 #include "dmm/services/programming.h"
@@ -28,6 +29,7 @@ using Fm = services::Rda1846Transceiver;
 using Baseband = services::Sct3258Baseband;
 using Calibration = services::D878Uv2Calibration;
 using Programming = services::D878Uv2Programming;
+using PlugEditor = services::D878Uv2PlugEditor;
 using Input = ::board::BoardInput;
 using Battery = ::board::BoardBattery;
 using DataChannel = services::UsbChannel;

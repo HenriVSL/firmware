@@ -6,6 +6,7 @@
 #include "d878uv2_layout.h"
 
 #include "dmm/lib/format.h"
+#include "dmm/services/log.h"
 
 #include <algorithm>
 #include <cstring>
@@ -435,11 +436,11 @@ std::int64_t transmitOf(const std::uint8_t *r)
 }
 void setTransmit(std::uint8_t *r, std::uint32_t hz)
 {
-    const std::int64_t rx = bcd(&r[0x00]) * 10;
-    const std::int64_t diff = static_cast<std::int64_t>(hz) - rx;
-    const unsigned direction = diff > 0 ? 1 : diff < 0 ? 2
-                                                       : 0;
-    putBcd(&r[0x04], static_cast<std::uint32_t>((diff < 0 ? -diff : diff) / 10));
+    const std::int64_t stored = bcd(&r[0x00]);
+    const std::uint32_t rx = stored < 0 ? 0 : static_cast<std::uint32_t>(stored) * 10;
+    const unsigned direction = hz > rx ? 1 : hz < rx ? 2
+                                                     : 0;
+    putBcd(&r[0x04], (hz > rx ? hz - rx : rx - hz) / 10);
     r[0x08] = static_cast<std::uint8_t>((r[0x08] & 0x3F) | direction << 6);
 }
 
@@ -697,7 +698,7 @@ bool D878Uv2PlugEditor::setValue(std::size_t i, std::int32_t v)
         if (i - namedCount() >= m_bytes) {
             return false;
         }
-        m_record[i - namedCount()] = static_cast<std::uint8_t>(std::clamp(v, 0, 255));
+        m_record[i - namedCount()] = static_cast<std::uint8_t>(std::clamp<std::int32_t>(v, 0, 255));
         return true;
     }
     if (f->readOnly) {
@@ -717,21 +718,21 @@ bool D878Uv2PlugEditor::setValue(std::size_t i, std::int32_t v)
         r[f->at] = static_cast<std::uint8_t>(v != 0 ? r[f->at] & ~(1u << f->shift) : r[f->at] | 1u << f->shift);
         return true;
     case Codec::Frequency:
-        putBcd(&r[f->at], static_cast<std::uint32_t>(std::max(v, 0)) / 10);
+        putBcd(&r[f->at], static_cast<std::uint32_t>(std::max<std::int32_t>(v, 0)) / 10);
         return true;
     case Codec::RxFrequency: {
         const std::int64_t tx = transmitOf(r);
-        putBcd(&r[f->at], static_cast<std::uint32_t>(std::max(v, 0)) / 10);
+        putBcd(&r[f->at], static_cast<std::uint32_t>(std::max<std::int32_t>(v, 0)) / 10);
         if (tx >= 0) {
             setTransmit(r, static_cast<std::uint32_t>(tx));
         }
         return true;
     }
     case Codec::TxFrequency:
-        setTransmit(r, static_cast<std::uint32_t>(std::max(v, 0)));
+        setTransmit(r, static_cast<std::uint32_t>(std::max<std::int32_t>(v, 0)));
         return true;
     case Codec::BcdNumber:
-        putBcd(&r[f->at], static_cast<std::uint32_t>(std::clamp(v, 0, 99'999'999)));
+        putBcd(&r[f->at], static_cast<std::uint32_t>(std::clamp<std::int32_t>(v, 0, 99'999'999)));
         return true;
     case Codec::Index32:
         putLe32(&r[f->at], v < 0 ? 0xFFFFFFFFu : static_cast<std::uint32_t>(v));
@@ -903,6 +904,85 @@ plug::SaveResult D878Uv2PlugEditor::save()
         std::memcpy(m_read, m_record, m_bytes);
     }
     return r;
+}
+
+namespace {
+
+// The next word of @p text as a hexadecimal number.
+bool hexWord(std::string_view &text, std::uint32_t &value)
+{
+    while (!text.empty() && text.front() == ' ') {
+        text.remove_prefix(1);
+    }
+    if (text.size() >= 2 && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) {
+        text.remove_prefix(2);
+    }
+    std::size_t n = 0;
+    value = 0;
+    for (; n < text.size() && text[n] != ' '; ++n) {
+        const char c = text[n];
+        const int digit = c >= '0' && c <= '9' ? c - '0'
+            : c >= 'a' && c <= 'f'             ? c - 'a' + 10
+            : c >= 'A' && c <= 'F'             ? c - 'A' + 10
+                                               : -1;
+        if (digit < 0 || n >= 8) {
+            return false;
+        }
+        value = value << 4 | static_cast<std::uint32_t>(digit);
+    }
+    text.remove_prefix(n);
+    return n > 0;
+}
+
+} // namespace
+
+bool D878Uv2PlugEditor::debugCommand(std::string_view text)
+{
+    std::uint32_t address = 0;
+    if (text.starts_with("peek ")) {
+        text.remove_prefix(5);
+        std::uint32_t count = 16;
+        if (!hexWord(text, address) || (!text.empty() && !hexWord(text, count)) || count == 0 || count > 0x100) {
+            log::info("plug") << "peek <address> [count up to 100], in hex";
+            return true;
+        }
+        std::uint8_t line[16];
+        for (std::uint32_t at = 0; at < count; at += sizeof line) {
+            const std::size_t n = std::min<std::size_t>(sizeof line, count - at);
+            if (!readable(m_codeplug.read(address + at, std::span(line, n)))) {
+                log::info("plug") << "peek " << lib::hex(address + at) << ": cannot read";
+                return true;
+            }
+            auto out = log::info("plug");
+            out << lib::hex(address + at) << ':';
+            for (std::size_t i = 0; i < n; ++i) {
+                out << ' ' << lib::hex(line[i], 2);
+            }
+        }
+        return true;
+    }
+    if (text.starts_with("poke ")) {
+        text.remove_prefix(5);
+        std::uint8_t bytes[32];
+        std::size_t n = 0;
+        bool ok = hexWord(text, address);
+        std::uint32_t b = 0;
+        while (ok && !text.empty() && n < sizeof bytes) {
+            ok = hexWord(text, b) && b <= 0xFF;
+            bytes[n++] = static_cast<std::uint8_t>(b);
+        }
+        if (!ok || n == 0 || !text.empty()) {
+            log::info("plug") << "poke <address> <byte>..., up to 32 bytes in hex";
+            return true;
+        }
+        const SaveResult r = m_write(address, std::span<const std::uint8_t>(bytes, n));
+        log::info("plug") << "poke " << lib::hex(address) << ", " << n << " bytes: "
+                          << (r == SaveResult::Saved         ? "written"
+                                     : r == SaveResult::Busy ? "busy, the PC is writing"
+                                                             : "refused or failed");
+        return true;
+    }
+    return false;
 }
 
 } // namespace dmm::services

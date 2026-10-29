@@ -366,6 +366,8 @@ bool radioCommand(std::string_view command)
         posted = chipCommand(radio::ChipCommand::Chip::Fm, command, 3);
     } else if (lib::startsWith(command, "bb ")) {
         posted = chipCommand(radio::ChipCommand::Chip::Baseband, command, 3);
+    } else if (lib::startsWith(command, "plug ")) {
+        posted = ui::plugCommand(command.substr(5));
     } else {
         return false;
     }
@@ -651,7 +653,7 @@ void start(Platform &p)
 {
     platform = &p;
     if (p.display != nullptr) {
-        ui::start(*p.display, p.codeplug, p.input);
+        ui::start(*p.display, p.codeplug, p.input, p.plugEditor);
     }
     if (p.input != nullptr) {
         input::start(*p.input);

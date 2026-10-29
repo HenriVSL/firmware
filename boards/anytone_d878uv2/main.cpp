@@ -327,6 +327,21 @@ void hal::boardMain()
     static dmm::services::D878Uv2Codeplug programmingCodeplug{storage};
     static dmm::services::D878Uv2CodeplugWriter codeplugWriter{storage, programmingCodeplug};
     static dmm::services::D878Uv2Programming programming{programmingCodeplug, codeplugWriter};
+    // Edits on the radio go through the same writer, never while the PC
+    // writes; the ui task's reader then forgets which copies were valid.
+    static auto writeRecord = [](std::uint32_t address, std::span<const std::uint8_t> data) {
+        using dmm::services::plug::SaveResult;
+        if (programming.active(dmm::os::nowMs())) {
+            return SaveResult::Busy;
+        }
+        const bool ok = codeplugWriter.write(address, data) && codeplugWriter.finish();
+        if (!ok) {
+            codeplugWriter.abandon();
+        }
+        codeplug.forgetCopies();
+        return ok ? SaveResult::Saved : SaveResult::Failed;
+    };
+    static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
 
     adc().start();
     static BoardInput input;
@@ -417,6 +432,7 @@ void hal::boardMain()
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .plugEditor = &plugEditor,
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,

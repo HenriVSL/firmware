@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "dmm/services/d878uv2_codeplug.h"
+#include "dmm/services/plug_editor.h"
 #include "dmm/services/storage.h"
 
 #include <cstdint>
@@ -20,6 +22,8 @@ public:
 
     dmm::services::StorageInfo info() override;
     dmm::services::StorageResult read(std::uint32_t address, std::span<std::uint8_t> data, bool physical) override;
+    /// Writes @p data at storage address @p address.
+    void write(std::uint32_t address, std::span<const std::uint8_t> data);
 
 private:
     void put(std::uint32_t address, std::uint8_t value) { m_bytes[address] = value; }
@@ -32,3 +36,8 @@ private:
     std::mutex m_lock;
     std::map<std::uint32_t, std::uint8_t> m_bytes;
 };
+
+/// Writes codeplug data where the radio's writer would leave it: into the
+/// valid copy of its block, and only within the codeplug's own blocks.
+dmm::services::plug::SaveResult writeCodeplug(SimStorage &storage, dmm::services::D878Uv2Codeplug &codeplug,
+    std::uint32_t address, std::span<const std::uint8_t> data);

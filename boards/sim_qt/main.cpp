@@ -40,6 +40,10 @@ int main(int argc, char *argv[])
     static SimAprsLink aprsLink;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{bridge->storage()};
+    static auto writeRecord = [](std::uint32_t address, std::span<const std::uint8_t> data) {
+        return writeCodeplug(SimBridge::instance()->storage(), codeplug, address, data);
+    };
+    static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
     static SimFm fm;
     static dmm::app::Platform platform{
         .leds = *bridge,
@@ -54,6 +58,7 @@ int main(int argc, char *argv[])
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .plugEditor = &plugEditor,
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,

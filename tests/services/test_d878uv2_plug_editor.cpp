@@ -233,3 +233,23 @@ TEST_CASE("settings are one record with named fields")
     CHECK(text(e, find(e, "Menu exit")) == "5 s");
     CHECK(e.fields() == find(e, "Notices") + 1 + 0x100);
 }
+
+TEST_CASE("the console pokes bytes into the codeplug through the writer")
+{
+    Plug p;
+    auto write = [&](std::uint32_t a, std::span<const std::uint8_t> d) { return p.write(a, d); };
+    D878Uv2PlugEditor e(*p.codeplug, write);
+    CHECK(e.debugCommand("peek 800000 40"));
+    CHECK(e.debugCommand("poke 0x800023 4E 65 77"));
+    const auto c = p.codeplug->channel(0);
+    REQUIRE(c.has_value());
+    CHECK(std::string(c->name) == "New 2M");
+    // Outside the codeplug's own blocks the writer refuses, and the flash
+    // stays as it was.
+    const int erases = p.chip.erases;
+    CHECK(e.debugCommand("poke 2F00000 00"));
+    CHECK(e.debugCommand("poke 0 00"));
+    CHECK(p.chip.erases == erases);
+    CHECK(e.debugCommand("poke 800023 GG"));
+    CHECK_FALSE(e.debugCommand("unknown"));
+}

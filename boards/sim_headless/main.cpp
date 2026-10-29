@@ -152,6 +152,10 @@ int main(int argc, char *argv[])
     static SimStorage storage;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{storage};
+    static auto writeRecord = [](std::uint32_t address, std::span<const std::uint8_t> data) {
+        return writeCodeplug(storage, codeplug, address, data);
+    };
+    static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
     static SimAudio audio;
     static SimFm fm;
     static SimGps gps;
@@ -171,6 +175,7 @@ int main(int argc, char *argv[])
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .plugEditor = &plugEditor,
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,

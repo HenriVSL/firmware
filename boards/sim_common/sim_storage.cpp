@@ -153,3 +153,28 @@ dmm::services::StorageResult SimStorage::read(std::uint32_t address, std::span<s
     }
     return dmm::services::StorageResult::Ok;
 }
+
+void SimStorage::write(std::uint32_t address, std::span<const std::uint8_t> data)
+{
+    std::lock_guard guard(m_lock);
+    for (std::size_t i = 0; i < data.size(); ++i) {
+        m_bytes[address + static_cast<std::uint32_t>(i)] = data[i];
+    }
+}
+
+dmm::services::plug::SaveResult writeCodeplug(SimStorage &storage, dmm::services::D878Uv2Codeplug &codeplug,
+    std::uint32_t address, std::span<const std::uint8_t> data)
+{
+    using dmm::services::plug::SaveResult;
+    bool inside = false;
+    for (const auto &r : dmm::services::D878Uv2CodeplugWriter::Ranges) {
+        inside = inside || (address >= r.first && address + data.size() <= r.end);
+    }
+    const auto at = codeplug.storageAddress(address);
+    if (!inside || !at) {
+        return SaveResult::Failed;
+    }
+    storage.write(*at, data);
+    codeplug.forgetCopies();
+    return SaveResult::Saved;
+}

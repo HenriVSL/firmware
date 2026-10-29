@@ -62,6 +62,13 @@ public:
     void revert();
     SaveResult save();
 
+    /// The console's codeplug commands, answered in the log:
+    ///   peek <address> [count]   up to 256 bytes from a codeplug address
+    ///   poke <address> <byte>... up to 32 bytes written there
+    /// Addresses and bytes are hexadecimal. A poke goes through the board's
+    /// writer like a save, so it reaches only the codeplug's own blocks.
+    bool debugCommand(std::string_view text);
+
     /// One field of a record as the tables describe it.
     struct Field;
 

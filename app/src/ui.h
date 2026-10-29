@@ -33,6 +33,10 @@ struct ShowLog
 struct ShowKeyTest
 {
 };
+/// The console's codeplug command waits in plugCommand()'s buffer.
+struct PlugCommand
+{
+};
 /// Between the key test and the log.
 struct ToggleView
 {
@@ -186,14 +190,21 @@ struct AprsProblem
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, Notice>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, Notice, PlugCommand>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.
-void start(services::Display &display, services::CodeplugSource *codeplug, const board::Input *input);
+/// @p plugEditor (may be nullptr) edits the codeplug.
+void start(services::Display &display, services::CodeplugSource *codeplug, const board::Input *input,
+    board::PlugEditor *plugEditor);
 
 /// Queues a message for the ui task; false when the queue is full or there
 /// is no display.
 bool post(const Message &message);
+
+/// Hands a console codeplug command ("peek ...", "poke ...") to the
+/// codeplug editor; false while the last one is still waiting, or without
+/// an editor.
+bool plugCommand(std::string_view text);
 
 } // namespace dmm::app::ui
