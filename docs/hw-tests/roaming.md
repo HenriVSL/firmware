@@ -6,10 +6,10 @@ zone; its talkgroup and slot stay the channel's. One channel per
 talkgroup then covers every repeater of the zone.
 
 This is basic roaming: the radio picks a repeater by trying them all and
-comparing signal strength, the way the factory firmware does. Roaming as
-the ETSI DMR standards describe it is still to come.
+comparing signal strength. Roaming as the ETSI DMR standards describe it
+is still to come.
 
-Codeplug (D878UVII format, as the vendor's software and QDMR write it):
+Codeplug (D878UVII format, as codeplug tools such as QDMR write it):
 
 - Roaming repeaters: receive and transmit frequency, colour code (or the
   channel's), name. Their time slot is not used.
