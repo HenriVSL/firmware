@@ -91,6 +91,12 @@ struct Ptt
 {
     bool down;
 };
+/// PTT down for @c ms, then up again, from the radio task itself; for
+/// console tests that must end even when the link drops while transmitting.
+struct PttFor
+{
+    std::uint16_t ms;
+};
 /// Transmit frequency for the FM channel; 0 = the receive frequency.
 struct FmTransmitFrequency
 {
@@ -203,7 +209,7 @@ struct RoamAutomatic
     bool on;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
 
 /// Starts the radio task, which owns @p fm, @p baseband and @p modem
 /// (each nullptr on a board without one) and brings them up.
