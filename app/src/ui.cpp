@@ -21,6 +21,7 @@
 #include "dmm/services/power.h"
 #include "dmm/version.h"
 
+#include <algorithm>
 #include <cstring>
 #include <iterator>
 #include <string_view>
@@ -386,11 +387,12 @@ StandbyScreen standby;
 ListPicker zonePicker;
 ListPicker menu;
 ListPicker menuValue;
-// The heard list's callsigns as last shown, and the one open on its
-// screen.
+// The heard list's callsigns as last shown, the one chosen or open on its
+// screen, and the first row on the screen.
 char heardCalls[aprs::MaxHeard][aprs::HeardStation::CallBytes + 1] = {};
 std::size_t heardShownCount = 0;
 std::size_t stationShown = 0;
+std::size_t heardTop = 0;
 
 // The screens that show a list; the roaming status screen borrows the
 // zone list's.
@@ -416,7 +418,8 @@ enum class MenuItem : std::uint8_t
     RoamStatus, // opens the roaming status screen
     Backlight,
     BacklightTime,
-    BigName, // the channel's name or the contact's, large
+    BigName,     // the channel's name or the contact's, large
+    BesidePower, // the battery voltage or the volume next to the power
     BatterySave,
     KeyLock,
     AutoLock,
@@ -457,7 +460,7 @@ constexpr GroupInfo Groups[] = {
         {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::Roaming, MenuItem::RoamZone,
             MenuItem::RoamStatus, MenuItem::FrequencyOffset},
         7},
-    {"Display", {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName}, 3},
+    {"Display", {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName, MenuItem::BesidePower}, 4},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
     {"GPS and time",
@@ -517,6 +520,8 @@ lib::StaticString<10> zoneText(int minutes)
 bool clockUtc = false;
 // A DMR channel's large name is its contact's, not the channel's own.
 bool bigContactName = false;
+// The volume next to the power instead of the battery voltage.
+bool volumeBesidePower = false;
 
 // The time @p agoS seconds ago as "14:32", or "11:32Z" in UTC; empty while
 // the clock does not know it.
@@ -985,6 +990,9 @@ void uiMain(void *)
         s.locked = keyLock.locked() || keyLock.settings().forced;
         s.entry = std::string_view(entry, entryLength);
         s.volume = volumeLevel;
+        s.volumeShown = volumeBesidePower;
+        s.millivolts = batteryState.millivolts;
+        s.batteryLow = batteryState.low;
         s.keys = quickKeys.view();
         s.gps = gpsState;
         clockNow = clockText();
@@ -1137,6 +1145,38 @@ void uiMain(void *)
             drawLogRow(d, row, when.view(), what.view(), ink);
         }
     };
+    // The APRS page: the stations heard, newest first, with the time last
+    // heard and the distance; the chosen one stands out.
+    auto drawHeard = [&] {
+        drawLogFrame(d, "APRS heard", "3/3", "Up/Down: page   Menu: open");
+        if (stationShown < heardTop) {
+            heardTop = stationShown;
+        } else if (stationShown >= heardTop + LogRows) {
+            heardTop = stationShown + 1 - LogRows;
+        }
+        const std::uint32_t now = os::nowMs();
+        for (int row = 0; row < LogRows; ++row) {
+            const std::size_t i = heardTop + static_cast<std::size_t>(row);
+            aprs::HeardStation s;
+            if (i >= heardShownCount || !aprs::heardStation(heardCalls[i], s)) {
+                const bool empty = row == 0 && heardShownCount == 0;
+                drawLogRow(d, row, {}, empty ? (aprsReceive ? "Nothing yet" : "Receive is off") : "", palette::Dim);
+                continue;
+            }
+            const std::uint32_t agoS = (now - s.heardAtMs) / 1000;
+            lib::StaticString<7> when = clockText(agoS);
+            if (when.view().empty()) {
+                when << '-' << agoS / 60 << 'm';
+            }
+            lib::StaticString<40> what;
+            what << s.call;
+            for (std::size_t n = what.size(); n < aprs::HeardStation::CallBytes + 1; ++n) {
+                what << ' ';
+            }
+            what << distanceText(gpsState, s).view();
+            drawLogRow(d, row, when.view(), what.view(), palette::Text, i == stationShown);
+        }
+    };
     // Logs an event, and shows it at once when the list is open.
     auto logEvent = [&](services::EventKind kind, std::uint32_t a = 0, std::uint32_t b = 0, unsigned value = 0,
                         bool group = false) {
@@ -1146,6 +1186,8 @@ void uiMain(void *)
             drawActivity();
         }
     };
+    // The working screen is up, not a call or transmit screen over it.
+    auto workingScreen = [&] { return view == View::Standby && !(transmitting && transmitCall) && !heard.shown; };
     auto redrawView = [&] {
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
@@ -1180,7 +1222,7 @@ void uiMain(void *)
         } else if (view == View::Heard) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
-            menuValue.draw(d, StandbyScreen::StatusH);
+            drawHeard();
         } else if (isList(view)) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1268,6 +1310,10 @@ void uiMain(void *)
         case MenuItem::BigName:
             label = "Big name";
             value << (bigContactName ? "Contact" : "Channel");
+            break;
+        case MenuItem::BesidePower:
+            label = "Next to power";
+            value << (volumeBesidePower ? "Volume" : "Voltage");
             break;
         case MenuItem::BatterySave:
             label = "Battery save";
@@ -1379,32 +1425,26 @@ void uiMain(void *)
             openGroup(MenuGroup::Gps, menuQuick);
         }
     };
-    // The heard list, newest first: callsign and age, distance on the
-    // right. The station named @p keep stays chosen.
+    // The heard list, newest first. The station named @p keep stays
+    // chosen.
     auto openHeard = [&](std::string_view keep) {
-        menuValue.open("APRS heard 3/3");
-        const std::uint32_t now = os::nowMs();
+        char kept[aprs::HeardStation::CallBytes + 1] = {};
+        keep.copy(kept, sizeof kept - 1);
         heardShownCount = 0;
+        stationShown = 0;
         aprs::HeardStation s;
         for (std::size_t i = 0; i < aprs::MaxHeard && aprs::heardStation(i, s); ++i) {
             std::memcpy(heardCalls[i], s.call, sizeof s.call);
             heardShownCount = i + 1;
-            lib::StaticString<ListPicker::TextBytes> text;
-            text << s.call;
-            for (std::size_t n = text.size(); n < aprs::HeardStation::CallBytes + 1; ++n) {
-                text << ' ';
+            if (std::string_view(kept) == s.call) {
+                stationShown = i;
             }
-            text << ageText(s.heardAtMs, now).view();
-            menuValue.add(static_cast<std::uint8_t>(i), text.view(), distanceText(gpsState, s).view());
-            if (keep == s.call) {
-                menuValue.select(static_cast<std::uint8_t>(i));
-            }
-        }
-        if (heardShownCount == 0) {
-            menuValue.add(0xFF, aprsReceive ? "Nothing yet" : "Receive is off");
         }
         view = View::Heard;
         redrawView();
+    };
+    auto reopenHeard = [&] {
+        openHeard(stationShown < heardShownCount ? std::string_view(heardCalls[stationShown]) : std::string_view());
     };
     // Page @p page under P2, counting round: calls, system, APRS heard.
     auto openLogPage = [&](int page) {
@@ -1504,6 +1544,12 @@ void uiMain(void *)
             menuValue.add(0, "Channel");
             menuValue.add(1, "Contact");
             menuValue.select(bigContactName ? 1 : 0);
+            break;
+        case MenuItem::BesidePower:
+            menuValue.open("Next to power");
+            menuValue.add(0, "Voltage");
+            menuValue.add(1, "Volume");
+            menuValue.select(volumeBesidePower ? 1 : 0);
             break;
         case MenuItem::BatterySave:
             menuValue.open("Battery save");
@@ -1704,6 +1750,9 @@ void uiMain(void *)
             break;
         case MenuItem::BigName:
             bigContactName = v == 1;
+            break;
+        case MenuItem::BesidePower:
+            volumeBesidePower = v == 1;
             break;
         case MenuItem::BatterySave:
             setBatterySave(v);
@@ -2019,8 +2068,7 @@ void uiMain(void *)
                                if (view == View::Heard) {
                                    if (step && (e.key == Key::Up || e.key == Key::Down)) {
                                        openLogPage(logPage + (e.key == Key::Up ? -1 : 1));
-                                   } else if (e.type == Type::Press && e.key == Key::Menu && menuValue.chosen() < heardShownCount) {
-                                       stationShown = menuValue.chosen();
+                                   } else if (e.type == Type::Press && e.key == Key::Menu && stationShown < heardShownCount) {
                                        show(View::Station);
                                    } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Front2)) {
                                        show(View::Standby);
@@ -2035,8 +2083,7 @@ void uiMain(void *)
                                        ++stationShown;
                                        redrawView();
                                    } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
-                                       openHeard(stationShown < heardShownCount ? std::string_view(heardCalls[stationShown])
-                                                                                : std::string_view());
+                                       reopenHeard();
                                    }
                                    return;
                                }
@@ -2180,11 +2227,11 @@ void uiMain(void *)
                                        ListPicker &list = listOf(view);
                                        list.move(moved);
                                        list.draw(d, StandbyScreen::StatusH);
-                                   } else if (view == View::Activity) {
-                                       openLogPage(logPage + (moved > 0 ? 1 : -1));
-                                   } else if (view == View::Heard) {
-                                       menuValue.move(moved);
-                                       menuValue.draw(d, StandbyScreen::StatusH);
+                                   } else if (view == View::Heard && heardShownCount > 0) {
+                                       const int last = static_cast<int>(heardShownCount) - 1;
+                                       stationShown = static_cast<std::size_t>(
+                                           std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
+                                       drawHeard();
                                    } else if (view == View::Standby) {
                                        entryLength = 0;
                                        if (channels->vfoMode()) {
@@ -2212,10 +2259,12 @@ void uiMain(void *)
                                }
                                volumeLevel = step;
                                if (changed && view == View::Standby) {
-                                   // Only what changes: the status bar's volume
-                                   // field, and the notice's number and bar once
+                                   // Only what changes: the volume next to the
+                                   // power, and the notice's number and bar once
                                    // it is up.
-                                   standby.drawVolume(d, standbyState());
+                                   if (workingScreen() && volumeBesidePower) {
+                                       standby.drawReading(d, standbyState());
+                                   }
                                    drawVolumeNotice(d, step, !(noticeShown && volumeNoticeUp));
                                    noticeShown = true;
                                    volumeNoticeUp = true;
@@ -2226,6 +2275,9 @@ void uiMain(void *)
                                batteryState = {b.millivolts, b.level, b.low};
                                if (view != View::Start && view != View::TestPattern && view != View::Message) {
                                    drawBattery(d);
+                               }
+                               if (workingScreen() && !volumeBesidePower && !noticeShown) {
+                                   standby.drawReading(d, standbyState());
                                }
                            },
                            [&](const Gps &g) {
@@ -2279,8 +2331,7 @@ void uiMain(void *)
                            },
                            [&](const AprsHeard &) {
                                if (view == View::Heard && !noticeShown) {
-                                   const std::uint8_t c = menuValue.chosen();
-                                   openHeard(c < heardShownCount ? std::string_view(heardCalls[c]) : std::string_view());
+                                   reopenHeard();
                                }
                            },
                            [&](const AprsProblem &p) {
@@ -2344,8 +2395,7 @@ void uiMain(void *)
             if (view == View::Station) {
                 redrawView();
             } else {
-                const std::uint8_t c = menuValue.chosen();
-                openHeard(c < heardShownCount ? std::string_view(heardCalls[c]) : std::string_view());
+                reopenHeard();
             }
         }
         // The status bar's clock moves on each minute.

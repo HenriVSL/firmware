@@ -55,6 +55,11 @@ struct StandbyState
     std::string_view note;
     /// Volume step 0..15, or -1 when unknown.
     int volume = -1;
+    /// The battery voltage, 0 while unknown, and whether it is low.
+    int millivolts = 0;
+    bool batteryLow = false;
+    /// The volume next to the power instead of the battery voltage.
+    bool volumeShown = false;
     GpsState gps;
     /// The time, "14:32" local or "11:32Z" UTC, or empty while it is
     /// unknown.
@@ -112,7 +117,7 @@ struct TransmitInfo
 };
 
 /// The radio's main screen: a status strip, the talkgroup or channel large
-/// with the time, frequency and slot, power and volume, details, and a bar
+/// with the time, frequency and slot, power and voltage, details, and a bar
 /// naming the quick keys. Calls and transmissions take the whole screen.
 class StandbyScreen
 {
@@ -135,8 +140,9 @@ public:
     void drawTransmit(services::Display &d, const StandbyState &s, const TransmitInfo &t);
     /// Only the transmit screen's running time.
     void drawTransmitTime(services::Display &d, const TransmitInfo &t);
-    /// Only the working screen's volume, in place.
-    void drawVolume(services::Display &d, const StandbyState &s);
+    /// Only the working screen's volume or battery voltage next to the
+    /// power, in place.
+    void drawReading(services::Display &d, const StandbyState &s);
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
 };
@@ -147,8 +153,10 @@ public:
 inline constexpr int LogRowH = 11;
 inline constexpr int LogRows = 8;
 void drawLogFrame(services::Display &d, std::string_view title, std::string_view note, std::string_view hint);
-/// Row @p row of the list, 0 at the top; empty texts clear it.
-void drawLogRow(services::Display &d, int row, std::string_view time, std::string_view text, services::Color ink);
+/// Row @p row of the list, 0 at the top; empty texts clear it. A selected
+/// row stands out.
+void drawLogRow(services::Display &d, int row, std::string_view time, std::string_view text, services::Color ink,
+    bool selected = false);
 
 /// The GPS screen: the receiver's state, position, altitude, satellites,
 /// speed and UTC time, between the status bar and a hint bar. @p full
