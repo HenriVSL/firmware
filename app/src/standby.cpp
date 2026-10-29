@@ -215,15 +215,23 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
                                                                                         : p::Rule);
 }
 
-void StandbyScreen::drawVolume(Display &d, const StandbyState &s)
+void StandbyScreen::drawReading(Display &d, const StandbyState &s)
 {
-    lib::StaticString<4> v;
-    if (s.volume >= 0) {
-        v << s.volume;
+    lib::StaticString<8> v;
+    Color ink = p::Text;
+    if (s.volumeShown) {
+        if (s.volume >= 0) {
+            v << s.volume;
+        }
+        ink = s.volume == 0 ? p::Warn : p::Text;
+    } else if (s.millivolts > 0) {
+        const int cv = (s.millivolts + 5) / 10;
+        v << cv / 100 << '.' << lib::zeroPadded(static_cast<std::uint32_t>(cv % 100), 2) << 'V';
+        ink = s.batteryLow ? p::Transmit : p::Text;
     }
     band(d, SettingsY, InfoY - SettingsY - 1,
-        {{RightX, SettingsY + 5, "VOL", &Small, p::Dim},
-            {RightX + 22, SettingsY + 3, v.view(), &Body, s.volume == 0 ? p::Warn : p::Text}},
+        {{RightX, SettingsY + 5, s.volumeShown ? "VOL" : "BAT", &Small, p::Dim},
+            {RightX + 22, SettingsY + 3, v.view(), &Body, ink}},
         p::Ground, RightX);
 }
 
@@ -304,12 +312,12 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
             {RightX + 24, PanelY + 8, slotNote.view(), &Small, p::Dim}},
         palette::Panel);
 
-    // Power and volume on one line.
+    // Power, and the battery voltage or the volume, on one line.
     band(d, SettingsY, InfoY - SettingsY - 1,
         {{4, SettingsY + 5, c ? "PWR" : "", &Small, p::Dim},
             {26, SettingsY + 3, c ? std::string_view(powerText(c->power)) : std::string_view{}, &Body, p::Text}},
         p::Ground, 0, RightX);
-    drawVolume(d, s);
+    drawReading(d, s);
     d.fillRect(0, InfoY - 1, w, 1, p::Rule);
 
     // Details: the repeater a roaming channel works through; the channel
@@ -461,10 +469,12 @@ void drawLogFrame(Display &d, std::string_view title, std::string_view note, std
         {{3, h - StandbyScreen::HintH + 2, hint, &Small, p::Dim}});
 }
 
-void drawLogRow(Display &d, int row, std::string_view time, std::string_view text, Color ink)
+void drawLogRow(Display &d, int row, std::string_view time, std::string_view text, Color ink, bool selected)
 {
     const int y = LogTop + row * LogRowH;
-    band(d, y, LogRowH, {{4, y + 1, time, &Small, p::Rule}, {34, y + 1, cut(text, 25), &Small, ink}});
+    band(d, y, LogRowH,
+        {{4, y + 1, time, &Small, selected ? p::Dim : p::Rule}, {34, y + 1, cut(text, 25), &Small, ink}},
+        selected ? p::Rule : p::Ground);
 }
 
 void drawGpsScreen(Display &d, const GpsState &gps, bool full)
