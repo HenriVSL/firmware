@@ -31,6 +31,9 @@ ChannelLinks channelLinks(std::span<const std::uint8_t, 64> record);
 /// Decodes the start of the D878UVII general settings block (at least 0xC0
 /// bytes; the roaming settings need 0xE8).
 CodeplugSettings decodeSettings(std::span<const std::uint8_t> block);
+/// Adds what the extended general settings block holds (at least 0x40
+/// bytes): the GPS satellite systems.
+void decodeSettingsExtension(std::span<const std::uint8_t> block, CodeplugSettings &settings);
 
 /// Decodes the D878UVII APRS settings block (at least 0xCC bytes) and its
 /// separate comment text; nothing without a valid callsign.

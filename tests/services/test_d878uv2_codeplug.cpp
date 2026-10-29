@@ -106,6 +106,21 @@ TEST_CASE("plus offset, simplex, digital, custom tone and bad records")
     CHECK_FALSE(dmm::services::decodeChannel(r).has_value());
 }
 
+TEST_CASE("the extended settings give the GPS satellite systems")
+{
+    std::vector<std::uint8_t> e(0x40, 0);
+    dmm::services::CodeplugSettings s;
+    e[0x35] = 4; // GPS and GLONASS
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 5);
+    e[0x35] = 6; // all three
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 7);
+    e[0x35] = 9; // out of range: GPS and BeiDou
+    dmm::services::decodeSettingsExtension(e, s);
+    CHECK(s.gpsSystems == 3);
+}
+
 TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlight")
 {
     std::vector<std::uint8_t> b(0x100, 0);
@@ -119,7 +134,6 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     b[0x20] = 7;
     b[0x27] = 7;  // backlight 1 min
     b[0x28] = 1;  // GPS on
-    b[0x35] = 4;  // GPS and GLONASS
     b[0x30] = 30; // UTC+3:00
     b[0x57] = 1;  // voice enhancement
     b[0x2C] = 1;
@@ -142,21 +156,18 @@ TEST_CASE("settings: squelch, zones, timeout, key lock, battery save and backlig
     CHECK(s.batterySave == 2);
     CHECK(s.backlightS == 60);
     CHECK(s.gps);
-    CHECK(s.gpsSystems == 5);
     CHECK(s.timeZoneMinutes == 180);
     CHECK(s.voiceEnhancement);
     b[0x02] = 0;
     b[0x0B] = 7;  // out of range: on
     b[0x27] = 99; // out of range: always on
     b[0x28] = 0;
-    b[0x35] = 9; // out of range: GPS and BeiDou
     b[0x30] = 7; // UTC-8:30
     b[0xBE] = 0x10;
     const auto t = dmm::services::decodeSettings(b);
     CHECK(t.batterySave == 1);
     CHECK(t.backlightS == 0);
     CHECK_FALSE(t.gps);
-    CHECK(t.gpsSystems == 3);
     CHECK(t.timeZoneMinutes == -510);
     CHECK(t.keyLock.autoLockMs == 0);
     CHECK(t.keyLock.forced);
