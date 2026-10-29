@@ -168,8 +168,14 @@ struct RoamingSetup
 struct RoamStatus
 {
 };
+/// Moving to a better repeater by itself on or off for this session,
+/// whatever the codeplug says; for tests.
+struct RoamAutomatic
+{
+    bool on;
+};
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, RoamingSetup, RoamStatus, BatterySave, BatterySaveStatus, VoiceEnhancement>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement>;
 
 /// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
 /// board without one) and brings them up.
@@ -208,6 +214,7 @@ struct RoamingView
     bool roaming = false; // a roaming channel is in use
     bool searching = false;
     int site = -1; // the repeater in use, -1 for none
+    services::roaming::Health health = services::roaming::Health::Unknown;
     std::uint8_t count = 0;
     services::roaming::HeardList::Entry entries[services::roaming::HeardList::Capacity];
     std::uint32_t receiveHz[services::roaming::HeardList::Capacity] = {};
