@@ -193,8 +193,8 @@ int main(int argc, char *argv[])
                 const auto key = static_cast<dmm::services::Key>(i);
                 const std::string_view n = input.keyLabel(key);
                 if (name.compare(QString::fromUtf8(n.data(), static_cast<qsizetype>(n.size())), Qt::CaseInsensitive) == 0) {
-                    QTimer::singleShot(at, &app, [key] { input.setKey(key, true); });
-                    QTimer::singleShot(at + 150, &app, [key] { input.setKey(key, false); });
+                    QTimer::singleShot(at, Qt::PreciseTimer, &app, [key] { input.setKey(key, true); });
+                    QTimer::singleShot(at + 150, Qt::PreciseTimer, &app, [key] { input.setKey(key, false); });
                     break;
                 }
             }
