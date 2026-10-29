@@ -9,6 +9,7 @@ path = [
     "AGENTS.md",
     "ARCHITECTURE.md",
     "CREDITS.md",
+    "CONTRIBUTORS.md",
     "docs/**",
     "CMakePresets.json",
     ".clang-format",
