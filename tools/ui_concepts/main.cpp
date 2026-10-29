@@ -287,6 +287,134 @@ void utility(ImageDisplay &d, State s)
     text(d, Small, 4, 118, "MENU:OPTS  P1:ZONE  P2:CH", dim, g);
 }
 
+// --- Second round: one working screen, call screens in the clean style,
+// the activity list behind a key, and a screen saver. ---
+
+// What the status strip shows: time (local or UTC) and battery on the
+// ends; in between only marks that matter now.
+struct Strip
+{
+    const char *time = "14:32";
+    bool aprs = false;      // beacons go out by themselves
+    bool gpsSearch = false; // on, but no fix yet
+};
+
+void strip(ImageDisplay &d, const Strip &st)
+{
+    text(d, Small, 4, 2, st.time, p::Dim, p::Ground);
+    right(d, Small, 156, 2, "7.9V", p::Dim, p::Ground);
+    int x = 64;
+    if (st.gpsSearch) {
+        text(d, Small, x, 2, "GPS..", p::Warn, p::Ground);
+        x += 32;
+    }
+    if (st.aprs) {
+        text(d, Small, x, 2, "APRS", p::Beacon, p::Ground);
+    }
+    hline(d, 0, 11, 160, p::Rule);
+}
+
+void label(ImageDisplay &d, int x, int y, std::string_view l, std::string_view v, Color ink, Color bg)
+{
+    text(d, Small, x, y + 3, l, p::Dim, bg);
+    text(d, Body, x + width(Small, l) + 4, y, v, ink, bg);
+}
+
+// The working screen.
+void home(ImageDisplay &d, const Strip &st)
+{
+    d.fillRect(0, 0, 160, 128, p::Ground);
+    strip(d, st);
+    // The talkgroup, as large as fits, its name beside it.
+    text(d, Small, 4, 16, "TALKGROUP", p::Dim, p::Ground);
+    right(d, Small, 156, 16, "DMR  3/13", p::Rule, p::Ground);
+    text(d, Large, 4, 27, "TG 244", p::Text, p::Ground);
+    text(d, Body, 84, 38, "Finland", p::Dim, p::Ground);
+    hline(d, 0, 55, 160, p::Rule);
+    // Frequency and slot.
+    d.fillRect(0, 56, 160, 22, p::Panel);
+    label(d, 4, 61, "MHz", "438.2125", p::Text, p::Panel);
+    text(d, Body, 102, 61, "TS1", p::Text, p::Panel);
+    text(d, Small, 126, 64, "CC1", p::Dim, p::Panel);
+    // Power and volume on one line.
+    label(d, 4, 84, "PWR", "LOW", p::Text, p::Ground);
+    label(d, 102, 84, "VOL", "8", p::Text, p::Ground);
+    hline(d, 0, 99, 160, p::Rule);
+    text(d, Small, 4, 104, "via repeater 2   -78 dBm", p::Dim, p::Ground);
+    text(d, Small, 4, 118, "MENU   P1 ZONE   P2 LOG", p::Rule, p::Ground);
+}
+
+// A call coming in: who, how long; green only where it says so.
+void receiving(ImageDisplay &d, const Strip &st)
+{
+    d.fillRect(0, 0, 160, 128, p::Ground);
+    strip(d, st);
+    d.fillRect(0, 12, 160, 2, p::Receive);
+    centre(d, Small, 18, "RECEIVING  TG 244", p::Receive, p::Ground);
+    centre(d, Large, 30, "N0CALL", p::Text, p::Ground);
+    centre(d, Body, 57, "Test Operator", p::Dim, p::Ground);
+    centre(d, Small, 72, "ID 2440001", p::Rule, p::Ground);
+    centre(d, Medium, 86, "0:07", p::Text, p::Ground);
+    hline(d, 0, 112, 160, p::Rule);
+    text(d, Small, 4, 117, "TS1   438.2125", p::Dim, p::Ground);
+}
+
+// On the air: which talkgroup, how long; red only where it says so.
+void transmitting(ImageDisplay &d, const Strip &st)
+{
+    d.fillRect(0, 0, 160, 128, p::Ground);
+    strip(d, st);
+    d.fillRect(0, 12, 160, 2, p::Transmit);
+    centre(d, Small, 18, "TRANSMITTING", p::Transmit, p::Ground);
+    centre(d, Large, 32, "TG 244", p::Text, p::Ground);
+    centre(d, Body, 59, "Finland", p::Dim, p::Ground);
+    centre(d, Medium, 82, "0:04", p::Text, p::Ground);
+    hline(d, 0, 112, 160, p::Rule);
+    text(d, Small, 4, 117, "TS1   POWER LOW", p::Dim, p::Ground);
+}
+
+// The activity list, opened with a key.
+void log(ImageDisplay &d, const Strip &st)
+{
+    d.fillRect(0, 0, 160, 128, p::Ground);
+    strip(d, st);
+    text(d, Body, 4, 15, "Activity", p::Text, p::Ground);
+    right(d, Small, 156, 18, "newest first", p::Rule, p::Ground);
+    struct Row
+    {
+        const char *time;
+        const char *what;
+        Color ink;
+    };
+    const Row rows[] = {
+        {"14:31", "RX N0CALL  TG244  12s", p::Receive},
+        {"14:30", "ROAM rep 2  -78", p::Text},
+        {"14:28", "APRS beacon sent", p::Beacon},
+        {"14:25", "TX TG244  4s", p::Transmit},
+        {"14:22", "GPS fix", p::Dim},
+        {"14:20", "ROAM rep 1 lost", p::Warn},
+        {"14:18", "RX N1TEST  TG91  31s", p::Receive},
+        {"14:12", "TX TG91  6s", p::Transmit},
+    };
+    for (int i = 0; i < 8; ++i) {
+        const int y = 30 + i * 11;
+        text(d, Small, 4, y, rows[i].time, p::Rule, p::Ground);
+        text(d, Small, 34, y, rows[i].what, rows[i].ink, p::Ground);
+    }
+    hline(d, 0, 118, 160, p::Rule);
+    text(d, Small, 4, 120, "KNOB SCROLL   P2 BACK", p::Rule, p::Ground);
+}
+
+// After a while idle: big time, the talkgroup, the battery, dim.
+void saver(ImageDisplay &d, const Strip &)
+{
+    d.fillRect(0, 0, 160, 128, p::Ground);
+    centre(d, Large, 34, "14:32", p::Dim, p::Ground);
+    centre(d, Small, 62, "1132Z", p::Rule, p::Ground);
+    centre(d, Body, 82, "TG 244 Finland", p::Dim, p::Ground);
+    centre(d, Small, 112, "7.9V", p::Rule, p::Ground);
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -312,6 +440,27 @@ int main(int argc, char **argv)
             d.save(file);
             std::printf("%s\n", file.toLocal8Bit().constData());
         }
+    }
+    struct Screen
+    {
+        const char *name;
+        void (*draw)(ImageDisplay &, const Strip &);
+        Strip strip;
+    };
+    const Screen screens[] = {
+        {"e-home", home, {}},
+        {"e-home-marks", home, {"1132Z", true, true}},
+        {"f-receiving", receiving, {}},
+        {"g-transmitting", transmitting, {}},
+        {"h-log", log, {}},
+        {"i-saver", saver, {}},
+    };
+    for (const Screen &sc : screens) {
+        ImageDisplay d;
+        sc.draw(d, sc.strip);
+        const QString file = QStringLiteral("%1/%2.png").arg(out, QString::fromLatin1(sc.name));
+        d.save(file);
+        std::printf("%s\n", file.toLocal8Bit().constData());
     }
     return 0;
 }
