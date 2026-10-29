@@ -202,6 +202,10 @@ void start(services::Display &display, services::CodeplugSource *codeplug, const
 /// is no display.
 bool post(const Message &message);
 
+/// True once after a codeplug change that the radio reads only at start:
+/// the radio should restart.
+bool takeRestart();
+
 /// Hands a console codeplug command ("peek ...", "poke ...") to the
 /// codeplug editor; false while the last one is still waiting, or without
 /// an editor.

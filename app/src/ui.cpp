@@ -35,7 +35,7 @@ using namespace services;
 using services::log::Level;
 namespace log = services::log;
 
-os::Task<768> uiTask;
+os::Task<1024> uiTask;
 os::Queue<Message, 16> inbox;
 // The codeplug editor, and a console command waiting for it.
 board::PlugEditor *plugEditor = nullptr;
@@ -393,6 +393,12 @@ enum class View : std::uint8_t
     Heard,      // APRS stations heard, from the menu
     Station,    // one heard station
     Activity,   // what happened lately, from P2
+    PlugList,   // a codeplug book's records, or a record to link to
+    PlugEdit,   // one record's fields
+    PlugValue,  // one field's value, chosen
+    PlugDigits, // a frequency or a number, typed
+    PlugText,   // a name or a text, typed
+    PlugSave,   // what changed, before saving
     Log,
     KeyTest,
     Message,
@@ -414,7 +420,8 @@ std::size_t heardTop = 0;
 // zone list's.
 bool isList(View v)
 {
-    return v == View::ZonePicker || v == View::RoamStatus || v == View::Menu || v == View::MenuValue;
+    return v == View::ZonePicker || v == View::RoamStatus || v == View::Menu || v == View::MenuValue ||
+        (v >= View::PlugList && v <= View::PlugSave);
 }
 ListPicker &listOf(View v)
 {
@@ -448,6 +455,17 @@ enum class MenuItem : std::uint8_t
     AprsBeacon,
     AprsPower,
     AprsReceive,
+    PlugChannels, // the codeplug's books, each opens its list
+    PlugZones,
+    PlugContacts,
+    PlugGroups,
+    PlugRepeaters,
+    PlugRoamZones,
+    PlugRadioIds,
+    PlugSettings,
+    PlugMoreSettings,
+    PlugAprs,
+    PlugAprsText,
     ToolLog,  // opens the log
     ToolKeys, // opens the key test
     Version,
@@ -462,6 +480,7 @@ enum class MenuGroup : std::uint8_t
     Roaming,
     Position,
     Radio,
+    Codeplug,
     Tools,
     Count,
 };
@@ -471,7 +490,7 @@ struct GroupInfo
     // Two lines about the group for the menu's panel.
     const char *about1;
     const char *about2;
-    MenuItem items[10];
+    MenuItem items[11];
     std::uint8_t count;
 };
 constexpr GroupInfo Groups[] = {
@@ -488,6 +507,11 @@ constexpr GroupInfo Groups[] = {
             MenuItem::AutoLock, MenuItem::BatterySave, MenuItem::ClockZone, MenuItem::ClockShown,
             MenuItem::ClockCalibration},
         10},
+    {"Codeplug", "Every record and value", "of the codeplug, edited",
+        {MenuItem::PlugChannels, MenuItem::PlugZones, MenuItem::PlugContacts, MenuItem::PlugGroups,
+            MenuItem::PlugRepeaters, MenuItem::PlugRoamZones, MenuItem::PlugRadioIds, MenuItem::PlugSettings,
+            MenuItem::PlugMoreSettings, MenuItem::PlugAprs, MenuItem::PlugAprsText},
+        11},
     {"Tools", "The log, the key test", "and the version", {MenuItem::ToolLog, MenuItem::ToolKeys, MenuItem::Version},
         3},
 };
@@ -549,6 +573,28 @@ ItemAbout itemAbout(MenuItem item)
         return {"Transmit power of the", "APRS beacons"};
     case MenuItem::AprsReceive:
         return {"Listen for APRS stations", "(heard list under P2)"};
+    case MenuItem::PlugChannels:
+        return {"Every channel: names,", "frequencies, DMR, tones"};
+    case MenuItem::PlugZones:
+        return {"Zone names", ""};
+    case MenuItem::PlugContacts:
+        return {"Contact names", "and numbers"};
+    case MenuItem::PlugGroups:
+        return {"Receive group lists", ""};
+    case MenuItem::PlugRepeaters:
+        return {"The roaming zones'", "repeaters"};
+    case MenuItem::PlugRoamZones:
+        return {"Roaming zone names", ""};
+    case MenuItem::PlugRadioIds:
+        return {"The radio's own DMR IDs", ""};
+    case MenuItem::PlugSettings:
+        return {"The radio's settings;", "saving restarts it"};
+    case MenuItem::PlugMoreSettings:
+        return {"Further settings: GPS;", "saving restarts it"};
+    case MenuItem::PlugAprs:
+        return {"APRS station and beacon;", "saving restarts it"};
+    case MenuItem::PlugAprsText:
+        return {"The text sent with the", "position; restarts"};
     case MenuItem::ToolLog:
         return {"The radio's log; hold", "Exit for the next screen"};
     case MenuItem::ToolKeys:
@@ -565,6 +611,41 @@ bool menuAtGroups = true;
 std::uint8_t menuRow = 0;
 // The value in use when a value screen opened.
 std::size_t menuValueInUse = 0;
+
+// The codeplug editor's screens: the book listed, the record chosen in it
+// and its place among those in use, the field chosen in the open record,
+// and the value or text being chosen for it.
+using plug::Book;
+Book plugBook = Book::Channels;
+std::ptrdiff_t plugRecord = -1;
+std::size_t plugPlace = 0;
+std::size_t plugCount = 0;
+std::size_t plugField = 0;
+std::size_t plugSaveRow = 0;
+// Choosing a record for a link field, rather than opening one.
+bool plugPicking = false;
+std::int32_t plugValue = 0;
+char plugTyped[plug::TextBytes] = {};
+std::size_t plugTypedLength = 0;
+std::size_t plugCursor = 0;
+// Letters typed by pressing a key again and again.
+Key plugLastKey = Key::Count;
+os::Ticks plugLastTap = 0;
+std::size_t plugTap = 0;
+bool plugUpper = true;
+// Texts for the rows and panels, off the ui task's stack.
+char plugTexts[16][plug::TextBytes] = {};
+// A saved record that the radio reads only at start: restart.
+std::atomic<bool> restartWanted{false};
+constexpr const char *BookNames[] = {"Channels", "Zones", "Contacts", "RX groups", "Repeaters", "Roam zones",
+    "Radio IDs", "Settings", "More settings", "APRS", "APRS text"};
+static_assert(std::size(BookNames) == static_cast<std::size_t>(Book::Count));
+// The letters on each digit key, and the characters the knob steps through.
+constexpr const char *KeyLetters[] = {" 0", ".,-_/1", "abc2", "def3", "ghi4", "jkl5", "mno6", "pqrs7", "tuv8",
+    "wxyz9"};
+constexpr std::string_view KnobChars =
+    " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-_/()*#+:@!?";
+constexpr os::Ticks TapMs = 1200;
 // The items were opened straight from the standby screen: leaving them
 // returns there.
 bool menuQuick = false;
@@ -1406,6 +1487,19 @@ void uiMain(void *)
             label = "APRS receive";
             value << (aprsReceive ? "On" : "Off");
             break;
+        case MenuItem::PlugChannels:
+        case MenuItem::PlugZones:
+        case MenuItem::PlugContacts:
+        case MenuItem::PlugGroups:
+        case MenuItem::PlugRepeaters:
+        case MenuItem::PlugRoamZones:
+        case MenuItem::PlugRadioIds:
+        case MenuItem::PlugSettings:
+        case MenuItem::PlugMoreSettings:
+        case MenuItem::PlugAprs:
+        case MenuItem::PlugAprsText:
+            label = BookNames[static_cast<int>(item) - static_cast<int>(MenuItem::PlugChannels)];
+            break;
         case MenuItem::ToolLog:
             label = "Log";
             break;
@@ -1422,7 +1516,7 @@ void uiMain(void *)
     // Whether Menu on @p item opens a screen of its own rather than values.
     auto itemOpens = [](MenuItem item) {
         return item == MenuItem::RoamStatus || item == MenuItem::GpsStatus || item == MenuItem::ToolLog ||
-            item == MenuItem::ToolKeys;
+            item == MenuItem::ToolKeys || (item >= MenuItem::PlugChannels && item <= MenuItem::PlugAprsText);
     };
     // The menu as it stands: the groups, or one group's items with their
     // values, five rows around the chosen one and a panel about it; the
@@ -1515,6 +1609,236 @@ void uiMain(void *)
     };
     // The working screen is up, not a call or transmit screen over it.
     auto workingScreen = [&] { return view == View::Standby && !(transmitting && transmitCall) && !heard.shown; };
+    // The codeplug editor's screens. Their texts live in plugTexts.
+    auto plugText = [](std::size_t k) { return plug::Text(plugTexts[k], plug::TextBytes); };
+    auto plugView = [](std::size_t k) { return std::string_view(plugTexts[k]); };
+    auto plugStrip = [&] {
+        standby.drawStatus(d, standbyState());
+        drawBattery(d);
+    };
+    // A book's records around the chosen one, or the records a link field
+    // may point to.
+    auto drawPlugList = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        std::ptrdiff_t first = plugRecord;
+        int chosen = 0;
+        while (chosen < ListPicker::Rows / 2) {
+            const std::ptrdiff_t before = first > 0 ? plugEditor->nearest(plugBook, first - 1, -1) : -1;
+            if (before < 0) {
+                break;
+            }
+            first = before;
+            ++chosen;
+        }
+        MenuRow rows[ListPicker::Rows];
+        int n = 0;
+        for (std::ptrdiff_t i = first; i >= 0 && n < ListPicker::Rows; i = plugEditor->nearest(plugBook, i + 1, 1)) {
+            plugEditor->title(plugBook, static_cast<std::size_t>(i), plugText(n));
+            lib::TextWriter w(std::span(plugTexts[ListPicker::Rows + n], plug::TextBytes - 1));
+            w << '#' << i + 1;
+            plugTexts[ListPicker::Rows + n][w.size()] = '\0';
+            rows[n] = {plugView(n), plugView(ListPicker::Rows + n)};
+            ++n;
+        }
+        lib::StaticString<32> title;
+        if (plugPicking) {
+            plugEditor->label(plugField, plugText(15));
+            title << plugView(15);
+        } else {
+            title << BookNames[static_cast<int>(plugBook)];
+        }
+        drawListScreen(d, title.view(), plugPlace, plugCount, rows, n, chosen,
+            plugPicking ? "Menu: pick  #: none  Exit: back" : "Menu: open   Exit: back");
+    };
+    // The open record's fields, five around the chosen one, with a panel
+    // saying what the chosen one takes, or what it was before a change.
+    auto drawPlugEdit = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        const std::size_t count = plugEditor->fields();
+        std::size_t first = 0;
+        if (count > static_cast<std::size_t>(MenuRows) && plugField > MenuRows / 2) {
+            first = std::min<std::size_t>(plugField - MenuRows / 2, count - MenuRows);
+        }
+        MenuRow rows[MenuRows];
+        int n = 0;
+        for (; n < MenuRows && first + static_cast<std::size_t>(n) < count; ++n) {
+            const std::size_t i = first + static_cast<std::size_t>(n);
+            plugEditor->label(i, plugText(n));
+            plugEditor->show(i, plugText(MenuRows + n));
+            rows[n] = {plugView(n), plugView(MenuRows + n), false, plugEditor->changed(i)};
+        }
+        const plug::FieldInfo f = plugEditor->field(plugField);
+        lib::StaticString<40> about1;
+        lib::StaticString<40> about2;
+        about1 << f.page;
+        if (f.readOnly) {
+            about1 << ", read only";
+        }
+        if (plugEditor->changed(plugField)) {
+            plugEditor->show(plugField, plugText(12), true);
+            about2 << "Was " << plugView(12);
+        } else {
+            switch (f.kind) {
+            case plug::FieldKind::Choice:
+                about2 << plugEditor->choices(plugField) << " choices";
+                break;
+            case plug::FieldKind::Number:
+                plugEditor->showValue(plugField, f.min, plugText(12));
+                plugEditor->showValue(plugField, f.max, plugText(13));
+                about2 << plugView(12) << " to " << plugView(13);
+                break;
+            case plug::FieldKind::Frequency:
+                about2 << "MHz, from the keypad";
+                break;
+            case plug::FieldKind::Text:
+                about2 << "Up to " << f.maxChars << " letters";
+                break;
+            case plug::FieldKind::Link:
+                about2 << "One of the " << BookNames[static_cast<int>(f.link)];
+                break;
+            case plug::FieldKind::Byte:
+                about2 << "A byte of the record";
+                break;
+            }
+        }
+        plugEditor->title(plugEditor->book(), plugEditor->index(), plugText(14));
+        lib::StaticString<24> title;
+        title << plugView(14);
+        if (plugEditor->changes() > 0) {
+            title << '*';
+        }
+        drawMenuScreen(d, title.view(), plugField, count, rows, n, static_cast<int>(plugField - first), about1.view(),
+            about2.view(), "Menu: edit P2: page Exit: done");
+    };
+    // How many values the chosen field steps through on the value screen,
+    // and where a value is among them.
+    auto plugSteps = [&](const plug::FieldInfo &f) -> std::size_t {
+        return f.kind == plug::FieldKind::Choice ? plugEditor->choices(plugField)
+                                                 : static_cast<std::size_t>((f.max - f.min) / f.step + 1);
+    };
+    auto drawPlugValue = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        const plug::FieldInfo f = plugEditor->field(plugField);
+        const std::size_t count = plugSteps(f);
+        const auto index = static_cast<std::size_t>((plugValue - f.min) / f.step);
+        plugEditor->label(plugField, plugText(15));
+        constexpr std::string_view Hint = "Menu: set   Exit: back";
+        if (f.kind == plug::FieldKind::Choice && count <= 4) {
+            std::string_view labels[4];
+            for (std::size_t k = 0; k < count; ++k) {
+                plugEditor->showValue(plugField, static_cast<std::int32_t>(k), plugText(k));
+                labels[k] = plugView(k);
+            }
+            drawValueButtons(d, plugView(15), labels, count, index,
+                static_cast<std::size_t>(plugEditor->value(plugField)), Hint);
+            return;
+        }
+        plugEditor->showValue(plugField, plugValue, plugText(0));
+        plugEditor->show(plugField, plugText(1));
+        drawValueSpinner(d, plugView(15), plugView(0), index, count, plugView(1),
+            plugValue == plugEditor->value(plugField), Hint);
+    };
+    // A frequency shows as MHz with five decimals; a number as its digits.
+    auto plugDigitsText = [&](lib::StaticString<16> &out) -> std::size_t {
+        const bool frequency = plugEditor->field(plugField).kind == plug::FieldKind::Frequency;
+        if (!frequency) {
+            if (plugTypedLength > 0) {
+                out << std::string_view(plugTyped, plugTypedLength);
+            } else {
+                out << plugValue;
+            }
+            return plugTypedLength > 0 ? plugTypedLength : 0;
+        }
+        lib::StaticString<12> digits;
+        digits << lib::zeroPadded(static_cast<std::uint32_t>(std::max<std::int32_t>(plugValue, 0) / 10), 8);
+        for (std::size_t k = 0; k < 8; ++k) {
+            if (k == 3) {
+                out << '.';
+            }
+            out << (k < plugTypedLength ? plugTyped[k] : digits.view()[k]);
+        }
+        return plugTypedLength + (plugTypedLength > 3 ? 1 : 0);
+    };
+    auto drawPlugDigits = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        const bool frequency = plugEditor->field(plugField).kind == plug::FieldKind::Frequency;
+        lib::StaticString<16> text;
+        const std::size_t typed = plugDigitsText(text);
+        plugEditor->label(plugField, plugText(15));
+        drawDigitsEntry(d, plugView(15), text.view(), typed, frequency ? "MHz" : "",
+            frequency ? "Knob: 12.5 kHz steps" : "Knob: one up or down", "*: delete a digit",
+            "0-9  *: delete  Menu: set");
+    };
+    auto drawPlugText = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        const plug::FieldInfo f = plugEditor->field(plugField);
+        std::string_view letters;
+        if (plugLastKey >= Key::Digit0 && plugLastKey <= Key::Digit9) {
+            const char *set = KeyLetters[static_cast<int>(plugLastKey) - static_cast<int>(Key::Digit0)];
+            std::size_t k = 0;
+            for (; set[k] != '\0'; ++k) {
+                const char c = set[k];
+                plugTexts[15][k] = plugUpper && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+            }
+            plugTexts[15][k] = '\0';
+            letters = plugView(15);
+        }
+        plugEditor->label(plugField, plugText(14));
+        drawTextEntry(d, plugView(14), std::string_view(plugTyped, plugTypedLength),
+            std::min<std::size_t>(plugCursor, f.maxChars - 1), f.maxChars, letters, plugTap,
+            plugUpper ? "#: ABC *: del Menu: set" : "#: abc *: del Menu: set");
+    };
+    // The changed fields with their new values; the panel shows the chosen
+    // one's old value.
+    auto plugChanged = [&](std::size_t k) -> std::ptrdiff_t {
+        for (std::size_t i = 0; i < plugEditor->fields(); ++i) {
+            if (plugEditor->listed(i) && k-- == 0) {
+                return static_cast<std::ptrdiff_t>(i);
+            }
+        }
+        return -1;
+    };
+    auto drawPlugSave = [&](bool strip = true) {
+        if (strip) {
+            plugStrip();
+        }
+        const std::size_t count = plugEditor->changes();
+        plugSaveRow = std::min(plugSaveRow, count > 0 ? count - 1 : 0);
+        std::size_t first = 0;
+        if (count > static_cast<std::size_t>(MenuRows) && plugSaveRow > MenuRows / 2) {
+            first = std::min<std::size_t>(plugSaveRow - MenuRows / 2, count - MenuRows);
+        }
+        MenuRow rows[MenuRows];
+        int n = 0;
+        for (; n < MenuRows && first + static_cast<std::size_t>(n) < count; ++n) {
+            const std::ptrdiff_t i = plugChanged(first + static_cast<std::size_t>(n));
+            plugEditor->label(static_cast<std::size_t>(i), plugText(n));
+            plugEditor->show(static_cast<std::size_t>(i), plugText(MenuRows + n));
+            rows[n] = {plugView(n), plugView(MenuRows + n), false, true};
+        }
+        lib::StaticString<40> was;
+        if (const std::ptrdiff_t i = plugChanged(plugSaveRow); i >= 0) {
+            plugEditor->show(static_cast<std::size_t>(i), plugText(12), true);
+            was << "Was " << plugView(12);
+        }
+        lib::StaticString<24> changes;
+        changes << count << (count == 1 ? " change" : " changes");
+        plugEditor->title(plugEditor->book(), plugEditor->index(), plugText(14));
+        lib::StaticString<24> title;
+        title << "Save " << plugView(14) << '?';
+        drawMenuScreen(d, title.view(), plugSaveRow, count, rows, n, static_cast<int>(plugSaveRow - first), was.view(),
+            changes.view(), "Menu: save Exit: edit #: drop");
+    };
     auto redrawView = [&] {
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
@@ -1554,6 +1878,18 @@ void uiMain(void *)
             drawMenu();
         } else if (view == View::MenuValue) {
             drawMenuValue();
+        } else if (view == View::PlugList) {
+            drawPlugList();
+        } else if (view == View::PlugEdit) {
+            drawPlugEdit();
+        } else if (view == View::PlugValue) {
+            drawPlugValue();
+        } else if (view == View::PlugDigits) {
+            drawPlugDigits();
+        } else if (view == View::PlugText) {
+            drawPlugText();
+        } else if (view == View::PlugSave) {
+            drawPlugSave();
         } else if (isList(view)) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1645,6 +1981,360 @@ void uiMain(void *)
             openHeard({});
         } else {
             show(View::Activity);
+        }
+    };
+    auto useChannel = [&] {
+        if (channels == nullptr || !channels->current()) {
+            return;
+        }
+        const Channel &c = *channels->current();
+        static std::uint32_t groups[CodeplugSource::MaxReceiveGroups];
+        std::size_t n = 0;
+        if (c.digital() && c.dmr.groupList != services::dmr::ChannelSettings::NoGroupList && codeplug != nullptr) {
+            n = codeplug->receiveGroups(c.dmr.groupList, groups);
+        }
+        radio::setReceiveGroups(std::span(groups, n));
+        heard.shown = false;
+        radio::post(radio::UseChannel{c, channels->squelch()});
+        if (view == View::Standby) {
+            redrawView();
+        }
+    };
+    // The codeplug editor: books, records, fields.
+    auto plugPlaceOf = [&](Book book, std::ptrdiff_t record) {
+        std::size_t place = 0;
+        for (std::ptrdiff_t i = plugEditor->nearest(book, 0, 1); i >= 0 && i < record;
+            i = plugEditor->nearest(book, i + 1, 1)) {
+            ++place;
+        }
+        return place;
+    };
+    // The list of @p book's records, from @p record or the first in use.
+    auto openPlugList = [&](Book book, std::ptrdiff_t record) {
+        plugBook = book;
+        plugCount = plugEditor->count(book);
+        plugRecord = record >= 0 && plugEditor->inUse(book, static_cast<std::size_t>(record))
+            ? record
+            : plugEditor->nearest(book, 0, 1);
+        plugPlace = plugRecord >= 0 ? plugPlaceOf(book, plugRecord) : 0;
+        if (plugRecord < 0) {
+            plugPicking = false;
+            notice("None in the codeplug");
+            return false;
+        }
+        view = View::PlugList;
+        redrawView();
+        return true;
+    };
+    auto openPlugRecord = [&](Book book, std::size_t record) {
+        if (!plugEditor->open(book, record)) {
+            notice("Cannot read it");
+            return;
+        }
+        plugField = 0;
+        view = View::PlugEdit;
+        redrawView();
+    };
+    auto openPlugBook = [&](Book book) {
+        if (plugEditor == nullptr) {
+            notice("No codeplug editor");
+            return;
+        }
+        plugPicking = false;
+        if (plugEditor->capacity(book) == 1) {
+            openPlugRecord(book, 0);
+        } else {
+            openPlugList(book, -1);
+        }
+    };
+    // Leaves the open record: back to its book's list, or to the menu for a
+    // record that stands alone.
+    auto closePlugRecord = [&] {
+        const Book book = plugEditor->book();
+        const std::size_t record = plugEditor->index();
+        plugEditor->close();
+        if (plugEditor->capacity(book) == 1 || !openPlugList(book, static_cast<std::ptrdiff_t>(record))) {
+            openGroup(MenuGroup::Codeplug, false);
+        }
+    };
+    // Menu on a field: its value screen, the keypad, the letters, or the
+    // list of records it may point to.
+    auto editPlugField = [&] {
+        const plug::FieldInfo f = plugEditor->field(plugField);
+        if (f.readOnly) {
+            notice("Read only");
+            return;
+        }
+        plugValue = plugEditor->value(plugField);
+        plugTypedLength = 0;
+        switch (f.kind) {
+        case plug::FieldKind::Choice:
+        case plug::FieldKind::Byte:
+            view = View::PlugValue;
+            break;
+        case plug::FieldKind::Number:
+            view = (f.max - f.min) / f.step > 1000 ? View::PlugDigits : View::PlugValue;
+            plugValue = std::clamp(plugValue, f.min, f.max);
+            break;
+        case plug::FieldKind::Frequency:
+            view = View::PlugDigits;
+            break;
+        case plug::FieldKind::Text:
+            plugEditor->show(plugField, plug::Text(plugTyped, plug::TextBytes));
+            plugTypedLength = std::strlen(plugTyped);
+            plugCursor = plugTypedLength;
+            plugLastKey = Key::Count;
+            plugTap = 0;
+            plugUpper = true;
+            view = View::PlugText;
+            break;
+        case plug::FieldKind::Link:
+            plugPicking = true;
+            if (!openPlugList(f.link, plugValue)) {
+                return;
+            }
+            return;
+        }
+        redrawView();
+    };
+    // A page further on (+1) or back (-1): the first field of the next page,
+    // or of this one and then the one before.
+    auto plugPage = [&](int direction) {
+        const std::size_t count = plugEditor->fields();
+        const std::string_view page = plugEditor->field(plugField).page;
+        std::size_t i = plugField;
+        if (direction > 0) {
+            while (i + 1 < count && plugEditor->field(i).page == page) {
+                ++i;
+            }
+        } else {
+            while (i > 0 && plugEditor->field(i - 1).page == page) {
+                --i;
+            }
+            if (i == plugField && i > 0) {
+                const std::string_view before = plugEditor->field(i - 1).page;
+                while (i > 0 && plugEditor->field(i - 1).page == before) {
+                    --i;
+                }
+            }
+        }
+        plugField = i;
+        drawPlugEdit(false);
+    };
+    auto savePlugRecord = [&] {
+        const Book book = plugEditor->book();
+        switch (plugEditor->save()) {
+        case plug::SaveResult::Saved:
+            log::info("ui") << "codeplug: saved " << BookNames[static_cast<int>(book)] << ' '
+                            << plugEditor->index() + 1;
+            if (book >= Book::Settings) {
+                notice("Saved: restarting");
+                restartWanted.store(true);
+                return;
+            }
+            if (channels != nullptr && (book == Book::Channels || book == Book::Zones)) {
+                channels->reload();
+                useChannel();
+            }
+            notice("Saved");
+            closePlugRecord();
+            return;
+        case plug::SaveResult::Unchanged:
+            closePlugRecord();
+            return;
+        case plug::SaveResult::Busy:
+            notice("The PC is writing");
+            return;
+        case plug::SaveResult::Failed:
+            notice("Save failed");
+            return;
+        }
+    };
+    // The keys on the codeplug editor's screens.
+    auto plugKey = [&](Key key, bool press, bool step) {
+        const bool digit = key >= Key::Digit0 && key <= Key::Digit9;
+        const int up = key == Key::Up ? 1 : key == Key::Down ? -1
+                                                             : 0;
+        switch (view) {
+        case View::PlugList:
+            if (step && up != 0) {
+                const std::ptrdiff_t next = plugEditor->nearest(plugBook, plugRecord - up, -up);
+                if (next >= 0) {
+                    plugRecord = next;
+                    plugPlace = up < 0 ? plugPlace + 1 : plugPlace - 1;
+                    drawPlugList(false);
+                }
+            } else if (press && key == Key::Menu && plugPicking) {
+                plugPicking = false;
+                plugEditor->setValue(plugField, static_cast<std::int32_t>(plugRecord));
+                show(View::PlugEdit);
+            } else if (press && key == Key::Hash && plugPicking && plugEditor->field(plugField).min < 0) {
+                plugPicking = false;
+                plugEditor->setValue(plugField, -1);
+                show(View::PlugEdit);
+            } else if (press && key == Key::Menu) {
+                openPlugRecord(plugBook, static_cast<std::size_t>(plugRecord));
+            } else if (press && key == Key::Exit) {
+                if (plugPicking) {
+                    plugPicking = false;
+                    show(View::PlugEdit);
+                } else {
+                    openGroup(MenuGroup::Codeplug, false);
+                }
+            }
+            return;
+        case View::PlugEdit:
+            if (step && up != 0) {
+                const std::size_t count = plugEditor->fields();
+                plugField = up < 0 ? (plugField + 1 < count ? plugField + 1 : plugField)
+                                   : (plugField > 0 ? plugField - 1 : 0);
+                drawPlugEdit(false);
+            } else if (press && (key == Key::Front1 || key == Key::Front2)) {
+                plugPage(key == Key::Front2 ? 1 : -1);
+            } else if (press && key == Key::Menu) {
+                editPlugField();
+            } else if (press && key == Key::Exit) {
+                if (plugEditor->changes() > 0) {
+                    plugSaveRow = 0;
+                    show(View::PlugSave);
+                } else {
+                    closePlugRecord();
+                }
+            }
+            return;
+        case View::PlugValue: {
+            const plug::FieldInfo f = plugEditor->field(plugField);
+            const bool buttons = f.kind == plug::FieldKind::Choice && plugSteps(f) <= 4;
+            if (step && up != 0) {
+                const int steps = static_cast<int>(plugSteps(f));
+                const int at = static_cast<int>((plugValue - f.min) / f.step);
+                const int to = ((at + (buttons ? -up : up)) % steps + steps) % steps;
+                plugValue = f.min + to * f.step;
+                drawPlugValue(false);
+            } else if (press && key == Key::Menu) {
+                plugEditor->setValue(plugField, plugValue);
+                show(View::PlugEdit);
+            } else if (press && key == Key::Exit) {
+                show(View::PlugEdit);
+            }
+            return;
+        }
+        case View::PlugDigits: {
+            const bool frequency = plugEditor->field(plugField).kind == plug::FieldKind::Frequency;
+            if (press && digit && plugTypedLength < 8) {
+                plugTyped[plugTypedLength++] = static_cast<char>('0' + static_cast<int>(key));
+                drawPlugDigits(false);
+            } else if (press && key == Key::Star && plugTypedLength > 0) {
+                --plugTypedLength;
+                drawPlugDigits(false);
+            } else if (step && up != 0) {
+                plugTypedLength = 0;
+                plugValue += up * (frequency ? 12'500 : 1);
+                drawPlugDigits(false);
+            } else if (press && key == Key::Menu) {
+                lib::StaticString<16> text;
+                plugDigitsText(text);
+                std::int32_t v = 0;
+                for (const char c : text.view()) {
+                    if (c >= '0' && c <= '9') {
+                        v = v * 10 + (c - '0');
+                    }
+                }
+                plugEditor->setValue(plugField, frequency ? v * 10 : v);
+                show(View::PlugEdit);
+            } else if (press && key == Key::Exit) {
+                show(View::PlugEdit);
+            }
+            return;
+        }
+        case View::PlugText: {
+            const std::size_t max = plugEditor->field(plugField).maxChars;
+            const os::Ticks now = os::nowMs();
+            if (press && digit) {
+                const std::string_view set = KeyLetters[static_cast<int>(key)];
+                const bool again = key == plugLastKey && now - plugLastTap < TapMs && plugCursor > 0;
+                plugTap = again ? (plugTap + 1) % set.size() : 0;
+                char c = set[plugTap];
+                if (plugUpper && c >= 'a' && c <= 'z') {
+                    c = static_cast<char>(c - 'a' + 'A');
+                }
+                if (again) {
+                    plugTyped[plugCursor - 1] = c;
+                } else if (plugCursor < max) {
+                    plugTyped[plugCursor++] = c;
+                    plugTypedLength = std::max(plugTypedLength, plugCursor);
+                }
+                plugLastKey = key;
+                plugLastTap = now;
+                drawPlugText(false);
+                return;
+            }
+            plugLastKey = Key::Count;
+            if (press && key == Key::Star && plugCursor > 0) {
+                std::memmove(&plugTyped[plugCursor - 1], &plugTyped[plugCursor], plugTypedLength - plugCursor);
+                --plugCursor;
+                --plugTypedLength;
+                drawPlugText(false);
+            } else if (press && key == Key::Hash) {
+                plugUpper = !plugUpper;
+                drawPlugText(false);
+            } else if (step && up != 0) {
+                if (up > 0 && plugCursor > 0) {
+                    --plugCursor;
+                } else if (up < 0 && plugCursor < plugTypedLength && plugCursor + 1 < max) {
+                    ++plugCursor;
+                }
+                drawPlugText(false);
+            } else if (press && key == Key::Menu) {
+                plugEditor->setText(plugField, std::string_view(plugTyped, plugTypedLength));
+                show(View::PlugEdit);
+            } else if (press && key == Key::Exit) {
+                show(View::PlugEdit);
+            }
+            return;
+        }
+        case View::PlugSave:
+            if (step && up != 0) {
+                const std::size_t count = plugEditor->changes();
+                plugSaveRow = up < 0 ? (plugSaveRow + 1 < count ? plugSaveRow + 1 : plugSaveRow)
+                                     : (plugSaveRow > 0 ? plugSaveRow - 1 : 0);
+                drawPlugSave(false);
+            } else if (press && key == Key::Menu) {
+                savePlugRecord();
+            } else if (press && key == Key::Hash) {
+                plugEditor->revert();
+                notice("Changes dropped");
+                closePlugRecord();
+            } else if (press && key == Key::Exit) {
+                show(View::PlugEdit);
+            }
+            return;
+        default:
+            return;
+        }
+    };
+    // The knob on the editor's screens: rows, values and letters.
+    auto plugKnob = [&](int moved) {
+        if (view == View::PlugText) {
+            const std::size_t max = plugEditor->field(plugField).maxChars;
+            plugLastKey = Key::Count;
+            if (plugCursor >= max) {
+                return;
+            }
+            if (plugCursor == plugTypedLength) {
+                plugTyped[plugTypedLength++] = ' ';
+            }
+            const std::size_t at = KnobChars.find(plugTyped[plugCursor]);
+            const int n = static_cast<int>(KnobChars.size());
+            const int to = ((at == std::string_view::npos ? 0 : static_cast<int>(at)) + moved % n + n) % n;
+            plugTyped[plugCursor] = KnobChars[static_cast<std::size_t>(to)];
+            drawPlugText(false);
+            return;
+        }
+        const Key key = moved > 0 ? (view == View::PlugValue || view == View::PlugDigits ? Key::Up : Key::Down)
+                                  : (view == View::PlugValue || view == View::PlugDigits ? Key::Down : Key::Up);
+        for (int k = 0; k < (moved > 0 ? moved : -moved); ++k) {
+            plugKey(key, false, true);
         }
     };
     auto openMenuValue = [&](MenuItem item) {
@@ -1836,6 +2526,19 @@ void uiMain(void *)
             aprs::post(aprs::BeaconNow{});
             notice("Beacon queued");
             return;
+        case MenuItem::PlugChannels:
+        case MenuItem::PlugZones:
+        case MenuItem::PlugContacts:
+        case MenuItem::PlugGroups:
+        case MenuItem::PlugRepeaters:
+        case MenuItem::PlugRoamZones:
+        case MenuItem::PlugRadioIds:
+        case MenuItem::PlugSettings:
+        case MenuItem::PlugMoreSettings:
+        case MenuItem::PlugAprs:
+        case MenuItem::PlugAprsText:
+            openPlugBook(static_cast<Book>(static_cast<int>(item) - static_cast<int>(MenuItem::PlugChannels)));
+            return;
         case MenuItem::ToolLog:
             show(View::Log);
             return;
@@ -1873,23 +2576,6 @@ void uiMain(void *)
             const std::uint8_t cursor = menuValue.chosen();
             openMenuValue(MenuItem::ClockCalibration);
             menuValue.select(cursor);
-            redrawView();
-        }
-    };
-    auto useChannel = [&] {
-        if (channels == nullptr || !channels->current()) {
-            return;
-        }
-        const Channel &c = *channels->current();
-        static std::uint32_t groups[CodeplugSource::MaxReceiveGroups];
-        std::size_t n = 0;
-        if (c.digital() && c.dmr.groupList != services::dmr::ChannelSettings::NoGroupList && codeplug != nullptr) {
-            n = codeplug->receiveGroups(c.dmr.groupList, groups);
-        }
-        radio::setReceiveGroups(std::span(groups, n));
-        heard.shown = false;
-        radio::post(radio::UseChannel{c, channels->squelch()});
-        if (view == View::Standby) {
             redrawView();
         }
     };
@@ -2018,6 +2704,17 @@ void uiMain(void *)
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
+        case MenuItem::PlugChannels:
+        case MenuItem::PlugZones:
+        case MenuItem::PlugContacts:
+        case MenuItem::PlugGroups:
+        case MenuItem::PlugRepeaters:
+        case MenuItem::PlugRoamZones:
+        case MenuItem::PlugRadioIds:
+        case MenuItem::PlugSettings:
+        case MenuItem::PlugMoreSettings:
+        case MenuItem::PlugAprs:
+        case MenuItem::PlugAprsText:
         case MenuItem::ToolLog:
         case MenuItem::ToolKeys:
         case MenuItem::Version:
@@ -2042,6 +2739,10 @@ void uiMain(void *)
         using Type = KeyDebouncer::EventType;
         const bool press = type == Type::Press;
         const bool step = press || type == Type::Repeat;
+        if (view >= View::PlugList && view <= View::PlugSave) {
+            plugKey(key, press, step);
+            return;
+        }
         if (view == View::Menu || view == View::MenuValue) {
             if (step && (key == Key::Up || key == Key::Down)) {
                 if (view == View::Menu) {
@@ -2441,7 +3142,9 @@ void uiMain(void *)
                                keyTest.setClicks(c.clicks);
                                refreshValues();
                                if (channels != nullptr && moved != 0) {
-                                   if (view == View::Menu) {
+                                   if (view >= View::PlugList && view <= View::PlugSave) {
+                                       plugKnob(static_cast<int>(moved));
+                                   } else if (view == View::Menu) {
                                        moveMenu(moved);
                                    } else if (view == View::MenuValue) {
                                        menuValue.move(moved);
@@ -2696,6 +3399,11 @@ bool post(const Message &message)
         return false;
     }
     return inbox.send(message);
+}
+
+bool takeRestart()
+{
+    return restartWanted.exchange(false);
 }
 
 bool plugCommand(std::string_view text)

@@ -637,6 +637,11 @@ void linkMain(void *)
         }
         // In program mode the PC waits for each answer: look often.
         const bool programming = platform->programming != nullptr && platform->programming->active(os::nowMs());
+        if (ui::takeRestart()) {
+            log::info("ui") << "codeplug edited on the radio: restarting";
+            flushLog();
+            platform->system.restart();
+        }
         if (platform->programming != nullptr && platform->programming->takeCodeplugChanged()) {
             log::info("programming") << "codeplug written from the PC: restarting";
             flushLog();

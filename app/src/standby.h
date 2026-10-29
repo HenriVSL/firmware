@@ -220,7 +220,14 @@ struct MenuRow
     std::string_view label;
     std::string_view value;
     bool opens = false;
+    /// The value differs from what was read: drawn in amber.
+    bool changed = false;
 };
+/// A screen of up to ListPicker::Rows @p rows with @p chosen inverted, under
+/// a title band with @p title and the place @p index of @p count, and a
+/// hint bar.
+void drawListScreen(services::Display &d, std::string_view title, std::size_t index, std::size_t count,
+    const MenuRow *rows, int rowCount, int chosen, std::string_view hint);
 inline constexpr int MenuRows = 5;
 /// The menu: a title band with @p title and the place @p index of
 /// @p count, up to MenuRows @p rows with @p chosen inverted, a panel of two
@@ -234,5 +241,22 @@ void drawValueButtons(services::Display &d, const ListPicker &values, std::size_
 /// One value of many, large between arrows, with its place on a scale and
 /// the value in use under it.
 void drawValueSpinner(services::Display &d, const ListPicker &values, std::size_t inUse, std::string_view hint);
+/// The same from texts: up to four @p labels as buttons.
+void drawValueButtons(services::Display &d, std::string_view title, const std::string_view *labels, std::size_t count,
+    std::size_t chosen, std::size_t inUse, std::string_view hint);
+/// The same from texts: @p value, its place @p index of @p count, and the
+/// value in use as text (empty: none shown).
+void drawValueSpinner(services::Display &d, std::string_view title, std::string_view value, std::size_t index,
+    std::size_t count, std::string_view inUse, bool atInUse, std::string_view hint);
+/// Digits typed on the keypad over a value: @p text is the whole value as
+/// shown, its first @p typed characters typed, then @p unit; a cursor under
+/// the next character, and two lines of notes.
+void drawDigitsEntry(services::Display &d, std::string_view title, std::string_view text, std::size_t typed,
+    std::string_view unit, std::string_view note1, std::string_view note2, std::string_view hint);
+/// A text typed letter by letter: @p text with a cursor on character
+/// @p cursor, and the letters of the key last pressed with @p chosen of
+/// them lifted.
+void drawTextEntry(services::Display &d, std::string_view title, std::string_view text, std::size_t cursor,
+    std::size_t maxChars, std::string_view letters, std::size_t chosen, std::string_view hint);
 
 } // namespace dmm::app::ui
