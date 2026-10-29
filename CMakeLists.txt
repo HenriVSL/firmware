@@ -11,7 +11,7 @@ project(deltamm
 # number counts from the upstream version named here and starts again at 1
 # when that version changes.
 set(DMM_FORK_BASE 0.20.3)
-set(DMM_FORK_RELEASE 7)
+set(DMM_FORK_RELEASE 8)
 if(NOT PROJECT_VERSION VERSION_EQUAL DMM_FORK_BASE)
     message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}, the fork's release number counts from "
                         "${DMM_FORK_BASE}: set DMM_FORK_BASE to ${PROJECT_VERSION} and DMM_FORK_RELEASE to 1.")
