@@ -420,6 +420,7 @@ void takeStation()
         return;
     }
     station = s;
+    power = s->power;
     intervalS = s->beaconIntervalS;
     nextBeaconAt = os::nowMs() + static_cast<os::Ticks>(intervalS) * 1000;
     setGpsNeed(static_cast<std::uint32_t>(intervalS) * 1000);

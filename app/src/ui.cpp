@@ -858,6 +858,7 @@ void uiMain(void *)
             timeZoneMinutes = selector.settings().timeZoneMinutes;
             if (const auto a = codeplug->aprsSettings()) {
                 beaconIntervalS = a->beaconIntervalS;
+                beaconPower = a->power;
                 aprsStation = a->callsign[0] != '\0';
                 aprs::setStation(*a);
             }
