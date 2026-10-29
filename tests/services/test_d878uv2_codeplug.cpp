@@ -469,11 +469,11 @@ TEST_CASE("a roaming zone's repeaters, in the zone's order")
         std::memcpy(&r[0x0A], name, std::strlen(name));
         chip.put(0x01040000 + index * 0x20, r);
     };
-    // 434.5000 MHz out, 432.5000 MHz in, 10 Hz steps.
-    repeater(0, {0x43, 0x45, 0x00, 0x00, 0x43, 0x25, 0x00, 0x00}, 16, "SITE A");
-    repeater(1, {0x43, 0x45, 0x12, 0x50, 0x43, 0x25, 0x12, 0x50}, 3, "SITE B");
-    repeater(2, {0x43, 0x45, 0x25, 0x00, 0x43, 0x25, 0x25, 0x00}, 1, "UNUSED");
-    repeater(3, {0x00, 0x00, 0x00, 0x00, 0x43, 0x25, 0x37, 0x50}, 1, "NO RX");
+    // 438.2000 MHz out, 430.6000 MHz in, 10 Hz steps.
+    repeater(0, {0x43, 0x82, 0x00, 0x00, 0x43, 0x06, 0x00, 0x00}, 16, "SITE A");
+    repeater(1, {0x43, 0x82, 0x12, 0x50, 0x43, 0x06, 0x12, 0x50}, 3, "SITE B");
+    repeater(2, {0x43, 0x82, 0x25, 0x00, 0x43, 0x06, 0x25, 0x00}, 1, "UNUSED");
+    repeater(3, {0x00, 0x00, 0x00, 0x00, 0x43, 0x06, 0x37, 0x50}, 1, "NO RX");
     // Zone 1 in use: repeaters 1, 2 (not in use), 3 (no frequency), 0.
     chip.put(0x01042080, {0x02, 0, 0, 0, 0, 0, 0, 0}); // the whole bitmap, as written
     std::vector<std::uint8_t> zone(0x80, 0xFF);
@@ -491,11 +491,11 @@ TEST_CASE("a roaming zone's repeaters, in the zone's order")
 
     std::array<RoamingSite, 8> sites{};
     REQUIRE(cp.roamingSites(1, sites) == 2);
-    CHECK(sites[0].receiveHz == 434'512'500);
-    CHECK(sites[0].transmitHz == 432'512'500);
+    CHECK(sites[0].receiveHz == 438'212'500);
+    CHECK(sites[0].transmitHz == 430'612'500);
     CHECK(sites[0].colourCode == 3);
-    CHECK(sites[1].receiveHz == 434'500'000);
-    CHECK(sites[1].transmitHz == 432'500'000);
+    CHECK(sites[1].receiveHz == 438'200'000);
+    CHECK(sites[1].transmitHz == 430'600'000);
     CHECK(sites[1].colourCode == RoamingSite::ChannelColourCode);
     std::array<char, D878Uv2Codeplug::SiteNameBytes + 1> name{};
     REQUIRE(cp.roamingSiteName(1, 0, name));
