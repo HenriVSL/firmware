@@ -761,7 +761,8 @@ void drawHintBar(Display &d, std::string_view hint)
     band(d, h - StandbyScreen::HintH + 1, StandbyScreen::HintH - 1, {{3, h - StandbyScreen::HintH + 2, hint, &Small, p::Dim}});
 }
 
-// A scroll bar at the right edge when @p count rows do not fit in @p shown.
+// A scroll bar at the right edge when @p count rows do not fit in @p shown;
+// the track and the bar are painted side by side, never one over the other.
 void drawScrollBar(Display &d, int top, int h, std::size_t first, int shown, std::size_t count)
 {
     const int x = d.width() - 3;
@@ -772,20 +773,20 @@ void drawScrollBar(Display &d, int top, int h, std::size_t first, int shown, std
     const int barH = std::max(4, h * shown / static_cast<int>(count));
     const int barY = top + (h - barH) * static_cast<int>(first) / (static_cast<int>(count) - shown);
     d.fillRect(x, top, 1, h, p::Ground);
-    d.fillRect(x + 1, top, 2, h, palette::Panel);
+    fillArea(d, x + 1, top, 2, barY - top, palette::Panel);
     d.fillRect(x + 1, barY, 2, barH, p::Dim);
+    fillArea(d, x + 1, barY + barH, 2, top + h - barY - barH, palette::Panel);
 }
 
 // A list row: the text on the left, the value right-aligned, inverted when
-// chosen.
+// chosen; drawn in place.
 void drawListRow(Display &d, int y, int right, std::string_view text, std::string_view value, bool on)
 {
     const Color fill = on ? p::Text : p::Ground;
-    d.fillRect(0, y, right, ListRowH, fill);
-    drawText(d, Body, 6, y + 1, text, on ? p::Ground : p::Text, fill);
-    if (!value.empty()) {
-        drawText(d, Body, right - 4 - textWidth(Body, value), y + 1, value, on ? p::Ground : p::Dim, fill);
-    }
+    band(d, y, ListRowH,
+        {{6, y + 1, text, &Body, on ? p::Ground : p::Text},
+            {right - 4 - textWidth(Body, value), y + 1, value, &Body, on ? p::Ground : p::Dim}},
+        fill, 0, right);
 }
 
 std::size_t firstShown(std::size_t cursor, std::size_t count, int rows)
@@ -852,25 +853,31 @@ void drawValueButtons(Display &d, const ListPicker &values, std::size_t inUse, s
     const int top = StandbyScreen::StatusH;
     drawTitleBand(d, top, values.title(), 0, 0);
     const int bodyTop = top + TitleH;
-    const int bodyH = d.height() - StandbyScreen::HintH - bodyTop;
-    d.fillRect(0, bodyTop, w, bodyH, p::Ground);
+    const int bodyEnd = d.height() - StandbyScreen::HintH;
     constexpr int ButtonH = 20;
     constexpr int Pitch = 22;
+    constexpr int Margin = 20;
     const int n = static_cast<int>(values.size());
-    const int y0 = bodyTop + (bodyH - n * Pitch + (Pitch - ButtonH)) / 2;
+    const int y0 = bodyTop + (bodyEnd - bodyTop - n * Pitch + (Pitch - ButtonH)) / 2;
+    // Each button in place, the ground around it painted once.
+    fillArea(d, 0, bodyTop, w, y0 - bodyTop, p::Ground);
     for (int i = 0; i < n; ++i) {
         const int y = y0 + i * Pitch;
         const bool on = static_cast<std::size_t>(i) == values.cursor();
         const Color fill = on ? p::Text : palette::Panel;
-        d.fillRect(20, y, w - 40, ButtonH, fill);
         const std::string_view label = values.text(static_cast<std::size_t>(i));
-        const Font &f = textWidth(Medium, label) <= w - 60 ? Medium : Body;
-        drawText(d, f, (w - textWidth(f, label)) / 2, y + (ButtonH - f.height) / 2, label, on ? p::Ground : p::Text,
-            fill);
-        if (static_cast<std::size_t>(i) == inUse) {
-            drawText(d, Body, w - 32, y + (ButtonH - Body.height) / 2, "*", on ? p::Ground : p::Dim, fill);
-        }
+        const Font &f = textWidth(Medium, label) <= w - 3 * Margin ? Medium : Body;
+        d.fillRect(0, y, Margin, ButtonH, p::Ground);
+        band(d, y, ButtonH,
+            {{(w - textWidth(f, label)) / 2, y + (ButtonH - f.height) / 2, label, &f, on ? p::Ground : p::Text},
+                {w - 32, y + (ButtonH - Body.height) / 2, static_cast<std::size_t>(i) == inUse ? "*" : "", &Body,
+                    on ? p::Ground : p::Dim}},
+            fill, Margin, w - Margin);
+        d.fillRect(w - Margin, y, Margin, ButtonH, p::Ground);
+        fillArea(d, 0, y + ButtonH, w, (i + 1 < n ? Pitch : 0) - ButtonH, p::Ground);
     }
+    const int end = y0 + (n - 1) * Pitch + ButtonH;
+    fillArea(d, 0, end, w, bodyEnd - end, p::Ground);
     drawHintBar(d, hint);
 }
 
@@ -880,37 +887,59 @@ void drawValueSpinner(Display &d, const ListPicker &values, std::size_t inUse, s
     const int top = StandbyScreen::StatusH;
     drawTitleBand(d, top, values.title(), values.cursor(), values.size());
     const int bodyTop = top + TitleH;
-    const int bodyH = d.height() - StandbyScreen::HintH - bodyTop;
-    d.fillRect(0, bodyTop, w, bodyH, p::Ground);
-    // The value, as large as it fits between the arrows.
+    const int bodyEnd = d.height() - StandbyScreen::HintH;
+    // The value, as large as it fits between the arrows, in one band.
     const std::string_view value = values.text(values.cursor());
     const int room = w - 2 * 22;
     const Font &f = textWidth(Large, value) <= room ? Large : textWidth(Medium, value) <= room ? Medium
                                                                                                : Body;
-    const int valueY = bodyTop + 12 + (Large.height - f.height) / 2;
-    drawText(d, Large, 6, bodyTop + 12, "<", p::Dim, p::Ground);
-    drawText(d, Large, w - 6 - Large.width, bodyTop + 12, ">", p::Dim, p::Ground);
-    drawText(d, f, (w - textWidth(f, value)) / 2, valueY, value, p::Text, p::Ground);
+    const int arrowY = bodyTop + 10;
+    band(d, bodyTop, 40,
+        {{6, arrowY, "<", &Large, p::Dim},
+            {(w - textWidth(f, value)) / 2, arrowY + (Large.height - f.height) / 2, value, &f, p::Text},
+            {w - 6 - Large.width, arrowY, ">", &Large, p::Dim}});
     // The place on a scale: a step per value while they fit, else a marker
-    // on a track.
-    const int scaleY = bodyTop + 46;
+    // on a track. Every pixel of the row is painted once.
+    const int scaleY = bodyTop + 44;
+    constexpr int ScaleH = 8;
+    constexpr int Margin = 20;
+    fillArea(d, 0, bodyTop + 40, w, scaleY - bodyTop - 40, p::Ground);
     const int n = static_cast<int>(values.size());
     const int at = static_cast<int>(values.cursor());
+    d.fillRect(0, scaleY, Margin, ScaleH, p::Ground);
     if (n <= 16) {
-        const int pitch = (w - 40) / n;
+        const int pitch = (w - 2 * Margin) / n;
         for (int i = 0; i < n; ++i) {
-            d.fillRect(20 + i * pitch, scaleY, pitch - 2, 8, i <= at ? p::Text : palette::Panel);
+            const int x = Margin + i * pitch;
+            d.fillRect(x, scaleY, pitch - 2, ScaleH, i <= at ? p::Text : palette::Panel);
+            d.fillRect(x + pitch - 2, scaleY, 2, ScaleH, p::Ground);
         }
+        const int end = Margin + n * pitch;
+        fillArea(d, end, scaleY, w - end, ScaleH, p::Ground);
     } else {
-        d.fillRect(20, scaleY + 3, w - 40, 2, palette::Panel);
-        d.fillRect(20 + (w - 46) * at / (n - 1), scaleY, 6, 8, p::Text);
+        constexpr int MarkW = 6;
+        const int trackW = w - 2 * Margin;
+        const int mark = Margin + (trackW - MarkW) * at / (n - 1);
+        // Left of the marker, the marker, right of it: ground above and
+        // below a two-pixel track.
+        for (const auto [x0, x1] : {std::pair{Margin, mark}, std::pair{mark + MarkW, Margin + trackW}}) {
+            fillArea(d, x0, scaleY, x1 - x0, 3, p::Ground);
+            fillArea(d, x0, scaleY + 3, x1 - x0, 2, palette::Panel);
+            fillArea(d, x0, scaleY + 5, x1 - x0, ScaleH - 5, p::Ground);
+        }
+        d.fillRect(mark, scaleY, MarkW, ScaleH, p::Text);
+        d.fillRect(Margin + trackW, scaleY, w - Margin - trackW, ScaleH, p::Ground);
     }
+    // The value in use, then ground down to the hint bar.
+    const int wasY = scaleY + ScaleH + 8;
+    fillArea(d, 0, scaleY + ScaleH, w, wasY - scaleY - ScaleH, p::Ground);
+    lib::StaticString<24> was;
     if (inUse < values.size()) {
-        lib::StaticString<24> was;
         was << "In use: " << values.text(inUse);
-        drawText(d, Body, (w - textWidth(Body, was.view())) / 2, scaleY + 18, was.view(),
-            inUse == values.cursor() ? p::Rule : p::Dim, p::Ground);
     }
+    band(d, wasY, Body.height,
+        {{(w - textWidth(Body, was.view())) / 2, wasY, was.view(), &Body, inUse == values.cursor() ? p::Rule : p::Dim}});
+    fillArea(d, 0, wasY + Body.height, w, bodyEnd - wasY - Body.height, p::Ground);
     drawHintBar(d, hint);
 }
 

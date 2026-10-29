@@ -1420,8 +1420,9 @@ void uiMain(void *)
             item == MenuItem::ToolKeys;
     };
     // The menu as it stands: the groups, or one group's items with their
-    // values, five rows around the chosen one and a panel about it.
-    auto drawMenu = [&] {
+    // values, five rows around the chosen one and a panel about it; the
+    // status strip too unless only the cursor moved.
+    auto drawMenu = [&](bool strip = true) {
         const GroupInfo &g = Groups[static_cast<int>(menuGroup)];
         const std::size_t count = menuAtGroups ? std::size(Groups) : g.count;
         if (menuRow >= count) {
@@ -1474,22 +1475,26 @@ void uiMain(void *)
         } else {
             title << "Menu > " << g.name;
         }
-        standby.drawStatus(d, standbyState());
-        drawBattery(d);
+        if (strip) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+        }
         drawMenuScreen(d, title.view(), menuRow, count, rows, shown, static_cast<int>(menuRow - first), about1,
             about2, hint);
     };
     auto moveMenu = [&](int steps) {
         const int count = static_cast<int>(menuAtGroups ? std::size(Groups) : Groups[static_cast<int>(menuGroup)].count);
         menuRow = static_cast<std::uint8_t>(((menuRow + steps) % count + count) % count);
-        drawMenu();
+        drawMenu(false);
     };
     // A value screen: large buttons for a few values, a large spinner for
     // many, and a list where the values carry notes.
     auto menuValueSpinner = [] { return !menuValue.hasValues() && menuValue.size() > 4; };
-    auto drawMenuValue = [&] {
-        standby.drawStatus(d, standbyState());
-        drawBattery(d);
+    auto drawMenuValue = [&](bool strip = true) {
+        if (strip) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+        }
         constexpr std::string_view Hint = "Menu: set   Exit: back";
         if (menuValueSpinner()) {
             drawValueSpinner(d, menuValue, menuValueInUse, Hint);
@@ -2041,7 +2046,7 @@ void uiMain(void *)
                     // move the way they are drawn.
                     const int up = menuValueSpinner() ? 1 : -1;
                     menuValue.move(key == Key::Up ? up : -up);
-                    drawMenuValue();
+                    drawMenuValue(false);
                 }
             } else if (press && key == Key::Menu) {
                 if (view == View::MenuValue) {
@@ -2435,7 +2440,7 @@ void uiMain(void *)
                                        moveMenu(moved);
                                    } else if (view == View::MenuValue) {
                                        menuValue.move(moved);
-                                       drawMenuValue();
+                                       drawMenuValue(false);
                                    } else if (isList(view)) {
                                        ListPicker &list = listOf(view);
                                        list.move(moved);

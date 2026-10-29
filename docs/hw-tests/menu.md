@@ -20,7 +20,8 @@ screen:
 The knob or Up/Down move, Menu sets the value and Exit goes back without
 changing it. On the large value Up raises it and Down lowers it. The zone list (P1) and Roam status use the same list style.
 The menu's rows are drawn from the item table, so the menu no longer keeps
-a copy of its rows.
+a copy of its rows. Lists, buttons and the large value draw in place: each
+pixel is painted once per update, so nothing blanks before it is redrawn.
 
 ## Steps
 
@@ -39,4 +40,5 @@ a copy of its rows.
 | 11 | Menu > Tools > Version | The panel shows the version and the minutes since start |
 | 12 | P1 | The zone list in the same style, hint `Menu: use   Exit: back` |
 | 13 | Menu > Roaming > Roam status | The roaming list in the same style; Menu on Search now searches |
-| 14 | Read the latest uptime line | Every task above 50 unused stack words |
+| 14 | Turn the knob fast in a list, on Power and on Time zone; watch Roam status for a minute | Only the rows, buttons and values that change are redrawn; nothing blanks or flashes |
+| 15 | Read the latest uptime line | Every task above 50 unused stack words |
