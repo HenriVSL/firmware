@@ -26,6 +26,8 @@ inline constexpr services::Color Transmit = services::rgb(210, 40, 30);
 inline constexpr services::Color Receive = services::rgb(40, 170, 60);
 inline constexpr services::Color Warn = services::rgb(230, 160, 0);
 inline constexpr services::Color Beacon = services::rgb(40, 100, 200);
+/// A panel set off from the ground, for a line of values.
+inline constexpr services::Color Panel = services::rgb(28, 28, 32);
 } // namespace palette
 
 /// The GPS receiver as the screens show it.
@@ -54,8 +56,13 @@ struct StandbyState
     /// Volume step 0..15, or -1 when unknown.
     int volume = -1;
     GpsState gps;
-    /// Local time "HH:MM", or empty while the time is unknown.
+    /// The time, "14:32" local or "11:32Z" UTC, or empty while it is
+    /// unknown.
     std::string_view clock;
+    /// A DMR channel's contact: "TG 244", "PC 2440001", "ALL CALL"; and the
+    /// contact's name, or empty.
+    std::string_view talkgroup;
+    std::string_view talkgroupName;
     /// APRS beacons go out on their own.
     bool beacons = false;
     /// The channel roams: a search under way, or the repeater in use (its
@@ -89,8 +96,21 @@ struct CallInfo
     std::string_view channel;
 };
 
-/// The radio's main screen: status bar, zone, channel name, frequency,
-/// details, and a bar naming the quick keys.
+/// What the transmit screen shows.
+struct TransmitInfo
+{
+    /// "TG 244", "PC 2440001", or the FM channel's name or frequency.
+    std::string_view target;
+    std::string_view name;
+    std::uint32_t seconds = 0;
+    /// The DMR slot, 0 on FM.
+    std::uint8_t slot = 0;
+    const char *power = "";
+};
+
+/// The radio's main screen: a status strip, the talkgroup or channel large
+/// with the time, frequency and slot, power and volume, details, and a bar
+/// naming the quick keys. Calls and transmissions take the whole screen.
 class StandbyScreen
 {
 public:
@@ -98,19 +118,34 @@ public:
     static constexpr int HintH = 11;
 
     void draw(services::Display &d, const services::ChannelSelector &sel, const StandbyState &s);
-    /// Only the status bar (transmit, receive, lock); battery is drawn by
-    /// the caller at the right end.
+    /// Only the status strip: lock, GPS still searching, APRS beacons; the
+    /// caller draws the battery at its right end.
     void drawStatus(services::Display &d, const StandbyState &s);
+    /// Only the working screen's time, in place.
+    void drawClock(services::Display &d, const StandbyState &s);
     /// The call screen in place of the channel: call type, caller, target,
     /// and the call's time in the bottom bar.
     void drawCall(services::Display &d, const StandbyState &s, const CallInfo &c);
-    /// Only the call screen's bottom bar, for the running time.
+    /// Only the call screen's running time.
     void drawCallTime(services::Display &d, const CallInfo &c);
-    /// Only the status bar's volume field, in place.
+    /// The transmit screen: whom, and how long.
+    void drawTransmit(services::Display &d, const StandbyState &s, const TransmitInfo &t);
+    /// Only the transmit screen's running time.
+    void drawTransmitTime(services::Display &d, const TransmitInfo &t);
+    /// Only the working screen's volume, in place.
     void drawVolume(services::Display &d, const StandbyState &s);
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
 };
+
+/// A list of what happened (the activity list), between the status strip
+/// and a hint bar: a title with a note on its right, then LogRows rows of
+/// a time and a line of text.
+inline constexpr int LogRowH = 11;
+inline constexpr int LogRows = 8;
+void drawLogFrame(services::Display &d, std::string_view title, std::string_view note, std::string_view hint);
+/// Row @p row of the list, 0 at the top; empty texts clear it.
+void drawLogRow(services::Display &d, int row, std::string_view time, std::string_view text, services::Color ink);
 
 /// The GPS screen: the receiver's state, position, altitude, satellites,
 /// speed and UTC time, between the status bar and a hint bar. @p full

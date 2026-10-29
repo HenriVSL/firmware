@@ -193,7 +193,7 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | `0`-`9` | Type a frequency |
 | `#` | Switch between VFO and memory |
 | P1 | Zone list |
-| P2 | Channel settings |
+| P2 | Activity: calls, transmissions, roaming moves, beacons and GPS fixes, newest first |
 | Menu | Settings menu |
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens |

@@ -15,6 +15,7 @@
 #include "dmm/services/channel_selector.h"
 #include "dmm/services/clock.h"
 #include "dmm/services/codeplug.h"
+#include "dmm/services/event_log.h"
 #include "dmm/services/input.h"
 #include "dmm/services/log.h"
 #include "dmm/services/power.h"
@@ -186,45 +187,27 @@ void fillArea(Display &d, int x, int y, int w, int h, Color c)
     }
 }
 
-// The battery at the header's right end, in its own field from 48 pixels
-// before the edge: the voltage, then four bars. Everything is drawn in
-// place with only the gaps painted, so an update does not flicker.
+// The battery voltage at the header's right end, in its own field from 48
+// pixels before the edge, red when low. Drawn in place with only the gaps
+// painted, so an update does not flicker.
 void drawBattery(Display &d)
 {
     const BatteryState &b = batteryState;
     const int w = d.width();
     const int fieldX = w - 48;
-    const int barsX = w - 13;
     lib::StaticString<12> text;
     if (b.millivolts > 0) {
         const int cv = (b.millivolts + 5) / 10;
         text << cv / 100 << '.' << static_cast<char>('0' + cv / 10 % 10) << 'V';
     }
     const int textW = static_cast<int>(text.view().size()) * HeaderFont.width;
-    const int tx = barsX - textW - 2;
+    const int tx = w - 3 - textW;
     const int below = headerTop + HeaderFont.height;
-    drawText(d, HeaderFont, tx, headerTop, text.view(), b.low ? colors::Red : colors::White, headerGround);
+    drawText(d, HeaderFont, tx, headerTop, text.view(), b.low ? colors::Red : palette::Dim, headerGround);
     fillArea(d, fieldX, 0, tx - fieldX, headerHeight, headerGround);
     fillArea(d, tx, 0, textW, headerTop, headerGround);
     fillArea(d, tx, below, textW, headerHeight - below, headerGround);
-    fillArea(d, tx + textW, 0, barsX - tx - textW, headerHeight, headerGround);
-    if (b.millivolts <= 0) {
-        fillArea(d, barsX, 0, w - barsX, headerHeight, headerGround);
-        return;
-    }
-    const Color on = b.low ? colors::Red : colors::Green;
-    for (int i = 0; i < 4; ++i) {
-        // The first bar always shows, so an empty battery still has one red bar.
-        const bool lit = i == 0 || i <= b.level;
-        const int bx = barsX + i * 3;
-        const int by = headerTop + 7 - (i + 1) * 2 + 1;
-        const int bh = (i + 1) * 2 - 1;
-        d.fillRect(bx, by, 2, bh, lit ? on : rgb(60, 60, 60));
-        fillArea(d, bx, 0, 2, by, headerGround);
-        fillArea(d, bx, by + bh, 2, headerHeight - by - bh, headerGround);
-        fillArea(d, bx + 2, 0, 1, headerHeight, headerGround);
-    }
-    fillArea(d, barsX + 12, 0, w - barsX - 12, headerHeight, headerGround);
+    fillArea(d, tx + textW, 0, w - tx - textW, headerHeight, headerGround);
 }
 
 services::KeyLock keyLock;
@@ -391,6 +374,7 @@ enum class View : std::uint8_t
     Gps,        // the GPS receiver's state and fix, from the menu
     Heard,      // APRS stations heard, from the menu
     Station,    // one heard station
+    Activity,   // what happened lately, from P2
     Log,
     KeyTest,
     Message,
@@ -439,6 +423,7 @@ enum class MenuItem : std::uint8_t
     GpsSystems,
     GpsStatus, // opens the GPS screen
     ClockZone,
+    ClockShown, // local time or UTC on the screen
     ClockCalibration,
     AprsHeard, // opens the heard list
     AprsSend,  // queues a beacon
@@ -475,7 +460,10 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone, MenuItem::ClockCalibration}, 5},
+    {"GPS and time",
+        {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone, MenuItem::ClockShown,
+            MenuItem::ClockCalibration},
+        6},
     {"APRS", {MenuItem::AprsHeard, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 5},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
@@ -525,14 +513,34 @@ lib::StaticString<10> zoneText(int minutes)
 }
 
 // The local time as "HH:MM", or empty while the clock does not know it.
-lib::StaticString<6> localClockText()
+// The time is shown in UTC ("11:32Z") instead of local time.
+bool clockUtc = false;
+
+// The time @p agoS seconds ago as "14:32", or "11:32Z" in UTC; empty while
+// the clock does not know it.
+lib::StaticString<7> clockText(std::uint32_t agoS = 0)
 {
-    lib::StaticString<6> s;
+    lib::StaticString<7> s;
     if (const auto utc = system::utcNow()) {
-        const services::DateTime t = services::dateTime(static_cast<std::uint32_t>(static_cast<std::int64_t>(*utc) + timeZoneMinutes * 60));
+        const std::int64_t at = static_cast<std::int64_t>(*utc) - agoS + (clockUtc ? 0 : timeZoneMinutes * 60);
+        const services::DateTime t = services::dateTime(static_cast<std::uint32_t>(at));
         s << lib::zeroPadded(t.hour, 2) << ':' << lib::zeroPadded(t.minute, 2);
+        if (clockUtc) {
+            s << 'Z';
+        }
     }
     return s;
+}
+
+// What happened, for the activity list: calls, transmissions, roaming,
+// beacons, fixes. One buffer; other lists may show some of its kinds.
+services::EventLog eventLog;
+// The first row the activity list shows.
+std::size_t activityTop = 0;
+
+std::uint32_t uptimeS()
+{
+    return static_cast<std::uint32_t>(os::nowMs() / 1000);
 }
 // The volume step 0..15, -1 until the knob has been read.
 int volumeLevel = -1;
@@ -573,6 +581,20 @@ struct RoamState
     char name[CodeplugSource::SiteNameBytes + 1] = {};
 };
 RoamState roam;
+// The working channel's contact as the screens name it ("TG 244", the
+// contact's name), looked up again only when the contact changes.
+char talkgroupText[16] = {};
+char talkgroupName[CodeplugSource::ContactNameBytes + 1] = {};
+services::dmr::Target talkgroupFor{services::dmr::CallType::All, 0xFFFFFFFF};
+// A DMR channel with a contact to call: its screens show the talkgroup;
+// others show the channel.
+bool hasTalkgroup(const Channel &c)
+{
+    return c.digital() && (c.dmr.contact.id != 0 || c.dmr.contact.type == services::dmr::CallType::All);
+}
+// A call or FM transmission of the user's is on the air, since when.
+bool transmitCall = false;
+os::Ticks transmitStarted = 0;
 // The radio task's roaming state, copied for the status screen and its
 // menu row; kept here, not on the stack.
 radio::RoamingView roamView;
@@ -664,6 +686,29 @@ void copyName(char (&out)[N], const char *text)
     out[n] = '\0';
 }
 
+void nameTalkgroup(const services::dmr::Target &t)
+{
+    if (t == talkgroupFor) {
+        return;
+    }
+    talkgroupFor = t;
+    lib::StaticString<16> text;
+    if (t.type == services::dmr::CallType::All) {
+        text << "ALL CALL";
+    } else {
+        text << (t.type == services::dmr::CallType::Group ? "TG " : "PC ") << t.id;
+    }
+    const std::size_t n = std::min(text.view().size(), sizeof(talkgroupText) - 1);
+    std::copy_n(text.view().data(), n, talkgroupText);
+    talkgroupText[n] = '\0';
+    talkgroupName[0] = '\0';
+    std::array<char, CodeplugSource::ContactNameBytes + 1> name{};
+    if (t.type != services::dmr::CallType::All && codeplug != nullptr &&
+        codeplug->contactName(t.id, t.type == services::dmr::CallType::Group, name)) {
+        copyName(talkgroupName, name.data());
+    }
+}
+
 // Names for a call from the codeplug: the caller's own contact entry
 // first, else the user directory's callsign and name.
 void nameCall(HeardCall &h, CodeplugSource *plug)
@@ -676,12 +721,13 @@ void nameCall(HeardCall &h, CodeplugSource *plug)
     if (plug->contactName(h.destination, h.group, name)) {
         copyName(h.target, name.data());
     }
+    // The user directory's callsign first, then a contact's name.
     CodeplugSource::DmrUser user;
     const bool known = plug->dmrUser(h.source, user);
-    if (plug->contactName(h.source, false, name)) {
-        copyName(h.caller, name.data());
-    } else if (known && user.callsign[0] != '\0') {
+    if (known && user.callsign[0] != '\0') {
         copyName(h.caller, user.callsign.data());
+    } else if (plug->contactName(h.source, false, name)) {
+        copyName(h.caller, name.data());
     } else if (known) {
         copyName(h.caller, user.name.data());
         return;
@@ -841,7 +887,7 @@ void uiMain(void *)
     lastLightUse = os::nowMs();
     log::info("ui") << "display " << d.width() << " x " << d.height();
 
-    quickKeys << keyText(Key::Menu) << "  " << keyText(Key::Front1) << " Zone  " << keyText(Key::Front2) << " Chan  "
+    quickKeys << keyText(Key::Menu) << "  " << keyText(Key::Front1) << " Zone  " << keyText(Key::Front2) << " Log  "
               << keyText(Key::Hash) << " VFO";
 
     // The codeplug: settings, and the channel the radio starts on.
@@ -903,7 +949,10 @@ void uiMain(void *)
         noticeShown = true;
         noticeUntil = os::nowMs() + NoticeMs;
     };
-    lib::StaticString<6> clockText;
+    lib::StaticString<7> clockNow;
+    lib::StaticString<24> roamSiteText;
+    int roamLogged = -1;
+    std::uint32_t fixLoggedS = 0;
     os::Ticks lastClockMinute = 0;
     os::Ticks lastHeardRefresh = 0;
     constexpr os::Ticks HeardRefreshMs = 10'000;
@@ -934,16 +983,51 @@ void uiMain(void *)
         s.volume = volumeLevel;
         s.keys = quickKeys.view();
         s.gps = gpsState;
-        clockText = localClockText();
-        s.clock = clockText.view();
+        clockNow = clockText();
+        s.clock = clockNow.view();
         s.beacons = aprsStation && beaconIntervalS != 0;
         const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
         s.roaming = roamingOn && ch && ch->digital() && ch->roaming && roamingSites > 0;
         s.roamSearching = roam.searching;
         s.roamHz = roam.receiveHz;
         s.roamColourCode = roam.colourCode;
-        s.roamSite = roam.name;
+        roamSiteText.clear();
+        if (roam.name[0] != '\0') {
+            roamSiteText << roam.name;
+        } else if (roam.site >= 0) {
+            roamSiteText << "repeater " << roam.site + 1;
+        }
+        s.roamSite = roamSiteText.view();
+        if (ch && hasTalkgroup(*ch)) {
+            nameTalkgroup(ch->dmr.contact);
+            s.talkgroup = talkgroupText;
+            s.talkgroupName = talkgroupName;
+        }
         return s;
+    };
+    // The transmit screen: the talkgroup on DMR, the channel on FM.
+    lib::StaticString<12> transmitTarget;
+    auto transmitInfo = [&] {
+        constexpr const char *Powers[] = {"LOW", "MID", "HIGH", "TURBO"};
+        TransmitInfo t;
+        t.seconds = static_cast<std::uint32_t>((os::nowMs() - transmitStarted) / 1000);
+        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        if (!ch) {
+            return t;
+        }
+        t.power = Powers[static_cast<int>(ch->power) & 3];
+        if (ch->digital()) {
+            t.slot = ch->dmr.slot;
+        }
+        if (hasTalkgroup(*ch)) {
+            nameTalkgroup(ch->dmr.contact);
+            t.target = talkgroupText;
+            t.name = talkgroupName;
+        } else {
+            copyName(callChannel, ch->name);
+            t.target = callChannel[0] != '\0' ? std::string_view(callChannel) : std::string_view("FM");
+        }
+        return t;
     };
     auto callInfo = [&] {
         CallInfo c;
@@ -973,14 +1057,107 @@ void uiMain(void *)
         headerHeight = bar ? StandbyScreen::StatusH - 1 : HeaderFont.height;
         headerTop = bar ? 2 : 0;
     };
+    // The activity list: what happened, newest first, a row per event.
+    // Names are looked up as the rows are drawn; the log holds numbers.
+    auto drawActivity = [&] {
+        drawLogFrame(d, "Activity", "newest first", "Knob: scroll   P2: back");
+        const std::uint32_t now = uptimeS();
+        for (int row = 0; row < LogRows; ++row) {
+            const services::EventLog::Entry *e = eventLog.newest(activityTop + static_cast<std::size_t>(row));
+            if (e == nullptr) {
+                const bool empty = row == 0 && eventLog.count() == 0;
+                drawLogRow(d, row, {}, empty ? "Nothing yet" : "", palette::Dim);
+                continue;
+            }
+            lib::StaticString<7> when = clockText(now - e->seconds());
+            if (when.view().empty()) {
+                when << '-' << (now - e->seconds()) / 60 << 'm';
+            }
+            lib::StaticString<40> what;
+            Color ink = palette::Text;
+            using Kind = services::EventLog::Kind;
+            switch (e->kind()) {
+            case Kind::CallIn: {
+                // Off the UI task's small stack.
+                static HeardCall who;
+                who.source = e->a();
+                who.destination = e->b();
+                who.group = e->group();
+                nameCall(who, codeplug);
+                what << "RX ";
+                if (who.caller[0] != '\0') {
+                    what << who.caller;
+                } else {
+                    what << e->a();
+                }
+                what << "  " << (e->group() ? "TG" : "PC") << e->b() << "  " << e->value() << 's';
+                ink = palette::Receive;
+                break;
+            }
+            case Kind::CallOut:
+                what << "TX ";
+                if (e->a() == 1) {
+                    what << "FM " << e->b() / 1000 << '.' << lib::zeroPadded(e->b() % 1000, 3);
+                } else {
+                    what << (e->group() ? "TG" : "PC") << e->b();
+                }
+                what << "  " << e->value() << 's';
+                ink = palette::Transmit;
+                break;
+            case Kind::RoamMove:
+                what << "ROAM repeater " << e->a();
+                break;
+            case Kind::RoamLost:
+                what << "ROAM repeater " << e->a() << " lost";
+                ink = palette::Warn;
+                break;
+            case Kind::AprsBeacon:
+                what << "APRS beacon sent";
+                ink = palette::Beacon;
+                break;
+            case Kind::GpsFix:
+                what << "GPS fix";
+                ink = palette::Dim;
+                break;
+            case Kind::GpsLost:
+                what << "GPS fix lost";
+                ink = palette::Dim;
+                break;
+            }
+            drawLogRow(d, row, when.view(), what.view(), ink);
+        }
+    };
+    // Moves the activity list by @p rows, within the log.
+    auto scrollActivity = [&](int rows) {
+        const std::size_t n = eventLog.count();
+        const std::size_t last = n > static_cast<std::size_t>(LogRows) ? n - static_cast<std::size_t>(LogRows) : 0;
+        const long top = static_cast<long>(activityTop) + rows;
+        activityTop = top < 0 ? 0 : std::min(static_cast<std::size_t>(top), last);
+        drawActivity();
+    };
+    // Logs an event, and shows it at once when the list is open.
+    auto logEvent = [&](services::EventLog::Kind kind, std::uint32_t a = 0, std::uint32_t b = 0, unsigned value = 0,
+                        bool group = false) {
+        eventLog.add(kind, uptimeS(), a, b, value, group);
+        if (view == View::Activity && !noticeShown) {
+            drawActivity();
+        }
+    };
     auto redrawView = [&] {
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
         volumeNoticeUp = false;
-        const bool radioScreen =
-            view == View::Standby || isList(view) || view == View::Gps || view == View::Heard || view == View::Station;
+        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Heard ||
+            view == View::Station || view == View::Activity;
         barHeader(radioScreen);
-        if (view == View::Standby && heard.shown) {
+        if (view == View::Standby && transmitting && transmitCall) {
+            standby.drawTransmit(d, standbyState(), transmitInfo());
+            drawBattery(d);
+        } else if (view == View::Activity) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawActivity();
+        } else if (view == View::Standby && heard.shown) {
             standby.drawCall(d, standbyState(), callInfo());
             drawBattery(d);
         } else if (view == View::Standby) {
@@ -1029,7 +1206,7 @@ void uiMain(void *)
     auto refreshLockMark = [&] {
         if (view == View::Log || view == View::KeyTest) {
             drawLockMark(d);
-        } else if (view == View::Standby || isList(view) || view == View::Gps) {
+        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
         }
@@ -1114,6 +1291,10 @@ void uiMain(void *)
         case MenuItem::ClockZone:
             label = "Zone";
             value << zoneText(timeZoneMinutes).view();
+            break;
+        case MenuItem::ClockShown:
+            label = "Show time";
+            value << (clockUtc ? "UTC" : "Local");
             break;
         case MenuItem::ClockCalibration:
             label = "Calibrate";
@@ -1354,6 +1535,12 @@ void uiMain(void *)
             }
             menuValue.select(static_cast<std::uint8_t>(timeZoneMinutes / 30 + 24));
             break;
+        case MenuItem::ClockShown:
+            menuValue.open("Show time");
+            menuValue.add(0, "Local");
+            menuValue.add(1, "UTC");
+            menuValue.select(clockUtc ? 1 : 0);
+            break;
         case MenuItem::ClockCalibration: {
             menuValue.open("Calibrate");
             menuValue.add(60, "60 min", "GPS on");
@@ -1532,6 +1719,9 @@ void uiMain(void *)
             timeZoneMinutes = (v - 24) * 30;
             log::info("ui") << "time zone " << zoneText(timeZoneMinutes).view();
             break;
+        case MenuItem::ClockShown:
+            clockUtc = v == 1;
+            break;
         case MenuItem::ClockCalibration:
             if (v < CalibrationInfo) {
                 gps::post(gps::CalibrateClock{v});
@@ -1609,6 +1799,14 @@ void uiMain(void *)
             }
             return;
         }
+        if (view == View::Activity) {
+            if (step && (key == Key::Up || key == Key::Down)) {
+                scrollActivity(key == Key::Up ? -1 : 1);
+            } else if (press && (key == Key::Front2 || key == Key::Exit || key == Key::Menu)) {
+                show(View::Standby);
+            }
+            return;
+        }
         if (view == View::ZonePicker) {
             if (step && (key == Key::Up || key == Key::Down)) {
                 zonePicker.move(key == Key::Up ? -1 : 1);
@@ -1670,7 +1868,8 @@ void uiMain(void *)
             openZonePicker();
         } else if (press && key == Key::Front2) {
             entryLength = 0;
-            openGroup(MenuGroup::Channel, true);
+            activityTop = 0;
+            show(View::Activity);
         }
     };
     // A side key's function: on the press when it has no long-press
@@ -1831,17 +2030,43 @@ void uiMain(void *)
                                    }
                                    return;
                                }
-                               if (channels != nullptr && (view == View::Standby || isList(view))) {
+                               if (channels != nullptr && (view == View::Standby || isList(view) || view == View::Activity)) {
                                    channelKey(e.key, e.type);
                                }
                            },
                            [&](const Transmitting &t) {
+                               const bool wasCall = transmitting && transmitCall;
                                transmitting = t.on;
+                               using Kind = services::EventLog::Kind;
+                               if (t.on && t.call) {
+                                   transmitCall = true;
+                                   transmitStarted = os::nowMs();
+                                   const std::optional<Channel> ch =
+                                       channels != nullptr ? channels->current() : std::nullopt;
+                                   if (ch && ch->digital()) {
+                                       logEvent(Kind::CallOut, 0, ch->dmr.contact.id, 0,
+                                           ch->dmr.contact.type == services::dmr::CallType::Group);
+                                   } else if (ch) {
+                                       logEvent(Kind::CallOut, 1, ch->transmitHz / 1000);
+                                   }
+                               } else if (!t.on && wasCall) {
+                                   transmitCall = false;
+                                   eventLog.update(Kind::CallOut,
+                                       static_cast<unsigned>((os::nowMs() - transmitStarted) / 1000));
+                                   if (view == View::Activity && !noticeShown) {
+                                       drawActivity();
+                                   }
+                               }
                                useLight(d);
                                if (view == View::Log) {
                                    drawHeader(d);
                                }
-                               refreshLockMark();
+                               // A call takes the screen and gives it back.
+                               if (view == View::Standby && !noticeShown && (t.call || wasCall)) {
+                                   redrawView();
+                               } else {
+                                   refreshLockMark();
+                               }
                            },
                            [&](const Receiving &r) {
                                receiving = r.on;
@@ -1849,6 +2074,15 @@ void uiMain(void *)
                                refreshLockMark();
                            },
                            [&](const DmrCall &c) {
+                               if (c.active && !heard.active) {
+                                   logEvent(services::EventLog::Kind::CallIn, c.source, c.destination, 0, c.group);
+                               } else if (!c.active && heard.active) {
+                                   eventLog.update(services::EventLog::Kind::CallIn,
+                                       static_cast<unsigned>((os::nowMs() - heard.started) / 1000));
+                                   if (view == View::Activity && !noticeShown) {
+                                       drawActivity();
+                                   }
+                               }
                                if (c.active) {
                                    heard.shown = true;
                                    heard.active = true;
@@ -1867,6 +2101,11 @@ void uiMain(void *)
                                }
                            },
                            [&](const Roaming &r) {
+                               // A move to another repeater is logged once.
+                               if (!r.searching && r.site >= 0 && r.site != roamLogged) {
+                                   roamLogged = r.site;
+                                   logEvent(services::EventLog::Kind::RoamMove, static_cast<std::uint32_t>(r.site) + 1);
+                               }
                                roam.searching = r.searching;
                                roam.site = r.site;
                                roam.receiveHz = r.receiveHz;
@@ -1925,6 +2164,8 @@ void uiMain(void *)
                                        ListPicker &list = listOf(view);
                                        list.move(moved);
                                        list.draw(d, StandbyScreen::StatusH);
+                                   } else if (view == View::Activity) {
+                                       scrollActivity(moved);
                                    } else if (view == View::Standby) {
                                        entryLength = 0;
                                        if (channels->vfoMode()) {
@@ -1971,6 +2212,13 @@ void uiMain(void *)
                            [&](const Gps &g) {
                                const bool tagChanged = g.on != gpsState.on || g.receiving != gpsState.receiving ||
                                    g.fix.valid != gpsState.fix.valid || g.asleep != gpsState.asleep;
+                               // A fix is logged when it comes after a time without
+                               // one, not at every wake-up between fixes.
+                               if (g.fix.valid && !gpsState.fix.valid && !g.asleep &&
+                                   (fixLoggedS == 0 || uptimeS() - fixLoggedS >= 600)) {
+                                   fixLoggedS = uptimeS();
+                                   logEvent(services::EventLog::Kind::GpsFix);
+                               }
                                gpsState = {g.on, g.receiving, g.fix, g.asleep};
                                if (view == View::Gps) {
                                    if (tagChanged) {
@@ -2004,7 +2252,12 @@ void uiMain(void *)
                                    break;
                                }
                            },
-                           [&](const Packet &p) { notice(p.sent ? "Beacon sent" : "Beacon not sent"); },
+                           [&](const Packet &p) {
+                               if (p.sent) {
+                                   logEvent(services::EventLog::Kind::AprsBeacon);
+                               }
+                               notice(p.sent ? "Beacon sent" : "Beacon not sent");
+                           },
                            [&](const AprsHeard &) {
                                if (view == View::Heard && !noticeShown) {
                                    const std::uint8_t c = menuValue.chosen();
@@ -2081,9 +2334,17 @@ void uiMain(void *)
             const os::Ticks minute = *utc / 60;
             if (minute != lastClockMinute) {
                 lastClockMinute = minute;
-                if (!noticeShown) {
-                    refreshLockMark();
+                if (!noticeShown && view == View::Standby && !heard.shown && !(transmitting && transmitCall)) {
+                    standby.drawClock(d, standbyState());
                 }
+            }
+        }
+        // The transmit screen: its time each second.
+        if (view == View::Standby && transmitting && transmitCall && !noticeShown) {
+            const os::Ticks second = os::nowMs() / 1000;
+            if (second != lastSecond) {
+                lastSecond = second;
+                standby.drawTransmitTime(d, transmitInfo());
             }
         }
         // The call screen: its time each second, back to standby a moment

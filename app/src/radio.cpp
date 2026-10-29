@@ -276,11 +276,13 @@ void updateActivity()
 }
 
 // The screen's and LEDs' transmit indication.
-void showTransmitting(bool on)
+// @p call: the user's call or FM transmission, as opposed to a wake-up or
+// a packet.
+void showTransmitting(bool on, bool call)
 {
     onAir = on;
     updateActivity();
-    ui::post(ui::Transmitting{on});
+    ui::post(ui::Transmitting{on, call});
 }
 
 void setSpeaker(bool open)
@@ -904,11 +906,11 @@ struct Probe
                     fm->endTransmit();
                     return;
                 }
-                showTransmitting(true);
+                showTransmitting(true, false);
                 const bool sent =
                     b.wakeRepeater(dmrSettings, ownId) && awaitDmrEvent(services::dmr::Event::Kind::AllSent, DmrEndMs);
                 fm->endTransmit();
-                showTransmitting(false);
+                showTransmitting(false, false);
                 const bool listening = sent && b.setDigital(dmrSettings, fmChannel.receiveHz, dmrRepeater) &&
                     tuneReceive(fmChannel, 1) == nullptr;
                 p.answered = listening && awaitDmrEvent(services::dmr::Event::Kind::SlotFound, RepeaterWakeMs);
@@ -1353,7 +1355,7 @@ CallStart startDigitalTransmit(services::FmChannel channel)
     }
     bool ok = true;
     // On the air from here, the wake-up included.
-    showTransmitting(true);
+    showTransmitting(true, true);
     withBaseband([&](auto &b) {
         // An idle repeater is woken first, then its timing awaited.
         if (waking) {
@@ -1383,7 +1385,7 @@ CallStart startDigitalTransmit(services::FmChannel channel)
             logDmrRefused(silent ? "the repeater did not answer" : "the baseband refused",
                 silent ? "No repeater" : "TX refused");
         }
-        showTransmitting(false);
+        showTransmitting(false, true);
         receive();
         return silent ? CallStart::NoRepeater : CallStart::Refused;
     }
@@ -1490,7 +1492,7 @@ void startTransmit(bool packet = false)
     transmitting = true;
     packetOnAir = packet;
     power::hold(power::AwakeReason::Transmit);
-    showTransmitting(true);
+    showTransmitting(true, !packet);
     transmitStarted = os::nowMs();
     log::info("fm") << "transmitting " << mhz(channel.transmitHz).view() << " MHz, power " << powerName(level) << ", "
                     << (packet ? std::string_view("packet") : toneText(transmitTone).view()) << ", timeout " << timeoutS
@@ -1512,10 +1514,11 @@ void stopTransmit(const char *why)
     }
     fm->endTransmit();
     withBaseband([](auto &b) { b.setMicrophone(false); });
+    const bool call = !packetOnAir;
     transmitting = false;
     packetOnAir = false;
     power::release(power::AwakeReason::Transmit);
-    showTransmitting(false);
+    showTransmitting(false, call);
     log::info("fm") << "transmit off (" << why << ") after " << (os::nowMs() - transmitStarted) / 100 / 10 << "."
                     << (os::nowMs() - transmitStarted) / 100 % 10 << " s";
     receive();
