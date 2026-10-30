@@ -20,34 +20,20 @@ Version 0.20.3-6HL-12, not tagged and not merged into `oh6hl-main`.
 - The radio runs an earlier 6HL-12 build, without `prog watch`. The image
   from de58f18 is built but not flashed yet.
 
-## Next: name the fields with the factory CPS
+## Field names
 
-The editor can change every byte, but most fields have no name yet. The
-plan is to change one setting at a time in the factory CPS and see which
-bytes the write changes.
+About 200 fields are named: the channel record (basic, DMR, FM and APRS
+pages), general and extended settings (radio, display, audio, DMR, boot,
+keys, roaming), APRS (sending, receive filter, fixed position, all eight
+frequencies), contacts, radio IDs and roaming repeaters. Offsets come
+from a field reference written from QDMR's D878UVII encoding
+(`pr-drafts/qdmr-d878uv2-codeplug-fields.md` in the workspace) and are
+checked by encoding a codeplug with one setting changed and diffing the
+images (`dmrconf encode`, no radio needed). `prog watch on` still shows
+what a real write from the PC changes.
 
-Setup:
-
-1. Flash `DeltaMM_0.20.3-6HL-12.CDD` from
-   `build/fw-d878uv2-release/boards/anytone_d878uv2/package/`.
-2. Start the workspace's `scripts/watchlog.py codeplugs/cps-watch.log` in
-   the background. It keeps the log port open across restarts and sends
-   `prog watch on` on every connect.
-
-Each round:
-
-1. Read the radio in the CPS (under Wine, its COM port pointed at the
-   DeltaMM data port).
-2. Change one setting; note the CPS's name for it and its old and new
-   value.
-3. Write from the CPS. The radio restarts after the write.
-4. Read the changed bytes from the log, add the field to the tables in
-   `services/src/d878uv2_plug_editor.cpp` under the CPS's name, and add
-   a case to `tests/services/test_d878uv2_plug_editor.cpp`.
-
-Start each round from a fresh CPS read, so the CPS writes back what the
-radio has. Good first targets: the rest of the channel record, then the
-general settings.
+Still unnamed: melodies, auto-repeater limits, VFO scan limits, the
+channel extension record (+0x2000), zone member lists.
 
 ## Later
 
