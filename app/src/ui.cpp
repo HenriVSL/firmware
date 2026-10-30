@@ -443,6 +443,7 @@ enum class MenuItem : std::uint8_t
     AprsBeacon,
     AprsPower,
     AprsReceive,
+    ClockCalibration,
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -473,7 +474,7 @@ constexpr GroupInfo Groups[] = {
     {"Display", {MenuItem::Backlight, MenuItem::BacklightTime}, 2},
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
-    {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone}, 4},
+    {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone, MenuItem::ClockCalibration}, 5},
     {"APRS", {MenuItem::AprsHeard, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 5},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
@@ -494,6 +495,10 @@ std::uint8_t batterySave = 0;
 GpsState gpsState;
 bool gpsAtStart = false;
 std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Beidou;
+// Ids of the Calibrate list's information rows; the choices are minutes.
+constexpr std::uint8_t CalibrationInfo = 250;
+// The clock calibration as the gps task last reported it.
+ClockCalibration clockCalibration{ClockCalibration::State::Stopped, 0, 0};
 // Local time minus UTC, from the codeplug, in half-hour steps.
 int timeZoneMinutes = 0;
 constexpr int ZoneSteps = 53; // UTC-12:00 to UTC+14:00
@@ -1102,6 +1107,16 @@ void uiMain(void *)
             label = "Zone";
             value << zoneText(timeZoneMinutes).view();
             break;
+        case MenuItem::ClockCalibration:
+            label = "Calibrate";
+            if (clockCalibration.state == ClockCalibration::State::Running) {
+                value << clockCalibration.minutesDone << '/' << clockCalibration.minutes << " min";
+            } else if (system::clockRate() == 0) {
+                value << "None";
+            } else {
+                value << system::ppmText(system::clockRate()).view();
+            }
+            break;
         case MenuItem::GpsStatus:
             label = "Status";
             value << (!gpsState.on ? "Off" : gpsState.asleep ? "Sleeping"
@@ -1191,6 +1206,13 @@ void uiMain(void *)
         }
         view = View::Heard;
         redrawView();
+    };
+    // Redraws the GPS group's values when it is open, keeping the cursor.
+    auto refreshGpsGroup = [&] {
+        if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Gps) {
+            menuItem = static_cast<MenuItem>(menu.chosen());
+            openGroup(MenuGroup::Gps, menuQuick);
+        }
     };
     auto openMenuValue = [&](MenuItem item) {
         menuItem = item;
@@ -1315,6 +1337,20 @@ void uiMain(void *)
             }
             menuValue.select(static_cast<std::uint8_t>(timeZoneMinutes / 30 + 24));
             break;
+        case MenuItem::ClockCalibration: {
+            menuValue.open("Calibrate");
+            menuValue.add(60, "60 min", "GPS on");
+            menuValue.add(30, "30 min", "GPS on");
+            if (clockCalibration.state == ClockCalibration::State::Running) {
+                menuValue.add(0, "Stop");
+            }
+            // The correction in effect, for information only.
+            const std::int32_t rate = system::clockRate();
+            menuValue.add(CalibrationInfo, "Correction", rate == 0 ? std::string_view("None") : system::ppmText(rate).view());
+            menuValue.add(CalibrationInfo + 1, "Per day", system::perDayText(rate).view());
+            menuValue.select(clockCalibration.state == ClockCalibration::State::Running ? 0 : 60);
+            break;
+        }
         case MenuItem::GpsStatus:
             show(View::Gps);
             return;
@@ -1354,6 +1390,17 @@ void uiMain(void *)
         }
         view = View::MenuValue;
         redrawView();
+    };
+    // Redraws whatever shows the calibration: the GPS group or the
+    // Calibrate list, keeping the cursor.
+    auto refreshCalibration = [&] {
+        refreshGpsGroup();
+        if (view == View::MenuValue && menuItem == MenuItem::ClockCalibration) {
+            const std::uint8_t cursor = menuValue.chosen();
+            openMenuValue(MenuItem::ClockCalibration);
+            menuValue.select(cursor);
+            redrawView();
+        }
     };
     auto useChannel = [&] {
         if (channels == nullptr || !channels->current()) {
@@ -1476,6 +1523,11 @@ void uiMain(void *)
         case MenuItem::AprsReceive:
             aprsReceive = v == 1;
             aprs::post(aprs::Receive{aprsReceive});
+            break;
+        case MenuItem::ClockCalibration:
+            if (v < CalibrationInfo) {
+                gps::post(gps::CalibrateClock{v});
+            }
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
@@ -1909,11 +1961,26 @@ void uiMain(void *)
                                    }
                                } else if (tagChanged) {
                                    refreshLockMark();
-                                   // The GPS group's status value, keeping the cursor.
-                                   if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Gps) {
-                                       menuItem = static_cast<MenuItem>(menu.chosen());
-                                       openGroup(MenuGroup::Gps, menuQuick);
-                                   }
+                                   refreshGpsGroup();
+                               }
+                           },
+                           [&](const ClockRate &) { refreshCalibration(); },
+                           [&](const ClockCalibration &c) {
+                               clockCalibration = c;
+                               refreshCalibration();
+                               switch (c.state) {
+                               case ClockCalibration::State::Done:
+                                   notice("Clock calibrated");
+                                   break;
+                               case ClockCalibration::State::TooFewFixes:
+                                   notice("Too few fixes");
+                                   break;
+                               case ClockCalibration::State::GpsOff:
+                                   notice("Switch GPS on");
+                                   break;
+                               case ClockCalibration::State::Running:
+                               case ClockCalibration::State::Stopped:
+                                   break;
                                }
                            },
                            [&](const Packet &p) { notice(p.sent ? "Beacon sent" : "Beacon not sent"); },
