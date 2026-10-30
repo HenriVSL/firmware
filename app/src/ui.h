@@ -147,6 +147,7 @@ struct AprsProblem
     enum class Kind : std::uint8_t
     {
         NoCallsign,
+        NoFrequency,
         NoFix,
         Busy,
     };

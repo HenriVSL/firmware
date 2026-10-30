@@ -1696,9 +1696,10 @@ void uiMain(void *)
                                }
                            },
                            [&](const AprsProblem &p) {
-                               notice(p.kind == AprsProblem::Kind::NoCallsign ? "No APRS callsign"
-                                       : p.kind == AprsProblem::Kind::NoFix   ? "No GPS position"
-                                                                              : "Radio busy");
+                               notice(p.kind == AprsProblem::Kind::NoCallsign     ? "No APRS callsign"
+                                       : p.kind == AprsProblem::Kind::NoFrequency ? "No APRS frequency"
+                                       : p.kind == AprsProblem::Kind::NoFix       ? "No GPS position"
+                                                                                  : "Radio busy");
                            },
                            [&](const SwitchingOff &) {
                                view = View::Message;

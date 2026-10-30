@@ -58,7 +58,8 @@ codeplug's time zone.
 callsign, path, symbol, comment and frequency, at the codeplug's interval
 or now from the menu. Each packet waits for a free channel and goes out
 simplex on the APRS frequency at low power; from another channel the radio
-goes there and comes back. The radio's BT+APRS board decodes received
+goes there and comes back. Without an APRS frequency in the codeplug no
+beacon goes out. The radio's BT+APRS board decodes received
 packets while the radio is on their frequency, and a list shows the
 stations heard with their distance and bearing.
 

@@ -105,8 +105,9 @@ void report()
     const AprsSettings &s = *station;
     constexpr const char *Powers[] = {"low", "mid", "high", "turbo"};
     log::info("aprs") << s.callsign << '-' << s.ssid << ", path " << (s.path[0] != '\0' ? s.path : "none") << ", symbol "
-                      << s.symbolTable << s.symbol << ", " << frequencyText(s.frequencyHz).view() << " MHz "
-                      << (s.wide ? "wide" : "narrow") << ", power " << Powers[static_cast<int>(power) & 3];
+                      << s.symbolTable << s.symbol << ", "
+                      << (s.frequencyHz != 0 ? frequencyText(s.frequencyHz).view() : std::string_view("no frequency"))
+                      << (s.frequencyHz != 0 ? " MHz " : " ") << (s.wide ? "wide" : "narrow") << ", power " << Powers[static_cast<int>(power) & 3];
     log::info("aprs") << "comment \"" << s.comment << "\"";
     auto line = log::info("aprs");
     if (intervalS == 0) {
@@ -187,6 +188,12 @@ void tryBeacon()
         log::warning("aprs") << "beacon not sent: the codeplug has no APRS callsign";
         ui::post(ui::AprsProblem{ui::AprsProblem::Kind::NoCallsign});
         pending = false;
+        return;
+    }
+    if (!pendingHere && station->frequencyHz == 0) {
+        log::warning("aprs") << "beacon not sent: the codeplug has no APRS frequency";
+        ui::post(ui::AprsProblem{ui::AprsProblem::Kind::NoFrequency});
+        endPending();
         return;
     }
     const std::optional<services::GpsFix> fix = gps::latestFix(MaxFixAgeMs);
