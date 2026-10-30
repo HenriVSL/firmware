@@ -1312,6 +1312,10 @@ CallStart startDigitalTransmit(services::FmChannel channel)
         logDmrRefused("no baseband", "No DMR");
         return CallStart::Refused;
     }
+    if (!transmitAllowed(channel.transmitHz)) {
+        logDmrRefused("outside the 2 m and 70 cm bands", "TX not allowed");
+        return CallStart::Refused;
+    }
     if (inCall) {
         logDmrRefused("the channel is busy", "Channel busy");
         return CallStart::Refused;
@@ -1416,12 +1420,7 @@ void startRoamingCall()
         }
     }
     for (;;) {
-        const services::FmChannel channel = callChannel();
-        if (!transmitAllowed(channel.transmitHz)) {
-            logDmrRefused("outside the 2 m and 70 cm bands", "TX not allowed");
-            return;
-        }
-        if (startDigitalTransmit(channel) != CallStart::NoRepeater) {
+        if (startDigitalTransmit(callChannel()) != CallStart::NoRepeater) {
             return;
         }
         if (searched) {
@@ -1453,8 +1452,6 @@ void startTransmit(bool packet = false)
             logDmrRefused("this channel is receive only", "Receive only");
         } else if (roamingChannel) {
             startRoamingCall();
-        } else if (!transmitAllowed(channel.transmitHz)) {
-            logDmrRefused("outside the 2 m and 70 cm bands", "TX not allowed");
         } else {
             startDigitalTransmit(channel);
         }
