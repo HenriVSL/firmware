@@ -146,7 +146,7 @@ os::Ticks nextSlot = 0;
 os::Ticks listenUntil = 0;
 os::Ticks packetAirMs = 0;
 // The receiver heard a carrier at the last poll.
-bool carrier = false;
+bool carrierPolled = false;
 std::uint32_t randomState = 0x2545F491;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
@@ -580,7 +580,7 @@ void fmStatus()
 void pollFm()
 {
     const services::FmReceiveStatus s = fm->status();
-    carrier = s.carrier;
+    carrierPolled = s.carrier;
     carrierGate.update(s.carrier);
     // A carrier, debounced, keeps battery save off, so a tone detector has
     // time to lock before the speaker opens. A single poll does not: the
@@ -908,7 +908,7 @@ void packetStep()
         endPacket(false);
         return;
     }
-    if (transmitting || carrier) {
+    if (transmitting || carrierPolled) {
         nextSlot = now + SlotMs;
         return;
     }
