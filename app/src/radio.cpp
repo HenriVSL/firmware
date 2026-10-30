@@ -583,9 +583,10 @@ void onDmrEvent(const services::dmr::Event &e)
 {
     using Kind = services::dmr::Event::Kind;
     using services::dmr::DataType;
-    // Anything on the repeater's output counts as hearing it.
+    // DMR timing or a burst on the repeater's output counts as hearing it;
+    // a carrier alone may be another signal.
     const bool onBase = roamingChannel && !away;
-    if (onBase && (e.kind == Kind::SlotFound || e.kind == Kind::Burst || e.kind == Kind::CarrierFound)) {
+    if (onBase && (e.kind == Kind::SlotFound || e.kind == Kind::Burst)) {
         roamWatch.heard(os::nowMs());
         rangeCheck.heard(os::nowMs());
         baseHeardMs = os::nowMs();
