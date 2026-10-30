@@ -73,7 +73,40 @@ constexpr const char *Bandwidths[] = {"12.5 kHz", "25 kHz"};
 constexpr const char *Slots[] = {"TS1", "TS2"};
 constexpr const char *SquelchModes[] = {"Carrier", "Tone", "Signalling", "Tone and sig.", "Tone or sig."};
 constexpr const char *CallTypes[] = {"Private", "Group", "All call"};
-constexpr const char *Admits[] = {"Always", "Channel free", "Colour code"};
+constexpr const char *Admits[] = {"Always", "Channel free", "Other CC", "Same CC"};
+constexpr const char *FmAdmits[] = {"Always", "Tone", "Channel free"};
+constexpr const char *PttIds[] = {"Off", "Start", "End", "Both"};
+constexpr const char *AprsKinds[] = {"Off", "FM", "DMR"};
+constexpr const char *AprsPtts[] = {"Off", "Start", "End"};
+constexpr const char *AlertTypes[] = {"None", "Ring", "Online"};
+constexpr const char *AutoOffs[] = {"Off", "10 min", "30 min", "1 h", "2 h"};
+constexpr const char *VfoSteps[] = {"2.5 kHz", "5 kHz", "6.25 kHz", "8.33 kHz", "10 kHz", "12.5 kHz", "20 kHz",
+    "25 kHz", "50 kHz"};
+constexpr const char *Tbsts[] = {"1000 Hz", "1450 Hz", "1750 Hz", "2100 Hz"};
+constexpr const char *Languages[] = {"English", "German"};
+constexpr const char *Shows[] = {"Name", "Frequency"};
+constexpr const char *Callers[] = {"Off", "ID", "Call", "Both"};
+constexpr const char *NameColours[] = {"Orange", "Red", "Yellow", "Green", "Turquoise", "Blue", "White"};
+constexpr const char *TextColours[] = {"White", "Black", "Orange", "Red", "Yellow", "Green", "Turquoise", "Blue"};
+constexpr const char *Units[] = {"Metric", "Imperial"};
+constexpr const char *TalkPermits[] = {"Off", "DMR", "FM", "Both"};
+constexpr const char *SlotMatches[] = {"Off", "Single", "Both"};
+constexpr const char *SmsFormats[] = {"Motorola", "Hytera", "DMR"};
+constexpr const char *BootDisplays[] = {"Default", "Text", "Image"};
+constexpr const char *AliasShows[] = {"Off", "User DB", "Air"};
+constexpr const char *AliasCodings[] = {"ISO-8", "ISO-7", "Unicode"};
+constexpr const char *DateFormats[] = {"Year first", "Day first"};
+constexpr const char *PositionSources[] = {"GPS", "Fixed"};
+constexpr const char *NorthSouth[] = {"North", "South"};
+constexpr const char *EastWest[] = {"East", "West"};
+// The programmable keys' functions by code.
+constexpr const char *KeyFunctions[] = {"Off", "Battery", "Power", "Talkaround", "Reverse", "Encryption", "Call",
+    "VOX", "VFO", "Sub PTT", "Scan", "FM radio", "Alarm", "Record on/off", "Record", "SMS", "Dial", "GPS info",
+    "Monitor", "Main channel", "Hot key 1", "Hot key 2", "Hot key 3", "Hot key 4", "Hot key 5", "Hot key 6",
+    "Work alone", "Skip channel", "DMR monitor", "Sub channel", "Priority zone", "VFO scan", "Mic quality",
+    "Last call", "Channel type", "Ranging", "Roam", "Channel range", "Max volume", "Slot", "APRS type", "Zone",
+    "Roam set", "APRS set", "Mute", "Tone set", "TBST", "Bluetooth", "GPS", "Channel name", "CDT scan",
+    "APRS send", "APRS info", "GPS roaming", "Dim", "Code 37", "Squelch"};
 constexpr const char *BatterySaves[] = {"Off", "On", "Fast wake"};
 constexpr const char *LightTimes[] = {"Always", "5 s", "10 s", "15 s", "20 s", "25 s", "30 s", "1 min", "2 min",
     "3 min", "4 min", "5 min", "15 min", "30 min", "45 min", "1 h"};
@@ -184,17 +217,34 @@ constexpr Field ChannelFields[] = {
     choice("Power", "Basic", 0x08, 2, 2, Powers),
     choice("Bandwidth", "Basic", 0x08, 4, 1, Bandwidths),
     onOff("RX only", "Basic", 0x09, 5),
+    onOff("Reverse", "Basic", 0x09, 4),
     bits("Colour code", "DMR", 0x20, 0, 4, 15),
     choice("Slot", "DMR", 0x21, 0, 1, Slots),
     link("Contact", "DMR", 0x14, Book::Contacts, Codec::Index32),
     link("Radio ID", "DMR", 0x18, Book::RadioIds),
     link("RX group", "DMR", 0x1C, Book::GroupLists),
     onOff("Roaming", "DMR", 0x34, 2, true),
-    choice("Admit", "DMR", 0x1A, 0, 8, Admits),
+    choice("Admit", "DMR", 0x1A, 0, 2, Admits),
     onOff("Talkaround", "DMR", 0x09, 7),
+    onOff("Call confirm", "DMR", 0x09, 6),
+    onOff("SMS", "DMR", 0x3B, 2, true),
+    onOff("SMS confirm", "DMR", 0x21, 1),
+    onOff("Data ACK", "DMR", 0x34, 3, true),
+    onOff("Talker alias", "DMR", 0x3B, 4),
+    onOff("Simplex TDMA", "DMR", 0x21, 2),
+    onOff("Through mode", "DMR", 0x34, 1),
+    onOff("Lone worker", "DMR", 0x21, 7),
     special("RX tone", "FM", FieldKind::Choice, Codec::RxTone, 0, ToneChoices - 1),
     special("TX tone", "FM", FieldKind::Choice, Codec::TxTone, 0, ToneChoices - 1),
     choice("Squelch", "FM", 0x19, 4, 3, SquelchModes),
+    choice("FM admit", "FM", 0x1A, 0, 2, FmAdmits),
+    choice("PTT ID", "FM", 0x19, 0, 2, PttIds),
+    onOff("Auto scan", "FM", 0x34, 4),
+    choice("APRS TX", "APRS", 0x35, 0, 8, AprsKinds),
+    choice("FM APRS PTT", "APRS", 0x36, 0, 8, AprsPtts),
+    onOff("DMR APRS PTT", "APRS", 0x37),
+    number("DMR APRS sys", "APRS", 0x38, 0, 7, 1, 1),
+    number("FM APRS freq", "APRS", 0x3C, 0, 7, 1, 1),
 };
 constexpr Field ZoneFields[] = {
     text("Name", "Basic", 0x00, 16),
@@ -203,18 +253,21 @@ constexpr Field ContactFields[] = {
     text("Name", "Basic", 0x01, 16),
     readOnly(choice("Type", "Basic", 0x00, 0, 8, CallTypes)),
     readOnly(special("Number", "Basic", FieldKind::Number, Codec::BcdNumber, 0x23, 0)),
+    choice("Alert", "Basic", 0x27, 0, 8, AlertTypes),
 };
 constexpr Field RepeaterFields[] = {
     text("Name", "Basic", 0x0A, 16),
     frequency("RX", "Basic", 0x00),
     frequency("TX", "Basic", 0x04),
     number("Colour code", "Basic", 0x08, 0, 16),
+    choice("Slot", "Basic", 0x09, 0, 8, Slots),
 };
 constexpr Field RoamZoneFields[] = {
     text("Name", "Basic", 0x40, 16),
 };
 constexpr Field RadioIdFields[] = {
     special("ID", "Basic", FieldKind::Number, Codec::BcdNumber, 0x00, 0),
+    text("Name", "Basic", 0x05, 16),
 };
 constexpr Field SettingsFields[] = {
     number("TX timeout", "Radio", 0x04, 0, 255, 30, 0, " s", true),
@@ -230,6 +283,60 @@ constexpr Field SettingsFields[] = {
     choice("Side B", "Radio", 0x16, 0, 8, VfoModes),
     link("Zone A", "Radio", 0x1F, Book::Zones),
     link("Zone B", "Radio", 0x20, Book::Zones),
+    link("Priority A", "Radio", 0x6F, Book::Zones),
+    link("Priority B", "Radio", 0x70, Book::Zones),
+    choice("Auto off", "Radio", 0x03, 0, 8, AutoOffs),
+    choice("VFO step", "Radio", 0x08, 0, 8, VfoSteps),
+    onOff("Sub channel", "Radio", 0x2D),
+    choice("TBST", "Radio", 0x2E, 0, 8, Tbsts),
+    choice("Units", "Radio", 0xBD, 0, 8, Units),
+    choice("Shows", "Display", 0x01, 0, 8, Shows),
+    number("Brightness", "Display", 0x26, 0, 4, 1, 1),
+    choice("Language", "Display", 0x05, 0, 8, Languages),
+    onOff("Show clock", "Display", 0x51),
+    onOff("Show call", "Display", 0xAF),
+    onOff("Show contact", "Display", 0xB9),
+    onOff("Channel no.", "Display", 0xB8),
+    onOff("Last heard", "Display", 0xC2),
+    choice("Last caller", "Display", 0x4D, 0, 8, Callers),
+    onOff("Volume shown", "Display", 0x47),
+    onOff("Call end note", "Display", 0x3A),
+    number("TX light", "Display", 0xE1, 0, 255, 1, 0, " s", true),
+    choice("Call colour", "Display", 0xBC, 0, 8, NameColours),
+    choice("Name colour", "Display", 0xE4, 0, 8, NameColours),
+    choice("Text colour", "Display", 0xC0, 0, 8, TextColours),
+    onOff("Key tone", "Audio", 0x00),
+    number("Key volume", "Audio", 0xBB, 0, 15),
+    number("Max volume", "Audio", 0x3B, 0, 8),
+    number("Max headphone", "Audio", 0x52, 0, 8),
+    number("Mic gain", "Audio", 0x0F, 0, 4, 1, 1),
+    number("VOX level", "Audio", 0x0C, 0, 3, 1, 0, "", true),
+    onOff("Boot tone", "Audio", 0x39),
+    onOff("SMS tone", "Audio", 0x29),
+    onOff("Call alert", "Audio", 0x2F),
+    choice("Talk permit", "Audio", 0x31, 0, 2, TalkPermits),
+    onOff("Reset tone", "Audio", 0x32),
+    onOff("Idle tone", "Audio", 0x36),
+    onOff("Recording", "Audio", 0x22),
+    number("Mute delay", "Audio", 0xE9, 0, 254, 1, 1, " min"),
+    number("Group hang", "DMR", 0x19, 0, 30, 1, 0, " s"),
+    number("Private hang", "DMR", 0x1A, 0, 30, 1, 0, " s"),
+    number("Preamble", "DMR", 0x1B, 0, 255, 20, 0, " ms"),
+    number("Wake header", "DMR", 0x1C, 0, 255, 20, 0, " ms"),
+    onOff("Filter own ID", "DMR", 0x38),
+    choice("Slot match", "DMR", 0x49, 0, 8, SlotMatches),
+    onOff("CC match", "DMR", 0x4A),
+    onOff("ID match", "DMR", 0x4B),
+    onOff("Slot hold", "DMR", 0x4C),
+    onOff("Keep caller", "DMR", 0xE3),
+    choice("SMS format", "DMR", 0xC3, 0, 8, SmsFormats),
+    choice("Boot screen", "Boot", 0x06, 0, 8, BootDisplays),
+    onOff("Password", "Boot", 0x07),
+    onOff("Boot channels", "Boot", 0xD7),
+    link("Boot zone A", "Boot", 0xD8, Book::Zones),
+    link("Boot zone B", "Boot", 0xD9, Book::Zones),
+    onOff("GPS check", "Boot", 0xEB),
+    onOff("Factory reset", "Boot", 0xEC),
     onOff("Auto lock", "Keys", 0x02),
     number("Menu exit", "Keys", 0x37, 0, 11, 5, 1, " s"),
     onOff("Lock knob", "Keys", 0xBE, 0),
@@ -242,6 +349,11 @@ constexpr Field SettingsFields[] = {
     special("PF1 long", "Keys", FieldKind::Number, Codec::KeyCode, 0x41, 255),
     special("PF2 long", "Keys", FieldKind::Number, Codec::KeyCode, 0x42, 255),
     special("PF3 long", "Keys", FieldKind::Number, Codec::KeyCode, 0x43, 255),
+    special("P1 short", "Keys", FieldKind::Number, Codec::KeyCode, 0x13, 255),
+    special("P2 short", "Keys", FieldKind::Number, Codec::KeyCode, 0x14, 255),
+    special("P1 long", "Keys", FieldKind::Number, Codec::KeyCode, 0x44, 255),
+    special("P2 long", "Keys", FieldKind::Number, Codec::KeyCode, 0x45, 255),
+    number("Long press", "Keys", 0x46, 0, 4, 1, 1, " s"),
     link("Roam zone", "Roaming", 0xDC, Book::RoamZones),
     onOff("Auto roam", "Roaming", 0xE7),
     choice("Roam start", "Roaming", 0xE0, 0, 8, RoamStarts),
@@ -255,6 +367,21 @@ constexpr Field SettingsFields[] = {
 };
 constexpr Field MoreSettingsFields[] = {
     choice("GPS systems", "Radio", 0x35, 0, 8, GpsSystems),
+    onOff("GPS roaming", "Radio", 0x44),
+    onOff("ATPC", "Radio", 0x3C),
+    onOff("TOT warning", "Radio", 0x3B),
+    choice("Date format", "Radio", 0x42, 0, 8, DateFormats),
+    number("FM mic gain", "Radio", 0x43, 0, 4, 1, 1),
+    onOff("FM idle tone", "Radio", 0x41),
+    onOff("Send alias", "DMR", 0x00),
+    choice("Alias shown", "DMR", 0x1E, 0, 8, AliasShows),
+    choice("Alias coding", "DMR", 0x1F, 0, 8, AliasCodings),
+    onOff("Show type", "Display", 0x40, 0),
+    onOff("Show slot", "Display", 0x40, 1),
+    onOff("Show CC", "Display", 0x40, 2),
+    choice("Ch. B colour", "Display", 0x39, 0, 8, NameColours),
+    choice("Zone A colour", "Display", 0x3D, 0, 8, NameColours),
+    choice("Zone B colour", "Display", 0x3E, 0, 8, NameColours),
 };
 constexpr Field AprsFields[] = {
     text("Callsign", "APRS", 0x1D, 6, true),
@@ -266,6 +393,37 @@ constexpr Field AprsFields[] = {
     choice("Power", "APRS", 0x3B, 0, 2, Powers),
     choice("Bandwidth", "APRS", 0xAA, 0, 8, Bandwidths),
     frequency("Frequency", "APRS", 0xAC),
+    number("TX delay", "APRS", 0x05, 0, 255, 20, 0, " ms"),
+    number("Prewave", "APRS", 0x3C, 0, 255, 10, 0, " ms"),
+    number("Manual every", "APRS", 0x0A, 0, 255, 1, 0, " s"),
+    text("Destination", "APRS", 0x16, 6, true),
+    number("Dest. SSID", "APRS", 0x1C, 0, 15),
+    onOff("Pass all", "Receive", 0xAB),
+    onOff("Positions", "Receive", 0xA8, 0),
+    onOff("Mic-E", "Receive", 0xA8, 1),
+    onOff("Objects", "Receive", 0xA8, 2),
+    onOff("Items", "Receive", 0xA8, 3),
+    onOff("Messages", "Receive", 0xA8, 4),
+    onOff("Weather", "Receive", 0xA8, 5),
+    onOff("NMEA", "Receive", 0xA8, 6),
+    onOff("Status", "Receive", 0xA8, 7),
+    onOff("Other", "Receive", 0xA9, 0),
+    choice("Position", "Fixed", 0x0D, 0, 8, PositionSources),
+    number("Lat. degrees", "Fixed", 0x0E, 0, 90),
+    number("Lat. minutes", "Fixed", 0x0F, 0, 59),
+    number("Lat. seconds", "Fixed", 0x10, 0, 59),
+    choice("Latitude", "Fixed", 0x11, 0, 8, NorthSouth),
+    number("Lon. degrees", "Fixed", 0x12, 0, 180),
+    number("Lon. minutes", "Fixed", 0x13, 0, 59),
+    number("Lon. seconds", "Fixed", 0x14, 0, 59),
+    choice("Longitude", "Fixed", 0x15, 0, 8, EastWest),
+    frequency("Frequency 2", "More freqs", 0xB0),
+    frequency("Frequency 3", "More freqs", 0xB4),
+    frequency("Frequency 4", "More freqs", 0xB8),
+    frequency("Frequency 5", "More freqs", 0xBC),
+    frequency("Frequency 6", "More freqs", 0xC0),
+    frequency("Frequency 7", "More freqs", 0xC4),
+    frequency("Frequency 8", "More freqs", 0xC8),
 };
 constexpr Field AprsTextFields[] = {
     text("Text", "APRS", 0x00, AprsSettings::CommentBytes),
@@ -310,10 +468,10 @@ constexpr Layout Layouts[] = {
         MaxRoamingRepeaters, RoamingRepeaterName, 16, "Repeater", RepeaterFields),
     layout(RoamingZones, RoamingZoneBytes, 0, 0, RoamingZoneBytes, RoamingZoneBitmap, false,
         CodeplugSource::MaxRoamingZones, RoamingZoneName, 16, "Roam zone", RoamZoneFields),
-    layout(RadioIds, RadioIdBytes, 0, 0, RadioIdBytes, RadioIdBitmap, false, MaxRadioIds, 0, 0, "Radio ID",
+    layout(RadioIds, RadioIdBytes, 0, 0, RadioIdBytes, RadioIdBitmap, false, MaxRadioIds, 0x05, 16, "Radio ID",
         RadioIdFields),
     layout(Settings, 0, 0, 0, SettingsBytes, 0, false, 1, 0, 0, "Settings", SettingsFields),
-    layout(SettingsExtension, 0, 0, 0, SettingsExtensionBytes, 0, false, 1, 0, 0, "More settings",
+    layout(SettingsExtension, 0, 0, 0, SettingsExtensionEditBytes, 0, false, 1, 0, 0, "More settings",
         MoreSettingsFields),
     layout(AprsSettingsBlock, 0, 0, 0, AprsSettingsBytes, 0, false, 1, 0, 0, "APRS", AprsFields),
     layout(AprsComment, 0, 0, 0, AprsSettings::CommentBytes, 0, false, 1, 0, 0, "APRS text", AprsTextFields),
@@ -825,10 +983,8 @@ void D878Uv2PlugEditor::showIn(std::size_t i, std::int32_t v, const std::uint8_t
         return;
     }
     case Codec::KeyCode:
-        if (v == 0x24) {
-            put(out, "Roam");
-        } else if (v == 0) {
-            put(out, "Off");
+        if (v >= 0 && static_cast<std::size_t>(v) < std::size(KeyFunctions)) {
+            put(out, KeyFunctions[v]);
         } else {
             put(out, "Code ", lib::hex(static_cast<std::uint32_t>(v), 2));
         }

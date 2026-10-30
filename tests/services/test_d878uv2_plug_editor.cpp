@@ -153,7 +153,7 @@ TEST_CASE("a channel's fields read as names, frequencies and tones")
     CHECK(e.field(find(e, "TX tone")).kind == FieldKind::Choice);
     CHECK(e.choices(find(e, "TX tone")) == 261);
     // Every byte follows the named fields.
-    CHECK(e.fields() == find(e, "Squelch") + 1 + 64);
+    CHECK(e.fields() == find(e, "FM APRS freq") + 1 + 64);
     CHECK(e.field(e.fields() - 1).kind == FieldKind::Byte);
     CHECK(e.changes() == 0);
 }
@@ -194,18 +194,18 @@ TEST_CASE("tones, choices, text and bytes change in the record")
     CHECK(text(e, find(e, "Power")) == "Low");
     // The power's byte changed too, but the save lists only the receive
     // tone and the power.
-    CHECK(e.changed(find(e, "Squelch") + 1 + 8));
-    CHECK_FALSE(e.listed(find(e, "Squelch") + 1 + 8));
+    CHECK(e.changed(find(e, "FM APRS freq") + 1 + 8));
+    CHECK_FALSE(e.listed(find(e, "FM APRS freq") + 1 + 8));
     CHECK(e.changes() == 2);
     REQUIRE(e.setText(find(e, "Name"), "Local"));
     CHECK(text(e, find(e, "Name")) == "Local");
-    const std::size_t byte0 = find(e, "Squelch") + 1;
+    const std::size_t byte0 = find(e, "FM APRS freq") + 1;
     CHECK(text(e, byte0) == "14  20");
     CHECK(e.value(find(e, "Roaming")) == 1);
     REQUIRE(e.setValue(find(e, "Roaming"), 0));
     REQUIRE(e.setValue(find(e, "Talkaround"), 1));
     REQUIRE(e.setValue(find(e, "Admit"), 2));
-    CHECK(text(e, find(e, "Admit")) == "Colour code");
+    CHECK(text(e, find(e, "Admit")) == "Other CC");
     CHECK(text(e, find(e, "RX tone")) == "Off"); // the talkaround bit leaves the tone bits alone
     CHECK(e.changed(find(e, "Roaming")));
     CHECK(e.changes() >= 4);
@@ -243,6 +243,30 @@ TEST_CASE("settings are one record with named fields")
     CHECK(text(e, find(e, "TX timeout")) == "120 s");
     CHECK(text(e, find(e, "Menu exit")) == "5 s");
     CHECK(e.fields() == find(e, "Notices") + 1 + 0x100);
+}
+
+TEST_CASE("admit takes two bits, keys show their functions")
+{
+    Plug p;
+    auto write = [&](std::uint32_t a, std::span<const std::uint8_t> d) { return p.write(a, d); };
+    D878Uv2PlugEditor e(*p.codeplug, write);
+    REQUIRE(e.open(Book::Channels, 0));
+    const std::size_t byte1a = find(e, "FM APRS freq") + 1 + 0x1A;
+    REQUIRE(e.setValue(byte1a, 0x13)); // optional signalling 1, admit 3
+    CHECK(text(e, find(e, "Admit")) == "Same CC");
+    CHECK(text(e, find(e, "FM admit")) == "?");
+    REQUIRE(e.setValue(find(e, "Admit"), 1));
+    CHECK(e.value(byte1a) == 0x11);
+    REQUIRE(e.setValue(find(e, "SMS"), 0));
+    CHECK(e.value(find(e, "FM APRS freq") + 1 + 0x3B) == 0x04); // set for off
+    REQUIRE(e.open(Book::Settings, 0));
+    const std::size_t pf3 = find(e, "PF3 short");
+    REQUIRE(e.setValue(pf3, 0x24));
+    CHECK(text(e, pf3) == "Roam");
+    REQUIRE(e.setValue(pf3, 0x33));
+    CHECK(text(e, pf3) == "APRS send");
+    REQUIRE(e.setValue(pf3, 0x40));
+    CHECK(text(e, pf3) == "Code 40");
 }
 
 TEST_CASE("the console pokes bytes into the codeplug through the writer")
