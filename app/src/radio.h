@@ -4,9 +4,11 @@
 #pragma once
 
 #include "dmm/app/app.h"
+#include "dmm/lib/fn_ref.h"
 #include "dmm/lib/format.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/fm_transceiver.h"
+#include "dmm/services/roaming.h"
 
 #include <cstdint>
 #include <span>
@@ -88,6 +90,12 @@ struct Ptt
 {
     bool down;
 };
+/// PTT down for @c ms, then up again, from the radio task itself; for
+/// console tests that must end even when the link drops while transmitting.
+struct PttFor
+{
+    std::uint16_t ms;
+};
 /// Transmit frequency for the FM channel; 0 = the receive frequency.
 struct FmTransmitFrequency
 {
@@ -147,6 +155,31 @@ struct UseChannel
     services::Channel channel;
     std::uint8_t squelch;
 };
+/// Looks for the best repeater of the roaming zone now.
+struct RoamNow
+{
+};
+/// Roaming on, or off: every channel works on its own frequencies. Takes
+/// effect with the next UseChannel.
+struct RoamingOn
+{
+    bool on;
+};
+/// When roaming looks for a better repeater by itself.
+struct RoamingSetup
+{
+    services::RoamingSettings settings;
+};
+/// Logs the roaming state.
+struct RoamStatus
+{
+};
+/// Moving to a better repeater by itself on or off for this session,
+/// whatever the codeplug says; for tests.
+struct RoamAutomatic
+{
+    bool on;
+};
 
 /// Switches the GPS receiver's supply, which runs through the FM
 /// transceiver's pins.
@@ -155,7 +188,7 @@ struct GpsPower
     bool on;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower>;
 
 /// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
 /// board without one) and brings them up.
@@ -183,5 +216,22 @@ bool ready();
 /// The talkgroups heard besides the channel's own contact (the channel's
 /// receive group list); set before posting the channel.
 void setReceiveGroups(std::span<const std::uint32_t> ids);
+
+/// The roaming zone's repeaters, which @p fill writes and counts; set before
+/// posting a roaming channel.
+void setRoamingSites(lib::FnRef<std::size_t(std::span<services::RoamingSite>)> fill);
+
+/// What roaming knows, for the roaming status screen.
+struct RoamingView
+{
+    bool roaming = false; // a roaming channel is in use
+    bool searching = false;
+    int site = -1; // the repeater in use, -1 for none
+    services::roaming::Health health = services::roaming::Health::Unknown;
+    std::uint8_t count = 0;
+    services::roaming::HeardList::Entry entries[services::roaming::HeardList::Capacity];
+    std::uint32_t receiveHz[services::roaming::HeardList::Capacity] = {};
+};
+void roamingView(RoamingView &out);
 
 } // namespace dmm::app::radio
