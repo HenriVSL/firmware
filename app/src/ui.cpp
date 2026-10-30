@@ -3,6 +3,7 @@
 
 #include "ui.h"
 
+#include "aprs.h"
 #include "audio.h"
 #include "gps.h"
 #include "radio.h"
@@ -19,6 +20,7 @@
 #include "dmm/services/power.h"
 #include "dmm/version.h"
 
+#include <cstring>
 #include <iterator>
 #include <string_view>
 
@@ -387,6 +389,8 @@ enum class View : std::uint8_t
     Menu,       // the settings list
     MenuValue,  // choosing one setting's value
     Gps,        // the GPS receiver's state and fix, from the menu
+    Heard,      // APRS stations heard, from the menu
+    Station,    // one heard station
     Log,
     KeyTest,
     Message,
@@ -398,6 +402,11 @@ StandbyScreen standby;
 ListPicker zonePicker;
 ListPicker menu;
 ListPicker menuValue;
+// The heard list's callsigns as last shown, and the one open on its
+// screen.
+char heardCalls[aprs::MaxHeard][aprs::HeardStation::CallBytes + 1] = {};
+std::size_t heardShownCount = 0;
+std::size_t stationShown = 0;
 
 // The screens that show a list; the roaming status screen borrows the
 // zone list's.
@@ -429,6 +438,11 @@ enum class MenuItem : std::uint8_t
     GpsSystems,
     GpsStatus, // opens the GPS screen
     ClockZone,
+    AprsHeard, // opens the heard list
+    AprsSend,  // queues a beacon
+    AprsBeacon,
+    AprsPower,
+    AprsReceive,
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
@@ -442,6 +456,7 @@ enum class MenuGroup : std::uint8_t
     Keys,
     Battery,
     Gps,
+    Aprs,
     Count,
 };
 struct GroupInfo
@@ -459,6 +474,7 @@ constexpr GroupInfo Groups[] = {
     {"Keys", {MenuItem::KeyLock, MenuItem::AutoLock}, 2},
     {"Battery", {MenuItem::BatterySave}, 1},
     {"GPS and time", {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::ClockZone}, 4},
+    {"APRS", {MenuItem::AprsHeard, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsPower, MenuItem::AprsReceive}, 5},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 MenuGroup menuGroup = MenuGroup::Channel;
@@ -481,6 +497,14 @@ std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Be
 // Local time minus UTC, from the codeplug, in half-hour steps.
 int timeZoneMinutes = 0;
 constexpr int ZoneSteps = 53; // UTC-12:00 to UTC+14:00
+// APRS beacons: the interval (the codeplug's at start) and the power.
+constexpr std::uint16_t BeaconIntervals[] = {0, 60, 120, 300, 600, 900, 1200, 1800, 3600};
+std::uint16_t beaconIntervalS = 0;
+// The codeplug has an APRS station, so beacons can go out.
+bool aprsStation = false;
+// Receiving through the board, on from the start.
+bool aprsReceive = true;
+PowerLevel beaconPower = PowerLevel::Low;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -832,6 +856,12 @@ void uiMain(void *)
             radio::post(radio::RoamingSetup{roaming});
             std::copy(std::begin(selector.settings().sideShort), std::end(selector.settings().sideShort), sideShort);
             std::copy(std::begin(selector.settings().sideLong), std::end(selector.settings().sideLong), sideLong);
+            if (const auto a = codeplug->aprsSettings()) {
+                beaconIntervalS = a->beaconIntervalS;
+                beaconPower = a->power;
+                aprsStation = a->callsign[0] != '\0';
+                aprs::setStation(*a);
+            }
             log::info("ui") << "codeplug: zone " << selector.zone() << " \"" << selector.zoneName() << "\", "
                             << selector.zoneSize() << " channels" << (selector.vfoMode() ? ", VFO" : "");
             logLockSettings();
@@ -877,6 +907,8 @@ void uiMain(void *)
     };
     lib::StaticString<6> clockText;
     os::Ticks lastClockMinute = 0;
+    os::Ticks lastHeardRefresh = 0;
+    constexpr os::Ticks HeardRefreshMs = 10'000;
     bool gpsScreenNeed = false;
     // Battery save also decides whether the GPS receiver sleeps between fixes.
     auto setBatterySave = [&](std::uint8_t mode) {
@@ -901,6 +933,7 @@ void uiMain(void *)
         s.roamHz = roam.receiveHz;
         s.roamColourCode = roam.colourCode;
         s.roamSite = roam.name;
+        s.beacons = aprsStation && beaconIntervalS != 0;
         return s;
     };
     auto callInfo = [&] {
@@ -936,7 +969,7 @@ void uiMain(void *)
         noticeShown = false;
         volumeNoticeUp = false;
         const bool radioScreen =
-            view == View::Standby || isList(view) || view == View::Gps;
+            view == View::Standby || isList(view) || view == View::Gps || view == View::Heard || view == View::Station;
         barHeader(radioScreen);
         if (view == View::Standby && heard.shown) {
             standby.drawCall(d, standbyState(), callInfo());
@@ -948,6 +981,17 @@ void uiMain(void *)
             standby.drawStatus(d, standbyState());
             drawBattery(d);
             drawGpsScreen(d, gpsState, true);
+        } else if (view == View::Station) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            aprs::HeardStation s;
+            if (stationShown < heardShownCount && aprs::heardStation(heardCalls[stationShown], s)) {
+                drawAprsStation(d, s, gpsState, os::nowMs());
+            }
+        } else if (view == View::Heard) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            menuValue.draw(d, StandbyScreen::StatusH);
         } else if (isList(view)) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1065,6 +1109,29 @@ void uiMain(void *)
                     : gpsState.receiving                     ? "Searching"
                                                              : "No data");
             break;
+        case MenuItem::AprsBeacon:
+            label = "Beacon";
+            if (beaconIntervalS == 0) {
+                value << "Off";
+            } else {
+                value << durationText(beaconIntervalS).view();
+            }
+            break;
+        case MenuItem::AprsPower:
+            label = "Power";
+            value << Powers[static_cast<int>(beaconPower) & 3];
+            break;
+        case MenuItem::AprsSend:
+            label = "Send now";
+            break;
+        case MenuItem::AprsHeard:
+            label = "Heard";
+            value << aprs::heardCount();
+            break;
+        case MenuItem::AprsReceive:
+            label = "Receive";
+            value << (aprsReceive ? "On" : "Off");
+            break;
         case MenuItem::Count:
             break;
         }
@@ -1096,6 +1163,33 @@ void uiMain(void *)
         menuAtGroups = false;
         menuQuick = quick;
         view = View::Menu;
+        redrawView();
+    };
+    // The heard list, newest first: callsign and age, distance on the
+    // right. The station named @p keep stays chosen.
+    auto openHeard = [&](std::string_view keep) {
+        menuValue.open("Heard");
+        const std::uint32_t now = os::nowMs();
+        heardShownCount = 0;
+        aprs::HeardStation s;
+        for (std::size_t i = 0; i < aprs::MaxHeard && aprs::heardStation(i, s); ++i) {
+            std::memcpy(heardCalls[i], s.call, sizeof s.call);
+            heardShownCount = i + 1;
+            lib::StaticString<ListPicker::TextBytes> text;
+            text << s.call;
+            for (std::size_t n = text.size(); n < aprs::HeardStation::CallBytes + 1; ++n) {
+                text << ' ';
+            }
+            text << ageText(s.heardAtMs, now).view();
+            menuValue.add(static_cast<std::uint8_t>(i), text.view(), distanceText(gpsState, s).view());
+            if (keep == s.call) {
+                menuValue.select(static_cast<std::uint8_t>(i));
+            }
+        }
+        if (heardShownCount == 0) {
+            menuValue.add(0xFF, aprsReceive ? "Nothing yet" : "Receive is off");
+        }
+        view = View::Heard;
         redrawView();
     };
     auto openMenuValue = [&](MenuItem item) {
@@ -1224,6 +1318,37 @@ void uiMain(void *)
         case MenuItem::GpsStatus:
             show(View::Gps);
             return;
+        case MenuItem::AprsBeacon:
+            menuValue.open("Beacon");
+            for (std::uint8_t i = 0; i < std::size(BeaconIntervals); ++i) {
+                menuValue.add(i, BeaconIntervals[i] == 0 ? std::string_view("Off") : durationText(BeaconIntervals[i]).view());
+                if (BeaconIntervals[i] == beaconIntervalS) {
+                    menuValue.select(i);
+                }
+            }
+            break;
+        case MenuItem::AprsPower: {
+            constexpr const char *Powers[] = {"Low", "Mid", "High", "Turbo"};
+            menuValue.open("Beacon power");
+            for (std::uint8_t i = 0; i < 4; ++i) {
+                menuValue.add(i, Powers[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(beaconPower));
+            break;
+        }
+        case MenuItem::AprsSend:
+            aprs::post(aprs::BeaconNow{});
+            notice("Beacon queued");
+            return;
+        case MenuItem::AprsHeard:
+            openHeard({});
+            return;
+        case MenuItem::AprsReceive:
+            menuValue.open("Receive");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(aprsReceive ? 1 : 0);
+            break;
         case MenuItem::Count:
             return;
         }
@@ -1339,7 +1464,22 @@ void uiMain(void *)
             timeZoneMinutes = (v - 24) * 30;
             log::info("ui") << "time zone " << zoneText(timeZoneMinutes).view();
             break;
+        case MenuItem::AprsBeacon:
+            beaconIntervalS = BeaconIntervals[v < std::size(BeaconIntervals) ? v : 0];
+            aprs::post(aprs::BeaconInterval{beaconIntervalS});
+            refreshLockMark();
+            break;
+        case MenuItem::AprsPower:
+            beaconPower = static_cast<PowerLevel>(v & 3);
+            aprs::post(aprs::BeaconPower{beaconPower});
+            break;
+        case MenuItem::AprsReceive:
+            aprsReceive = v == 1;
+            aprs::post(aprs::Receive{aprsReceive});
+            break;
         case MenuItem::GpsStatus:
+        case MenuItem::AprsSend:
+        case MenuItem::AprsHeard:
         case MenuItem::Count:
             break;
         }
@@ -1591,6 +1731,33 @@ void uiMain(void *)
                                    }
                                    return;
                                }
+                               const bool step = e.type == Type::Press || e.type == Type::Repeat;
+                               if (view == View::Heard) {
+                                   if (step && (e.key == Key::Up || e.key == Key::Down)) {
+                                       menuValue.move(e.key == Key::Up ? -1 : 1);
+                                       menuValue.draw(d, StandbyScreen::StatusH);
+                                   } else if (e.type == Type::Press && e.key == Key::Menu && menuValue.chosen() < heardShownCount) {
+                                       stationShown = menuValue.chosen();
+                                       show(View::Station);
+                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
+                                       menuItem = MenuItem::AprsHeard;
+                                       openGroup(MenuGroup::Aprs, false);
+                                   }
+                                   return;
+                               }
+                               if (view == View::Station) {
+                                   if (step && e.key == Key::Up && stationShown > 0) {
+                                       --stationShown;
+                                       redrawView();
+                                   } else if (step && e.key == Key::Down && stationShown + 1 < heardShownCount) {
+                                       ++stationShown;
+                                       redrawView();
+                                   } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
+                                       openHeard(stationShown < heardShownCount ? std::string_view(heardCalls[stationShown])
+                                                                                : std::string_view());
+                                   }
+                                   return;
+                               }
                                if (channels != nullptr && (view == View::Standby || isList(view))) {
                                    channelKey(e.key, e.type);
                                }
@@ -1749,6 +1916,19 @@ void uiMain(void *)
                                    }
                                }
                            },
+                           [&](const Packet &p) { notice(p.sent ? "Beacon sent" : "Beacon not sent"); },
+                           [&](const AprsHeard &) {
+                               if (view == View::Heard && !noticeShown) {
+                                   const std::uint8_t c = menuValue.chosen();
+                                   openHeard(c < heardShownCount ? std::string_view(heardCalls[c]) : std::string_view());
+                               }
+                           },
+                           [&](const AprsProblem &p) {
+                               notice(p.kind == AprsProblem::Kind::NoCallsign     ? "No APRS callsign"
+                                       : p.kind == AprsProblem::Kind::NoFrequency ? "No APRS frequency"
+                                       : p.kind == AprsProblem::Kind::NoFix       ? "No GPS position"
+                                                                                  : "Radio busy");
+                           },
                            [&](const SwitchingOff &) {
                                view = View::Message;
                                d.fillRect(0, 0, d.width(), d.height(), colors::Black);
@@ -1783,6 +1963,7 @@ void uiMain(void *)
             if (gpsAtStart) {
                 gps::post(gps::Power{true});
             }
+            aprs::post(aprs::Receive{aprsReceive});
             useChannel();
         }
         // The backlight goes off after its time, never during a signal or
@@ -1797,6 +1978,16 @@ void uiMain(void *)
         if ((view == View::Gps) != gpsScreenNeed) {
             gpsScreenNeed = view == View::Gps;
             gps::post(gps::Need{services::GpsSchedule::Client::Screen, gpsScreenNeed ? 1000u : 0u});
+        }
+        // Ages on the heard screens move on.
+        if ((view == View::Heard || view == View::Station) && !noticeShown && os::nowMs() - lastHeardRefresh >= HeardRefreshMs) {
+            lastHeardRefresh = os::nowMs();
+            if (view == View::Station) {
+                redrawView();
+            } else {
+                const std::uint8_t c = menuValue.chosen();
+                openHeard(c < heardShownCount ? std::string_view(heardCalls[c]) : std::string_view());
+            }
         }
         // The status bar's clock moves on each minute.
         if (const auto utc = system::utcNow()) {

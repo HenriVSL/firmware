@@ -118,6 +118,19 @@ void SimStorage::putSampleCodeplug()
     }
     putBytes(0x01043000, {0, 1});
     putBytes(0x01043040, {'N', 'E', 'T', 0});
+
+    // APRS: N0CALL-9, WIDE1-1,WIDE2-1, symbol /[, 144.800 MHz wide, a
+    // beacon every 10 min, and a comment.
+    for (std::uint32_t i = 0; i < 0x100; ++i) {
+        put(0x02501000 + i, 0);
+    }
+    put(0x02501000 + 0x0B, 20);
+    putBytes(0x02501000 + 0x1D, {'N', '0', 'C', 'A', 'L', 'L', 9});
+    putBytes(0x02501000 + 0x24, {'W', 'I', 'D', 'E', '1', '-', '1', ',', 'W', 'I', 'D', 'E', '2', '-', '1'});
+    putBytes(0x02501000 + 0x39, {'/', '['});
+    put(0x02501000 + 0xAA, 1);
+    putBytes(0x02501000 + 0xAC, {0x14, 0x48, 0x00, 0x00});
+    putBytes(0x02501200, {'S', 'i', 'm', 'u', 'l', 'a', 't', 'o', 'r', 0});
     // VFOs.
     markValid(0x00FC0000);
     putChannel(0x00FC0800, 145'450'000, 0, true, 0xFF, 0, 0, "");
