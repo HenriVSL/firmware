@@ -29,6 +29,7 @@ hears, and Menu, APRS, Heard lists the stations.
 | 7 | As 6, but press PTT while the second radio still transmits, let the second radio stop, and release PTT 5 s later | The voice transmission goes out; the beacon waits for it and goes out once the channel is free (`Beacon sent`) |
 | 8 | On the APRS frequency, the second radio sends a beacon | `aprs: heard <its packet>`; Menu, APRS, Heard lists it with the age and the distance; Menu on it shows the position, distance and bearing, altitude, speed, text and the digipeater |
 | 9 | Menu, APRS, Receive: Off | `aprs: receiving off`; nothing more is heard. On starts the board again |
+| 10 | Clear the APRS frequency in the codeplug and write it; restart; Menu, APRS, Send now | `aprs: ..., no frequency wide, ...` at start; `beacon not sent: the codeplug has no APRS frequency` and `No APRS frequency`; nothing sent. Put the frequency back |
 
 ## Results
 

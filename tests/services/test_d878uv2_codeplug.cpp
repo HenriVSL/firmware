@@ -271,6 +271,9 @@ TEST_CASE("the APRS settings block gives callsign, path, symbol, comment, freque
     // A short callsign is padded with spaces.
     std::memcpy(&b[0x1D], "OH0A  ", 6);
     CHECK(std::string(dmm::services::decodeAprsSettings(b, comment)->callsign) == "OH0A");
+    // A frequency that is not BCD, such as an erased one, is not set.
+    std::memset(&b[0xAC], 0xFF, 4);
+    CHECK(dmm::services::decodeAprsSettings(b, comment)->frequencyHz == 0);
     // An erased block has no callsign.
     b.fill(0xFF);
     CHECK_FALSE(dmm::services::decodeAprsSettings(b, comment));
