@@ -44,6 +44,7 @@ Fed feedAll(D878Uv2LinkBoardReader &r, const std::vector<std::uint8_t> &bytes)
         case Result::Line:
             out.lines.emplace_back(r.line());
             break;
+        case Result::BadFrame:
         case Result::Byte:
         case Result::None:
             break;
@@ -157,4 +158,62 @@ TEST_CASE("link board: console commands")
     CHECK(D878Uv2LinkBoardReader::command("hex ", out, n) == CommandResult::Invalid);
     CHECK(D878Uv2LinkBoardReader::command("hex", out, n) == CommandResult::Invalid);
     CHECK(D878Uv2LinkBoardReader::command(std::string(80, 'A'), out, n) == CommandResult::Invalid);
+}
+
+TEST_CASE("link board: frames counted by their check")
+{
+    const auto good = encodedFrame(">ok");
+    auto bad = encodedFrame("!6010.25N/02456.30E>Test");
+    const std::size_t badLength = bad.size();
+    bad[20] ^= 0x40;
+    const std::uint16_t received = static_cast<std::uint16_t>(bad[badLength - 2] | bad[badLength - 1] << 8);
+    const std::uint16_t computed = ax25::frameCheck({bad.data(), badLength - 2});
+
+    D878Uv2LinkBoardReader r;
+    std::vector<D878Uv2LinkBoardReader::BadFrame> failed;
+    auto feed = [&](const std::vector<std::uint8_t> &bytes) {
+        for (std::uint8_t b : bytes) {
+            if (r.feed(b) == Result::BadFrame) {
+                failed.push_back(r.badFrame());
+            }
+        }
+    };
+    auto packet = [](const std::vector<std::uint8_t> &frame) {
+        std::vector<std::uint8_t> s;
+        append(s, "+APRS:~");
+        s.insert(s.end(), frame.begin(), frame.end());
+        s.push_back(0x7E);
+        return s;
+    };
+
+    // A failed frame, ended by the next packet's header.
+    feed(packet(bad));
+    feed(packet(good));
+    REQUIRE(failed.size() == 1);
+    CHECK(failed[0].closed);
+    CHECK(failed[0].length == badLength);
+    CHECK(failed[0].receivedCheck == received);
+    CHECK(failed[0].computedCheck == computed);
+    CHECK(r.goodFrames() == 1);
+    CHECK(r.badFrames() == 1);
+
+    // A failed frame, ended by a pause.
+    feed(packet(bad));
+    CHECK(r.reset() == Result::BadFrame);
+    CHECK(r.badFrame().length == badLength);
+    CHECK(r.badFrames() == 2);
+    CHECK(r.reset() == Result::None);
+
+    // A frame cut off: no closing flag.
+    std::vector<std::uint8_t> cut;
+    append(cut, "+APRS:~");
+    cut.insert(cut.end(), good.begin(), good.begin() + 10);
+    feed(cut);
+    CHECK(r.reset() == Result::BadFrame);
+    CHECK_FALSE(r.badFrame().closed);
+    CHECK(r.badFrame().length == 10);
+
+    feed(packet(good));
+    CHECK(r.goodFrames() == 2);
+    CHECK(r.badFrames() == 3);
 }
