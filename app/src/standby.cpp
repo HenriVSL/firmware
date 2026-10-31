@@ -240,6 +240,13 @@ bool hasTalkgroup(const services::ChannelSelector &sel, const StandbyState &s)
 
 } // namespace
 
+void StandbyScreen::signalDrawn(const StandbyState &s)
+{
+    m_signalDrawn = true;
+    m_signalKnown = s.signalKnown;
+    m_signalDbm = s.signalDbm;
+}
+
 void StandbyScreen::drawReading(Display &d, const StandbyState &s)
 {
     lib::StaticString<8> v;
@@ -258,6 +265,7 @@ void StandbyScreen::drawReading(Display &d, const StandbyState &s)
         if (s.signalKnown) {
             v << s.signalDbm;
         }
+        signalDrawn(s);
         break;
     case Layout::Beside::Voltage:
     case Layout::Beside::Count:
@@ -322,6 +330,7 @@ void StandbyScreen::drawMiddle(Display &d, const services::ChannelSelector &sel,
     }
     // The signal meter, each pixel painted once: label, bars, then the
     // level in dBm.
+    signalDrawn(s);
     band(d, PanelY, hh, {{4, PanelY + 7, "SIG", &Small, p::Dim}}, palette::Panel, 0, MeterX);
     const int barY = PanelY + 6;
     const int barH = hh - 12;

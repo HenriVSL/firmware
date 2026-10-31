@@ -155,6 +155,19 @@ public:
     void drawBottom(services::Display &d, const services::ChannelSelector &sel, const StandbyState &s);
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
+    /// The signal in @p s is the one last drawn, so the live rows need no
+    /// redraw.
+    bool signalShown(const StandbyState &s) const
+    {
+        return m_signalDrawn && s.signalKnown == m_signalKnown && (!s.signalKnown || s.signalDbm == m_signalDbm);
+    }
+
+private:
+    void signalDrawn(const StandbyState &s);
+
+    bool m_signalDrawn = false;
+    bool m_signalKnown = false;
+    int m_signalDbm = 0;
 };
 
 /// A list of what happened (the activity list), between the status strip

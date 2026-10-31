@@ -3508,11 +3508,20 @@ void uiMain(void *)
                                }
                            },
                            [&](const Battery &b) {
+                               // Only what the screen shows differently: the
+                               // icon's fill and colour, the voltage to 10 mV.
+                               const BatteryState before = batteryState;
                                batteryState = {b.millivolts, b.level, b.low};
-                               if (view != View::Start && view != View::TestPattern && view != View::Message) {
+                               const bool iconChanged = b.level != before.level || b.low != before.low ||
+                                   (b.millivolts > 0) != (before.millivolts > 0);
+                               const bool voltsChanged =
+                                   (b.millivolts + 5) / 10 != (before.millivolts + 5) / 10 || b.low != before.low;
+                               if (iconChanged && view != View::Start && view != View::TestPattern &&
+                                   view != View::Message) {
                                    drawBattery(d);
                                }
-                               if (workingScreen() && homeLayout.beside == Layout::Beside::Voltage && !noticeShown) {
+                               if (voltsChanged && workingScreen() && homeLayout.beside == Layout::Beside::Voltage &&
+                                   !noticeShown) {
                                    standby.drawReading(d, standbyState());
                                }
                            },
@@ -3699,10 +3708,11 @@ void uiMain(void *)
                 const bool caller = homeLayout.bottom == Layout::Bottom::LastCaller && half % 120 == 0;
                 if (middle || beside || caller) {
                     const StandbyState st = standbyState();
-                    if (middle) {
+                    const bool signal = !standby.signalShown(st);
+                    if (middle && signal) {
                         standby.drawMiddle(d, *channels, st);
                     }
-                    if (beside) {
+                    if (beside && signal) {
                         standby.drawReading(d, st);
                     }
                     if (caller) {
