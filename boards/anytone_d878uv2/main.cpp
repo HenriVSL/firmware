@@ -10,6 +10,7 @@
 #include "board_fm_tuning.h"
 #include "board_rf.h"
 #include "dmm/board/board_aprs_link.h"
+#include "dmm/board/board_audio_sampler.h"
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
@@ -381,6 +382,7 @@ void hal::boardMain()
     gps.configure();
     static BoardAprsLink aprsLink;
     aprsLink.configure();
+    static BoardAudioSampler audioSampler;
     static dmm::drivers::baseband::Sct3258 basebandChip{basebandBoard.bus(), BoardBaseband::pollDelayUs};
     // Called from the radio task; empty until the system task has read the
     // calibration.
@@ -461,6 +463,7 @@ void hal::boardMain()
         .rtc = &rtc,
         .modem = &modem,
         .aprsLink = &aprsLink,
+        .audioSampler = &audioSampler,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

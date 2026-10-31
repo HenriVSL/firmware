@@ -34,7 +34,7 @@ SPDX-License-Identifier = "MIT"
 
 # Docs added with APRS.
 [[annotations]]
-path = ["docs/hw-tests/aprs.md"]
+path = ["docs/hw-tests/aprs.md", "docs/hw-tests/audio-probe.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
 
