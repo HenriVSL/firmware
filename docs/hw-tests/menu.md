@@ -27,7 +27,7 @@ pixel is painted once per update, so nothing blanks before it is redrawn.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Menu | `Menu 1/5`, Channel to Tools, the panel says what Channel holds; the hint bar reads `Menu: open   Exit: back` |
+| 1 | Menu | `Menu 1/6`, Channel to Tools, the panel says what Channel holds; the hint bar reads `Menu: open   Exit: back` |
 | 2 | Down through the groups | The panel follows the chosen group |
 | 3 | Menu on Channel, then Menu on Squelch | `Channel > Squelch`, the level large between arrows, a scale of six steps, `In use: n` |
 | 4 | Up, Down, turn the knob, then Exit | Up raises the level, Down lowers it, the scale follows; Exit leaves the squelch as it was |
