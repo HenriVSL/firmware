@@ -1,11 +1,12 @@
-# Menu: five groups, an explanation panel, large value screens
+# Menu: seven groups, an explanation panel, large value screens
 
-The menu has five groups: Channel (squelch, squelch type, power, frequency
+The menu has seven groups: Channel (squelch, squelch type, power, frequency
 offset), Roaming (on/off, roam zone, roam status), Position (GPS, satellite
 systems, GPS status, APRS beacon, beacon power, APRS receive, send beacon),
-Radio (light, light time, big name, next to power, key lock, auto lock,
-battery save, time zone, show time, calibrate) and Tools (log, key test,
-version).
+Radio (light, light time, key lock, auto lock, battery save, time zone,
+show time, calibrate), Home screen (preset, top row, clock, big name,
+middle row, next to power, bottom row), Codeplug (the editor) and Tools
+(log, key test, version).
 
 A menu list shows a title band with the path and the place in the list
 (`3/7`), five rows, a scroll bar when there are more, a panel of two lines
@@ -27,7 +28,7 @@ pixel is painted once per update, so nothing blanks before it is redrawn.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Menu | `Menu 1/6`, Channel to Tools, the panel says what Channel holds; the hint bar reads `Menu: open   Exit: back` |
+| 1 | Menu | `Menu 1/7`, Channel to Tools, the panel says what Channel holds; the hint bar reads `Menu: open   Exit: back` |
 | 2 | Down through the groups | The panel follows the chosen group |
 | 3 | Menu on Channel, then Menu on Squelch | `Channel > Squelch`, the level large between arrows, a scale of six steps, `In use: n` |
 | 4 | Up, Down, turn the knob, then Exit | Up raises the level, Down lowers it, the scale follows; Exit leaves the squelch as it was |
