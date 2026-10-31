@@ -484,22 +484,42 @@ enum class MenuItem : std::uint8_t
     ToolLog,  // opens the log
     ToolKeys, // opens the key test
     Version,
+    AprsHeard, // opens the heard list
+    // Each opens a group under Settings or Tools.
+    OpenHome,
+    OpenDisplay,
+    OpenKeys,
+    OpenClock,
+    OpenGpsSettings,
+    OpenAprsSettings,
+    OpenRadioSettings,
+    OpenCodeplug,
     Count,
 };
 MenuItem menuItem = MenuItem::Squelch;
 
-// Menu groups and their items, by what the user is doing.
+// Menu groups and their items: first what is used while operating the
+// radio, then Settings and Tools, whose groups follow.
 enum class MenuGroup : std::uint8_t
 {
     Channel,
     Roaming,
-    Position,
-    Radio,
-    Home,
-    Codeplug,
+    Gps,
+    Aprs,
+    Settings,
     Tools,
+    Home,
+    Display,
+    Keys,
+    Clock,
+    GpsSettings,
+    AprsSettings,
+    RadioSettings,
+    Codeplug,
     Count,
 };
+// The groups listed at the top of the menu.
+constexpr std::size_t TopGroups = static_cast<std::size_t>(MenuGroup::Settings) + 2;
 struct GroupInfo
 {
     const char *name;
@@ -508,33 +528,69 @@ struct GroupInfo
     const char *about2;
     MenuItem items[11];
     std::uint8_t count;
+    // The group it opens from, and the item there that opens it; Count for
+    // the top of the menu.
+    MenuGroup parent = MenuGroup::Count;
+    MenuItem opener = MenuItem::Count;
 };
 constexpr GroupInfo Groups[] = {
-    {"Channel", "Squelch, power and offset", "of the channel in use",
-        {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power, MenuItem::FrequencyOffset}, 4},
+    {"Channel", "Squelch and power", "of the channel in use", {MenuItem::Squelch, MenuItem::SquelchMode, MenuItem::Power},
+        3},
     {"Roaming", "Moving between repeaters", "of the roaming zone",
-        {MenuItem::Roaming, MenuItem::RoamZone, MenuItem::RoamStatus}, 3},
-    {"Position", "The GPS receiver and", "APRS position beacons",
-        {MenuItem::Gps, MenuItem::GpsSystems, MenuItem::GpsStatus, MenuItem::AprsBeacon, MenuItem::AprsPower,
-            MenuItem::AprsReceive, MenuItem::AprsSend},
+        {MenuItem::RoamStatus, MenuItem::Roaming, MenuItem::RoamZone}, 3},
+    {"GPS", "The position and", "the GPS receiver", {MenuItem::GpsStatus, MenuItem::Gps}, 2},
+    {"APRS", "Sending the position", "and stations heard", {MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard},
+        3},
+    {"Settings", "How the radio is set up:", "screen, keys, clock, GPS",
+        {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenKeys, MenuItem::OpenClock, MenuItem::OpenGpsSettings,
+            MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
         7},
-    {"Radio", "Display, keys, battery", "and the clock",
-        {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::KeyLock,
-            MenuItem::AutoLock, MenuItem::BatterySave, MenuItem::ClockZone, MenuItem::ClockShown,
-            MenuItem::ClockCalibration},
-        8},
+    {"Tools", "The codeplug editor, log,", "key test and version",
+        {MenuItem::OpenCodeplug, MenuItem::ToolLog, MenuItem::ToolKeys, MenuItem::Version}, 4},
     {"Home screen", "What the main screen", "shows, row by row",
         {MenuItem::HomePreset, MenuItem::HomeTop, MenuItem::HomeClock, MenuItem::HomeBig, MenuItem::HomeMiddle,
             MenuItem::HomeBeside, MenuItem::HomeBottom},
-        7},
-    {"Codeplug", "Every record and value", "of the codeplug, edited",
+        7, MenuGroup::Settings, MenuItem::OpenHome},
+    {"Display", "Brightness and how long", "the light stays on", {MenuItem::Backlight, MenuItem::BacklightTime}, 2,
+        MenuGroup::Settings, MenuItem::OpenDisplay},
+    {"Keys & battery", "The key lock and", "battery save",
+        {MenuItem::KeyLock, MenuItem::AutoLock, MenuItem::BatterySave}, 3, MenuGroup::Settings, MenuItem::OpenKeys},
+    {"Clock", "Time zone, the time", "shown and calibration",
+        {MenuItem::ClockZone, MenuItem::ClockShown, MenuItem::ClockCalibration}, 3, MenuGroup::Settings,
+        MenuItem::OpenClock},
+    {"GPS", "The satellite systems", "the receiver uses", {MenuItem::GpsSystems}, 1, MenuGroup::Settings,
+        MenuItem::OpenGpsSettings},
+    {"APRS", "Send power and", "receiving stations", {MenuItem::AprsPower, MenuItem::AprsReceive}, 2,
+        MenuGroup::Settings, MenuItem::OpenAprsSettings},
+    {"Radio", "The radio's frequency", "correction", {MenuItem::FrequencyOffset}, 1, MenuGroup::Settings,
+        MenuItem::OpenRadioSettings},
+    {"Codeplug editor", "Every record and value", "of the codeplug, edited",
         {MenuItem::PlugChannels, MenuItem::PlugZones, MenuItem::PlugContacts, MenuItem::PlugGroups,
             MenuItem::PlugRepeaters, MenuItem::PlugRoamZones, MenuItem::PlugRadioIds, MenuItem::PlugSettings,
             MenuItem::PlugMoreSettings, MenuItem::PlugAprs, MenuItem::PlugAprsText},
-        11},
-    {"Tools", "The log, the key test", "and the version", {MenuItem::ToolLog, MenuItem::ToolKeys, MenuItem::Version},
-        3},
+        11, MenuGroup::Tools, MenuItem::OpenCodeplug},
 };
+static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
+
+// The group @p item opens, or Count for an item that opens none.
+MenuGroup groupOpenedBy(MenuItem item)
+{
+    for (std::size_t i = 0; i < std::size(Groups); ++i) {
+        if (Groups[i].opener == item) {
+            return static_cast<MenuGroup>(i);
+        }
+    }
+    return MenuGroup::Count;
+}
+
+// The top-level group @p g is under.
+MenuGroup topGroupOf(MenuGroup g)
+{
+    while (Groups[static_cast<int>(g)].parent != MenuGroup::Count) {
+        g = Groups[static_cast<int>(g)].parent;
+    }
+    return g;
+}
 static_assert(std::size(Groups) == static_cast<std::size_t>(MenuGroup::Count));
 // Two lines about an item for the menu's panel.
 struct ItemAbout
@@ -550,13 +606,13 @@ ItemAbout itemAbout(MenuItem item)
     case MenuItem::SquelchMode:
         return {"Carrier opens on any", "signal, Tone on its tone"};
     case MenuItem::Power:
-        return {"Transmit power of this", "channel, this session"};
+        return {"Transmit power of this", "channel"};
     case MenuItem::FrequencyOffset:
         return {"Corrects the radio's", "frequency error"};
     case MenuItem::Roaming:
         return {"Use the roaming zone's", "repeaters on this channel"};
     case MenuItem::RoamZone:
-        return {"The repeaters to move", "between, this session"};
+        return {"The repeaters to move", "between"};
     case MenuItem::RoamStatus:
         return {"Repeaters heard and", "their levels; search now"};
     case MenuItem::Backlight:
@@ -600,7 +656,7 @@ ItemAbout itemAbout(MenuItem item)
     case MenuItem::AprsBeacon:
         return {"How often the position", "is sent by itself"};
     case MenuItem::AprsPower:
-        return {"Transmit power of the", "APRS beacons"};
+        return {"Transmit power for", "sending the position"};
     case MenuItem::AprsReceive:
         return {"Listen for APRS stations", "(heard list under P2)"};
     case MenuItem::PlugChannels:
@@ -629,6 +685,19 @@ ItemAbout itemAbout(MenuItem item)
         return {"The radio's log; hold", "Exit for the next screen"};
     case MenuItem::ToolKeys:
         return {"Shows each key pressed;", "hold Exit for the next"};
+    case MenuItem::AprsHeard:
+        return {"APRS stations heard,", "newest first (also P2)"};
+    case MenuItem::OpenHome:
+    case MenuItem::OpenDisplay:
+    case MenuItem::OpenKeys:
+    case MenuItem::OpenClock:
+    case MenuItem::OpenGpsSettings:
+    case MenuItem::OpenAprsSettings:
+    case MenuItem::OpenRadioSettings:
+    case MenuItem::OpenCodeplug: {
+        const GroupInfo &g = Groups[static_cast<int>(groupOpenedBy(item))];
+        return {g.about1, g.about2};
+    }
     case MenuItem::Version:
     case MenuItem::Count:
         break;
@@ -792,6 +861,8 @@ services::EventLog<LogRows> systemLog;
 // The page P2 opens: 0 calls, 1 system, 2 APRS stations heard.
 constexpr int LogPages = 3;
 int logPage = 0;
+// The heard list was opened from the menu, so Exit goes back there.
+bool heardFromMenu = false;
 
 std::uint32_t uptimeS()
 {
@@ -1523,7 +1594,7 @@ void uiMain(void *)
             value << (roamingOn ? "On" : "Off");
             break;
         case MenuItem::RoamStatus: {
-            label = "Roam status";
+            label = "Status";
             radio::roamingView(roamView);
             value << roamStateText(roamView).view();
             break;
@@ -1541,7 +1612,7 @@ void uiMain(void *)
             value << (offsetKhz > 0 ? "+" : "") << offsetKhz << " kHz";
             break;
         case MenuItem::Backlight:
-            label = "Backlight";
+            label = "Brightness";
             value << backlightLevel;
             break;
         case MenuItem::BacklightTime:
@@ -1597,11 +1668,11 @@ void uiMain(void *)
             }
             break;
         case MenuItem::Gps:
-            label = "GPS";
+            label = "Receiver";
             value << (gpsState.on ? "On" : "Off");
             break;
         case MenuItem::GpsSystems:
-            label = "Systems";
+            label = "Satellites";
             value << services::gps_systems::name(gpsSystems);
             break;
         case MenuItem::ClockZone:
@@ -1623,14 +1694,14 @@ void uiMain(void *)
             }
             break;
         case MenuItem::GpsStatus:
-            label = "GPS status";
+            label = "Status";
             value << (!gpsState.on ? "Off" : gpsState.asleep ? "Sleeping"
                     : gpsState.fix.valid                     ? "Fix"
                     : gpsState.receiving                     ? "Searching"
                                                              : "No data");
             break;
         case MenuItem::AprsBeacon:
-            label = "Beacon";
+            label = "Auto send";
             if (beaconIntervalS == 0) {
                 value << "Off";
             } else {
@@ -1638,14 +1709,14 @@ void uiMain(void *)
             }
             break;
         case MenuItem::AprsPower:
-            label = "Beacon power";
+            label = "Send power";
             value << Powers[static_cast<int>(beaconPower) & 3];
             break;
         case MenuItem::AprsSend:
-            label = "Send beacon";
+            label = "Send now";
             break;
         case MenuItem::AprsReceive:
-            label = "APRS receive";
+            label = "Receive";
             value << (aprsReceive ? "On" : "Off");
             break;
         case MenuItem::PlugChannels:
@@ -1670,6 +1741,19 @@ void uiMain(void *)
         case MenuItem::Version:
             label = "Version";
             break;
+        case MenuItem::AprsHeard:
+            label = "Heard stations";
+            break;
+        case MenuItem::OpenHome:
+        case MenuItem::OpenDisplay:
+        case MenuItem::OpenKeys:
+        case MenuItem::OpenClock:
+        case MenuItem::OpenGpsSettings:
+        case MenuItem::OpenAprsSettings:
+        case MenuItem::OpenRadioSettings:
+        case MenuItem::OpenCodeplug:
+            label = Groups[static_cast<int>(groupOpenedBy(item))].name;
+            break;
         case MenuItem::Count:
             break;
         }
@@ -1677,14 +1761,15 @@ void uiMain(void *)
     // Whether Menu on @p item opens a screen of its own rather than values.
     auto itemOpens = [](MenuItem item) {
         return item == MenuItem::RoamStatus || item == MenuItem::GpsStatus || item == MenuItem::ToolLog ||
-            item == MenuItem::ToolKeys || (item >= MenuItem::PlugChannels && item <= MenuItem::PlugAprsText);
+            item == MenuItem::ToolKeys || item == MenuItem::AprsHeard || groupOpenedBy(item) != MenuGroup::Count ||
+            (item >= MenuItem::PlugChannels && item <= MenuItem::PlugAprsText);
     };
     // The menu as it stands: the groups, or one group's items with their
     // values, five rows around the chosen one and a panel about it; the
     // status strip too unless only the cursor moved.
     auto drawMenu = [&](bool strip = true) {
         const GroupInfo &g = Groups[static_cast<int>(menuGroup)];
-        const std::size_t count = menuAtGroups ? std::size(Groups) : g.count;
+        const std::size_t count = menuAtGroups ? TopGroups : g.count;
         if (menuRow >= count) {
             menuRow = 0;
         }
@@ -1730,10 +1815,16 @@ void uiMain(void *)
             hint = "Exit: back";
         }
         lib::StaticString<24> title;
+        // Where the group is: under the top of the menu, or under its parent
+        // group where both names fit.
+        const std::string_view above =
+            g.parent == MenuGroup::Count ? std::string_view("Menu") : std::string_view(Groups[static_cast<int>(g.parent)].name);
         if (menuAtGroups) {
             title << "Menu";
+        } else if (above.size() + 3 + std::string_view(g.name).size() <= ListPicker::TitleChars) {
+            title << above << " > " << g.name;
         } else {
-            title << "Menu > " << g.name;
+            title << g.name;
         }
         if (strip) {
             standby.drawStatus(d, standbyState());
@@ -1743,7 +1834,7 @@ void uiMain(void *)
             about2, hint);
     };
     auto moveMenu = [&](int steps) {
-        const int count = static_cast<int>(menuAtGroups ? std::size(Groups) : Groups[static_cast<int>(menuGroup)].count);
+        const int count = static_cast<int>(menuAtGroups ? TopGroups : Groups[static_cast<int>(menuGroup)].count);
         menuRow = static_cast<std::uint8_t>(((menuRow + steps) % count + count) % count);
         drawMenu(false);
     };
@@ -2087,7 +2178,7 @@ void uiMain(void *)
     // One item's label and current value.
     // The top of the menu: the groups.
     auto openMenu = [&] {
-        menuRow = static_cast<std::uint8_t>(menuGroup);
+        menuRow = static_cast<std::uint8_t>(topGroupOf(menuGroup));
         menuAtGroups = true;
         menuQuick = false;
         view = View::Menu;
@@ -2110,7 +2201,9 @@ void uiMain(void *)
     };
     // Redraws the GPS group's values when it is open, keeping the cursor.
     auto refreshGpsGroup = [&] {
-        if (view == View::Menu && !menuAtGroups && menuGroup == MenuGroup::Position && !noticeShown) {
+        const bool gpsShown = menuGroup == MenuGroup::Gps || menuGroup == MenuGroup::Aprs ||
+            menuGroup == MenuGroup::Clock || menuGroup == MenuGroup::GpsSettings || menuGroup == MenuGroup::AprsSettings;
+        if (view == View::Menu && !menuAtGroups && gpsShown && !noticeShown) {
             drawMenu();
         }
     };
@@ -2138,6 +2231,7 @@ void uiMain(void *)
     // Page @p page under P2, counting round: calls, system, APRS heard.
     auto openLogPage = [&](int page) {
         logPage = (page % LogPages + LogPages) % LogPages;
+        heardFromMenu = heardFromMenu && logPage == 2;
         if (logPage == 2) {
             openHeard({});
         } else {
@@ -2663,14 +2757,14 @@ void uiMain(void *)
             menuValue.select(static_cast<std::uint8_t>(keyLock.settings().autoLockMs / 1000));
             break;
         case MenuItem::Gps:
-            menuValue.open("GPS");
+            menuValue.open("Receiver");
             menuValue.add(0, "Off");
             menuValue.add(1, "On");
             menuValue.select(gpsState.on ? 1 : 0);
             break;
         case MenuItem::GpsSystems: {
             namespace g = services::gps_systems;
-            menuValue.open("Systems");
+            menuValue.open("Satellites");
             menuValue.add(g::Gps | g::Beidou, "GPS + BeiDou");
             menuValue.add(g::Gps, "GPS");
             menuValue.add(g::Beidou, "BeiDou");
@@ -2712,7 +2806,7 @@ void uiMain(void *)
             show(View::Gps);
             return;
         case MenuItem::AprsBeacon:
-            menuValue.open("Beacon");
+            menuValue.open("Auto send");
             for (std::uint8_t i = 0; i < std::size(BeaconIntervals); ++i) {
                 menuValue.add(i, BeaconIntervals[i] == 0 ? std::string_view("Off") : durationText(BeaconIntervals[i]).view());
                 if (BeaconIntervals[i] == beaconIntervalS) {
@@ -2722,7 +2816,7 @@ void uiMain(void *)
             break;
         case MenuItem::AprsPower: {
             constexpr const char *Powers[] = {"Low", "Mid", "High", "Turbo"};
-            menuValue.open("Beacon power");
+            menuValue.open("Send power");
             for (std::uint8_t i = 0; i < 4; ++i) {
                 menuValue.add(i, Powers[i]);
             }
@@ -2731,7 +2825,22 @@ void uiMain(void *)
         }
         case MenuItem::AprsSend:
             aprs::post(aprs::BeaconNow{});
-            notice("Beacon queued");
+            notice("Position queued");
+            return;
+        case MenuItem::AprsHeard:
+            logPage = 2;
+            heardFromMenu = true;
+            openHeard({});
+            return;
+        case MenuItem::OpenHome:
+        case MenuItem::OpenDisplay:
+        case MenuItem::OpenKeys:
+        case MenuItem::OpenClock:
+        case MenuItem::OpenGpsSettings:
+        case MenuItem::OpenAprsSettings:
+        case MenuItem::OpenRadioSettings:
+        case MenuItem::OpenCodeplug:
+            openGroup(groupOpenedBy(item), false);
             return;
         case MenuItem::PlugChannels:
         case MenuItem::PlugZones:
@@ -3010,6 +3119,15 @@ void uiMain(void *)
         case MenuItem::ToolLog:
         case MenuItem::ToolKeys:
         case MenuItem::Version:
+        case MenuItem::AprsHeard:
+        case MenuItem::OpenHome:
+        case MenuItem::OpenDisplay:
+        case MenuItem::OpenKeys:
+        case MenuItem::OpenClock:
+        case MenuItem::OpenGpsSettings:
+        case MenuItem::OpenAprsSettings:
+        case MenuItem::OpenRadioSettings:
+        case MenuItem::OpenCodeplug:
         case MenuItem::Count:
             break;
         }
@@ -3057,6 +3175,10 @@ void uiMain(void *)
             } else if (press && key == Key::Exit) {
                 if (view == View::MenuValue) {
                     openGroup(menuGroup, menuQuick);
+                } else if (!menuAtGroups && !menuQuick && Groups[static_cast<int>(menuGroup)].parent != MenuGroup::Count) {
+                    // Back to the group it opened from, on the row that opened it.
+                    menuItem = Groups[static_cast<int>(menuGroup)].opener;
+                    openGroup(Groups[static_cast<int>(menuGroup)].parent, false);
                 } else if (!menuAtGroups && !menuQuick) {
                     openMenu();
                 } else {
@@ -3312,7 +3434,7 @@ void uiMain(void *)
                                }
                                if (view == View::Gps) {
                                    if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
-                                       openGroup(MenuGroup::Position, false);
+                                       openGroup(MenuGroup::Gps, false);
                                    }
                                    return;
                                }
@@ -3324,7 +3446,11 @@ void uiMain(void *)
                                        openLogPage(logPage + (e.key == Key::Up ? -1 : 1));
                                    } else if (e.type == Type::Press && e.key == Key::Menu && stationShown < heardShownCount) {
                                        show(View::Station);
+                                   } else if (e.type == Type::Press && e.key == Key::Exit && heardFromMenu) {
+                                       heardFromMenu = false;
+                                       openGroup(MenuGroup::Aprs, false);
                                    } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Front2)) {
+                                       heardFromMenu = false;
                                        show(View::Standby);
                                    }
                                    return;

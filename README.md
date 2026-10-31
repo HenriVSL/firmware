@@ -29,10 +29,10 @@ directory. PTT wakes an idle repeater and calls the channel's contact.
 Direct (simplex) calls, voice enhancement and the shaped amplifier
 keying at High and Turbo are implemented, not yet tested on the radio.
 
-**Frequency offset.** The Channel menu shifts every receive and transmit
-frequency by up to 5 kHz, for a radio whose frequency reference has
-drifted; the console's `fm offset` sets it in hertz. It lasts until the
-radio restarts; `DefaultFrequencyOffsetHz` sets the one it starts with.
+**Frequency offset.** Menu > Settings > Radio shifts every receive and
+transmit frequency by up to 5 kHz, for a radio whose frequency reference
+has drifted; the console's `fm offset` sets it in hertz. The menu's value
+is kept; `DefaultFrequencyOffsetHz` sets the one a radio starts with.
 
 **Roaming.** A DMR channel with roaming on works through a repeater of
 the codeplug's roaming zone, so one channel per talkgroup covers a whole
@@ -41,8 +41,8 @@ visits the others briefly to keep their levels, and with the codeplug's
 automatic roaming on it moves to a clearly better repeater by itself.
 Searches, on a side key set to roaming or when PTT finds no repeater,
 try the most likely repeaters first. The codeplug's repeater range check
-is followed. Menu > Roaming turns roaming off or picks another roaming
-zone for the session, and Roam status shows what the radio hears. The
+is followed. Menu > Roaming shows what the radio hears (Status), turns
+roaming off until a restart and picks another roaming zone. The
 design is in `docs/roaming.md`; moving between two real repeaters is
 still to be tested.
 
@@ -52,14 +52,17 @@ a frequency on the keypad.
 
 **Interface.** A working screen with the channel or contact name large,
 the talkgroup, time, frequency, slot, power and battery voltage; call and
-transmit screens; and activity pages under P2. The menu has five groups
-(Channel, Roaming, Position, Radio, Tools). Each list shows five rows and
+transmit screens; and activity pages under P2. The menu's top holds what
+is used while operating: Channel, Roaming, GPS and APRS; Settings holds
+the setup (Home screen, Display, Keys & battery, Clock, GPS, APRS, Radio)
+and Tools the codeplug editor, log, key test and version; Exit goes back
+one level. Each list shows five rows and
 a panel saying what the chosen item does; a value changes on its own
 screen, as large buttons for a few choices or a large value on a scale
 for many. Key lock
 covers the keypad, side keys and knob, with auto lock and forced lock.
 
-**Codeplug editing.** Menu > Codeplug edits the codeplug on the radio:
+**Codeplug editing.** Menu > Tools > Codeplug editor edits the codeplug on the radio:
 channels, zones, contacts, receive groups, the roaming repeaters and
 zones, radio IDs, the settings and APRS. Each record lists its known
 fields by name, on pages that P1 and P2 turn (a channel's Basic, DMR and
@@ -90,7 +93,7 @@ it sleeps.
 
 **Clock.** The radio's real-time clock keeps UTC while the radio is off; a
 GPS fix corrects it. The status bar shows the local time from the
-codeplug's time zone. Menu > Radio > Calibrate measures the clock
+codeplug's time zone. Menu > Settings > Clock > Calibrate measures the clock
 against GPS time for 60 or 30 minutes and corrects its rate, so it keeps
 time between fixes and while the radio is off. The receiver's timing
 wanders by a few milliseconds, so a 30-minute run gets the rate to within
@@ -220,19 +223,20 @@ included. Each release has a hardware checklist in `docs/hw-tests/`.
 | Hold `*` | Lock keys; Menu then `*` unlocks |
 | Hold Exit | Cycle standby, log and key test screens (also Menu > Tools) |
 
-Menu > Position holds the receiver's on/off setting, its satellite
-systems and its status; choosing GPS status opens the GPS screen, and
-Exit or Menu goes back to the list. The time zone and the clock are under
-Menu > Radio. The console's `gps raw on`
+Menu > GPS holds the receiver's status and its on/off setting; choosing
+Status opens the GPS screen, and Exit or Menu goes back to the list. The
+satellite systems are under Menu > Settings > GPS, the time zone and the
+clock under Menu > Settings > Clock. The console's `gps raw on`
 logs every sentence the receiver sends; `gps query`, `gps restart` and
 `gps send` talk to the receiver itself; `gps need <s>` asks for a
 position every so many seconds (0: none). `time` logs the clock, and
 `time set YYYY-MM-DD HH:MM:SS` sets it (UTC); `time cal <min>` runs a
 calibration (0 stops it) and `time cal reset` clears the correction.
 
-Menu > Position also holds Beacon (the interval, Off to stop), Beacon
-power, APRS receive (the board on or off) and Send beacon. The stations
-heard are the third page under P2: choose one for its position, distance
+Menu > APRS holds Send now (the position once), Auto send (the interval,
+Off to stop) and Heard stations; Menu > Settings > APRS holds the send
+power and Receive (the board on or off). The stations heard are also the
+third page under P2: choose one for its position, distance
 and bearing, altitude, speed and text. An A in the status bar shows that beacons go out
 on their own. The console's `aprs` logs the station and the beacon state,
 `aprs send` sends a beacon (`aprs send here`: on the current channel, for

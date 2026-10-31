@@ -7,13 +7,13 @@ The standby screen is now one working screen:
   a battery on the right, full when charged and emptying from the right
   as it drains, red when low. The line under it turns red while
   transmitting and green while receiving.
-- The channel's name large, or the contact's (Menu > Display > Big name),
+- The channel's name large, or the contact's (Menu > Settings > Home screen > Big name),
   with the talkgroup number (`TG 244`) small above it; a channel without
   a contact, or an FM channel, says `CHANNEL` there. The time on the
-  right, local or UTC (`11:32Z`): Menu > GPS and time > Show time.
+  right, local or UTC (`11:32Z`): Menu > Settings > Clock > Show time.
 - Frequency, slot and the colour code (dim) on a panel; power and the
-  battery voltage on one line (the volume instead: Menu > Display > Next
-  to power); the repeater a roaming channel works through, or the zone
+  battery voltage on one line (the volume instead: Menu > Settings >
+  Home screen > Next to power); the repeater a roaming channel works through, or the zone
   and the channel's place in it, or an FM channel's tones and offset.
 
 A call that is heard takes the screen: `RECEIVING` and the talkgroup in
@@ -38,10 +38,10 @@ menu.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Start on a DMR channel with a talkgroup | `TG <number>` small, the channel's name large, the time on the right; frequency, TS and CC; power and volume. Menu > Display > Big name: Contact shows the contact's name large instead |
-| 2 | Menu > Display > Next to power: Volume, then turn the volume | `VOL` and the step next to the power; only the value changes, without flicker. Back to Voltage: `BAT` and the voltage with two decimals |
+| 1 | Start on a DMR channel with a talkgroup | `TG <number>` small, the channel's name large, the time on the right; frequency, TS and CC; power and volume. Menu > Settings > Home screen > Big name: Contact shows the contact's name large instead |
+| 2 | Menu > Settings > Home screen > Next to power: Volume, then turn the volume | `VOL` and the step next to the power; only the value changes, without flicker. Back to Voltage: `BAT` and the voltage with two decimals |
 | 3 | Wait for the minute to change | Only the time changes |
-| 4 | Menu > GPS and time > Show time: UTC | The time shows as `hh:mmZ` |
+| 4 | Menu > Settings > Clock > Show time: UTC | The time shows as `hh:mmZ` |
 | 5 | GPS on, indoors | `GPS..` in amber in the strip until a fix |
 | 6 | PTT on the DMR channel | `TRANSMITTING`, the talkgroup, the time on the air counting; a red line under the strip; back to the working screen on release |
 | 7 | A call heard | `RECEIVING`, the caller, name and ID, the talk time; `LAST CALL` for a moment after |

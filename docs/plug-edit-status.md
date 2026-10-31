@@ -6,7 +6,7 @@ A work note for this branch. Drop it before the branch is offered upstream.
 
 Version 0.20.3-6HL-12, not tagged and not merged into `oh6hl-main`.
 
-- Menu > Codeplug edits the codeplug on the radio: books, then records,
+- Menu > Tools > Codeplug editor edits the codeplug on the radio: books, then records,
   then the named fields, then every byte of the record (`Bytes` page), so
   any value can be changed even without a named field.
 - The console has `plug peek <addr> [count]` and `plug poke <addr> <bytes>`

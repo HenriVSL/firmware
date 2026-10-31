@@ -1,6 +1,6 @@
 # Codeplug editor on the radio
 
-Menu > Codeplug lists the codeplug's books: Channels, Zones, Contacts, RX
+Menu > Tools > Codeplug editor lists the codeplug's books: Channels, Zones, Contacts, RX
 groups, Repeaters, Roam zones, Radio IDs, Settings, More settings, APRS and
 APRS text. A book lists its records by name; a record lists its named
 fields on pages (P1 and P2 turn them) and then each of its bytes. The
@@ -23,7 +23,7 @@ the file: it puts everything back.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Menu > Codeplug > Channels | The channels by name with their number, `n/N` in the title band |
+| 1 | Menu > Tools > Codeplug editor > Channels | The channels by name with their number, `n/N` in the title band |
 | 2 | Menu on a channel | Its name, frequencies, mode, power, bandwidth, RX only; P2 turns to DMR (colour code, slot, contact, radio ID, RX group, roaming), FM (tones, squelch), then Bytes |
 | 3 | Menu on Power, choose another, Menu | Back in the list with the new power in amber; the title ends with `*` |
 | 4 | Menu on RX, type a frequency, Menu | The digits typed bright, the rest of the old frequency dim; the TX frequency stays as it was |
@@ -33,7 +33,7 @@ the file: it puts everything back.
 | 8 | Menu | `Saved`; back in the list; on the working screen the channel shows the changes |
 | 9 | Read the codeplug with the PC | The changed channel as edited, every other channel and setting as before |
 | 10 | Edit a channel again, Exit, `#` | `Changes dropped`; the channel as it was |
-| 11 | Menu > Codeplug > Settings, change Light time, save | `Saved: restarting`; the radio restarts with the new light time |
+| 11 | Menu > Tools > Codeplug editor > Settings, change Light time, save | `Saved: restarting`; the radio restarts with the new light time |
 | 12 | Start a write from the PC, then save an edit on the radio | `The PC is writing`; nothing saved |
 | 13 | Console: `plug peek 2500000 10` | Sixteen bytes of the settings logged |
 | 14 | Console: `plug poke 2F00000 00` | `refused or failed`: outside the codeplug's own blocks |
