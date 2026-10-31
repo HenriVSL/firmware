@@ -16,11 +16,18 @@ constexpr std::uint8_t Version = 1;
 constexpr std::size_t VersionAt = 4;
 constexpr std::size_t OffsetAt = 5; // frequency offset in Hz, signed, little-endian
 constexpr std::size_t FlagsAt = 9;
-constexpr std::uint8_t BigContactName = 0x01;
-constexpr std::uint8_t VolumeBesidePower = 0x02;
 constexpr std::uint8_t ClockUtc = 0x04;
 constexpr std::uint8_t AprsReceive = 0x08;
+// The home screen: top, clock, big name, middle, beside the power,
+// bottom; a byte out of range (as in a record before them) is the default.
+constexpr std::size_t HomeAt = 10;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
+
+template <typename E>
+E choice(std::uint8_t stored, E fallback)
+{
+    return stored < static_cast<std::uint8_t>(E::Count) ? static_cast<E>(stored) : fallback;
+}
 
 std::uint32_t le32(const std::uint8_t *p)
 {
@@ -46,10 +53,15 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     RadioPreferences p;
     p.frequencyOffsetHz = static_cast<std::int32_t>(le32(&record[OffsetAt]));
     const std::uint8_t flags = record[FlagsAt];
-    p.bigContactName = (flags & BigContactName) != 0;
-    p.volumeBesidePower = (flags & VolumeBesidePower) != 0;
     p.clockUtc = (flags & ClockUtc) != 0;
     p.aprsReceive = (flags & AprsReceive) != 0;
+    const HomeLayout d;
+    p.home.top = choice(record[HomeAt], d.top);
+    p.home.clock = record[HomeAt + 1] <= 1 ? record[HomeAt + 1] == 1 : d.clock;
+    p.home.big = choice(record[HomeAt + 2], d.big);
+    p.home.middle = choice(record[HomeAt + 3], d.middle);
+    p.home.beside = choice(record[HomeAt + 4], d.beside);
+    p.home.bottom = choice(record[HomeAt + 5], d.bottom);
     return p;
 }
 
@@ -59,8 +71,13 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     std::copy(std::begin(Mark), std::end(Mark), record.begin());
     record[VersionAt] = Version;
     putLe32(&record[OffsetAt], static_cast<std::uint32_t>(p.frequencyOffsetHz));
-    record[FlagsAt] = static_cast<std::uint8_t>((p.bigContactName ? BigContactName : 0) |
-        (p.volumeBesidePower ? VolumeBesidePower : 0) | (p.clockUtc ? ClockUtc : 0) | (p.aprsReceive ? AprsReceive : 0));
+    record[FlagsAt] = static_cast<std::uint8_t>((p.clockUtc ? ClockUtc : 0) | (p.aprsReceive ? AprsReceive : 0));
+    record[HomeAt] = static_cast<std::uint8_t>(p.home.top);
+    record[HomeAt + 1] = p.home.clock ? 1 : 0;
+    record[HomeAt + 2] = static_cast<std::uint8_t>(p.home.big);
+    record[HomeAt + 3] = static_cast<std::uint8_t>(p.home.middle);
+    record[HomeAt + 4] = static_cast<std::uint8_t>(p.home.beside);
+    record[HomeAt + 5] = static_cast<std::uint8_t>(p.home.bottom);
     putLe32(&record[CrcAt], lib::crc32(record.data(), CrcAt));
 }
 

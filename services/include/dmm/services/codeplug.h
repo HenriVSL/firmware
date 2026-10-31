@@ -123,16 +123,69 @@ struct CodeplugSettings
     KeyFunction sideLong[SideKeys] = {};
 };
 
+/// What each row of the home screen shows.
+struct HomeLayout
+{
+    /// The small line at the top, left of the clock.
+    enum class Top : std::uint8_t
+    {
+        Talkgroup, // the DMR contact, "CHANNEL" on FM
+        Zone,
+        Number, // the channel's place in its zone, "3/15"
+        None,
+        Count,
+    };
+    /// The large name.
+    enum class Big : std::uint8_t
+    {
+        Channel,
+        Contact, // the DMR contact's name
+        Zone,
+        Count,
+    };
+    /// The row under the name.
+    enum class Middle : std::uint8_t
+    {
+        Frequency, // frequency, slot and colour code
+        Talkgroup, // the contact and its name
+        Signal,    // a signal meter
+        Count,
+    };
+    /// Next to the power.
+    enum class Beside : std::uint8_t
+    {
+        Voltage,
+        Volume,
+        Signal,
+        Count,
+    };
+    /// The bottom row.
+    enum class Bottom : std::uint8_t
+    {
+        Details, // the repeater, the tones or the zone
+        LastCaller,
+        Position, // the GPS position
+        None,
+        Count,
+    };
+
+    Top top = Top::Talkgroup;
+    bool clock = true;
+    Big big = Big::Channel;
+    Middle middle = Middle::Frequency;
+    Beside beside = Beside::Voltage;
+    Bottom bottom = Bottom::Details;
+};
+
 /// Settings of the radio's own that no codeplug field holds, kept with
 /// the codeplug.
 struct RadioPreferences
 {
     /// Added to every frequency, to make up for the radio's reference.
     std::int32_t frequencyOffsetHz = 0;
-    bool bigContactName = false;    // the contact's name large rather than the channel's
-    bool volumeBesidePower = false; // the volume next to the power rather than the voltage
-    bool clockUtc = false;          // the clock shows UTC rather than local time
-    bool aprsReceive = true;        // stations heard through the APRS receiver
+    bool clockUtc = false;   // the clock shows UTC rather than local time
+    bool aprsReceive = true; // stations heard through the APRS receiver
+    HomeLayout home;
 };
 
 /// One repeater of a roaming zone.

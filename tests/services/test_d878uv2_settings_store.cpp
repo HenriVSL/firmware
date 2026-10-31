@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Henri Lavikainen
 
 #include "../drivers/fake_spi_nand.h"
+#include "dmm/lib/crc32.h"
 #include "dmm/services/d878uv2_codeplug.h"
 #include "dmm/services/d878uv2_preferences.h"
 #include "dmm/services/d878uv2_settings_store.h"
@@ -9,6 +10,7 @@
 
 #include <doctest/doctest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -148,7 +150,9 @@ TEST_CASE("preferences are kept in their own record")
     CHECK_FALSE(r.codeplug.preferences().has_value());
     RadioPreferences p;
     p.frequencyOffsetHz = -2000;
-    p.bigContactName = true;
+    p.home.big = dmm::services::HomeLayout::Big::Contact;
+    p.home.bottom = dmm::services::HomeLayout::Bottom::LastCaller;
+    p.home.clock = false;
     p.clockUtc = true;
     p.aprsReceive = false;
     r.store.keepPreferences(p, 0);
@@ -156,8 +160,10 @@ TEST_CASE("preferences are kept in their own record")
     const auto q = r.codeplug.preferences();
     REQUIRE(q.has_value());
     CHECK(q->frequencyOffsetHz == -2000);
-    CHECK(q->bigContactName);
-    CHECK_FALSE(q->volumeBesidePower);
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Contact);
+    CHECK(q->home.bottom == dmm::services::HomeLayout::Bottom::LastCaller);
+    CHECK(q->home.beside == dmm::services::HomeLayout::Beside::Voltage);
+    CHECK_FALSE(q->home.clock);
     CHECK(q->clockUtc);
     CHECK_FALSE(q->aprsReceive);
 }
@@ -208,4 +214,23 @@ TEST_CASE("a write refused while the PC writes is tried again later")
     CHECK(r.store.flush(D878Uv2SettingsStore::QuietMs + 1) == SaveResult::Unchanged);
     CHECK(r.store.flush(2 * D878Uv2SettingsStore::QuietMs) == SaveResult::Saved);
     CHECK(r.codeplug.settings()->squelchA == 5);
+}
+
+TEST_CASE("a preferences record without the home screen bytes gives the default layout")
+{
+    std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
+    RadioPreferences p;
+    p.home.big = dmm::services::HomeLayout::Big::Zone;
+    dmm::services::d878uv2::encodePreferences(p, rec);
+    // As a record from before them: the bytes erased, the checksum redone.
+    std::fill(rec.begin() + 10, rec.begin() + 16, std::uint8_t{0xFF});
+    const std::uint32_t crc = dmm::lib::crc32(rec.data(), rec.size() - 4);
+    for (int i = 0; i < 4; ++i) {
+        rec[rec.size() - 4 + i] = static_cast<std::uint8_t>(crc >> (8 * i));
+    }
+    const auto q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Channel);
+    CHECK(q->home.clock);
+    CHECK(q->home.top == dmm::services::HomeLayout::Top::Talkgroup);
 }
