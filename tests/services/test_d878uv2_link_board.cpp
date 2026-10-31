@@ -44,6 +44,7 @@ Fed feedAll(D878Uv2LinkBoardReader &r, const std::vector<std::uint8_t> &bytes)
         case Result::Line:
             out.lines.emplace_back(r.line());
             break;
+        case Result::Byte:
         case Result::None:
             break;
         }
@@ -102,4 +103,58 @@ TEST_CASE("link board: a damaged frame is dropped and the next one still read")
     const Fed fed = feedAll(r, next);
     REQUIRE(fed.frames.size() == 1);
     CHECK(fed.frames[0] == good);
+}
+
+TEST_CASE("link board: other text lines and control bytes")
+{
+    std::vector<std::uint8_t> stream{0x06};
+    append(stream, "OK\r\nnoise");
+    stream.push_back(0x01); // spoils the line
+    append(stream, "x+VER:1\r\n");
+
+    D878Uv2LinkBoardReader r;
+    std::vector<std::string> lines;
+    std::vector<std::uint8_t> bytes;
+    for (std::uint8_t b : stream) {
+        const Result result = r.feed(b);
+        if (result == Result::Line) {
+            lines.emplace_back(r.line());
+        } else if (result == Result::Byte) {
+            bytes.push_back(r.byte());
+        }
+    }
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[0] == "OK");
+    CHECK(lines[1] == "+VER:1");
+    CHECK(bytes == std::vector<std::uint8_t>{0x06});
+}
+
+TEST_CASE("link board: console commands")
+{
+    using CommandResult = D878Uv2LinkBoardReader::CommandResult;
+    std::array<std::uint8_t, D878Uv2LinkBoardReader::MaxCommand> out{};
+    std::size_t n = 0;
+    auto bytes = [&] { return std::vector<std::uint8_t>(out.begin(), out.begin() + static_cast<std::ptrdiff_t>(n)); };
+
+    CHECK(D878Uv2LinkBoardReader::command("AT+VER?", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{'A', 'T', '+', 'V', 'E', 'R', '?', '\r', '\n'});
+    CHECK(D878Uv2LinkBoardReader::command("hex EE 01 6", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{0xEE, 0x01, 0x06});
+    CHECK(D878Uv2LinkBoardReader::command("hex ee  0a", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{0xEE, 0x0A});
+
+    CHECK(D878Uv2LinkBoardReader::command("UPDATE", out, n) == CommandResult::Refused);
+    CHECK(n == 0);
+    CHECK(D878Uv2LinkBoardReader::command("program now", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("AT+Update", out, n) == CommandResult::Refused);
+    // "PROGRAM" in hex.
+    CHECK(D878Uv2LinkBoardReader::command("hex 50 52 4f 47 52 41 4d", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("hex 01 75 70 64 61 74 65 02", out, n) == CommandResult::Refused);
+
+    CHECK(D878Uv2LinkBoardReader::command("", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex 123", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex zz", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex ", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command(std::string(80, 'A'), out, n) == CommandResult::Invalid);
 }

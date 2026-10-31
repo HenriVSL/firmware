@@ -76,6 +76,10 @@ constexpr unsigned StartCommands = 3;
 // A pause this long ends a partial message.
 constexpr os::Ticks PauseMs = 100;
 constexpr os::Ticks ReceivePollMs = 20;
+// Control bytes from the board are logged this long after a console
+// command to it.
+constexpr os::Ticks BoardBytesMs = 2000;
+os::Ticks boardBytesUntil = 0;
 
 // The heard list, newest first; other tasks read it.
 os::Mutex heardLock;
@@ -358,6 +362,8 @@ void pollLink()
         ++startCommandsSent;
     }
     std::uint8_t buffer[64];
+    lib::StaticString<log::MaxLineLength> bytes;
+    const bool showBytes = static_cast<std::int32_t>(now - boardBytesUntil) < 0;
     for (;;) {
         const std::size_t n = link->read(buffer);
         if (n == 0) {
@@ -379,10 +385,18 @@ void pollLink()
             case board::AprsLinkReader::Result::Line:
                 log::info("aprs") << "board: " << reader.line();
                 break;
+            case board::AprsLinkReader::Result::Byte:
+                if (showBytes) {
+                    bytes << ' ' << lib::hex(reader.byte(), 2);
+                }
+                break;
             case board::AprsLinkReader::Result::None:
                 break;
             }
         }
+    }
+    if (bytes.size() > 0) {
+        log::info("aprs") << "board bytes:" << bytes.view();
     }
     if (partial && now - lastByteAt >= PauseMs) {
         reader.reset();
@@ -411,6 +425,15 @@ void handle(const Message &message)
                        } else {
                            stopReceiving();
                        }
+                   },
+                   [](const BoardCommand &c) {
+                       if (!receiving) {
+                           log::info("aprs") << "the board is off: Menu, APRS, Receive: On";
+                           return;
+                       }
+                       link->write(std::span(c.bytes.data(), c.length));
+                       boardBytesUntil = os::nowMs() + BoardBytesMs;
+                       log::info("aprs") << "sent " << c.length << " bytes to the board";
                    },
                },
         message);
@@ -516,7 +539,7 @@ bool post(const Message &message)
 
 const char *consoleHelp()
 {
-    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>";
+    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, aprs board <text>|hex <bytes>";
 }
 
 bool runCommand(std::string_view command)
@@ -530,6 +553,26 @@ bool runCommand(std::string_view command)
     }
     std::string_view rest(command.data() + 5, command.size() - 5);
     const std::string_view word = lib::takeWord(rest);
+    if (word == "board") {
+        BoardCommand c{};
+        std::size_t length = 0;
+        using CommandResult = board::AprsLinkReader::CommandResult;
+        switch (board::AprsLinkReader::command(rest, c.bytes, length)) {
+        case CommandResult::Ok:
+            c.length = static_cast<std::uint8_t>(length);
+            if (!post(c)) {
+                log::info("console") << "busy";
+            }
+            break;
+        case CommandResult::Refused:
+            log::info("console") << "refused: that could start the board's update or programming mode";
+            break;
+        case CommandResult::Invalid:
+            log::info("console") << "aprs board <text> (sent with CR LF), aprs board hex <bytes>";
+            break;
+        }
+        return true;
+    }
     if (word == "send" && (rest.empty() || rest == "here")) {
         post(BeaconNow{rest == "here"});
         return true;
