@@ -102,6 +102,9 @@ void setGpsNeed(std::uint32_t intervalMs)
 
 void report()
 {
+    if (link != nullptr) {
+        log::info("aprs") << "board frames: " << reader.goodFrames() << " passed the check, " << reader.badFrames() << " failed";
+    }
     if (!station) {
         log::info("aprs") << "no station: the codeplug has no APRS callsign";
         return;
@@ -353,6 +356,18 @@ void stopReceiving()
     log::info("aprs") << "receiving off";
 }
 
+void logBadFrame()
+{
+    const board::AprsLinkReader::BadFrame &b = reader.badFrame();
+    auto line = log::info("aprs");
+    line << "board frame failed the check: " << b.length << " bytes";
+    if (b.closed) {
+        line << ", check " << lib::hex(b.receivedCheck, 4) << " received, " << lib::hex(b.computedCheck, 4) << " computed";
+    } else {
+        line << ", no closing flag";
+    }
+}
+
 void pollLink()
 {
     const os::Ticks now = os::nowMs();
@@ -385,6 +400,9 @@ void pollLink()
             case board::AprsLinkReader::Result::Line:
                 log::info("aprs") << "board: " << reader.line();
                 break;
+            case board::AprsLinkReader::Result::BadFrame:
+                logBadFrame();
+                break;
             case board::AprsLinkReader::Result::Byte:
                 if (showBytes) {
                     bytes << ' ' << lib::hex(reader.byte(), 2);
@@ -399,7 +417,9 @@ void pollLink()
         log::info("aprs") << "board bytes:" << bytes.view();
     }
     if (partial && now - lastByteAt >= PauseMs) {
-        reader.reset();
+        if (reader.reset() == board::AprsLinkReader::Result::BadFrame) {
+            logBadFrame();
+        }
         partial = false;
     }
 }

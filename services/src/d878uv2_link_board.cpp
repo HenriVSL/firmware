@@ -100,6 +100,29 @@ D878Uv2LinkBoardReader::CommandResult D878Uv2LinkBoardReader::command(std::strin
     return CommandResult::Ok;
 }
 
+D878Uv2LinkBoardReader::Result D878Uv2LinkBoardReader::reset()
+{
+    const bool inFrame = m_state == State::Frame && m_frameLength > 0;
+    m_state = State::Idle;
+    return inFrame ? failFrame() : Result::None;
+}
+
+D878Uv2LinkBoardReader::Result D878Uv2LinkBoardReader::failFrame()
+{
+    m_bad = {};
+    if (m_lastFlag != NoFlag) {
+        const std::size_t body = m_lastFlag - 2;
+        m_bad.length = m_lastFlag;
+        m_bad.closed = true;
+        m_bad.receivedCheck = static_cast<std::uint16_t>(m_frame[body] | m_frame[body + 1] << 8);
+        m_bad.computedCheck = ax25::frameCheck({m_frame.data(), body});
+    } else {
+        m_bad.length = m_frameLength;
+    }
+    ++m_badCount;
+    return Result::BadFrame;
+}
+
 D878Uv2LinkBoardReader::Result D878Uv2LinkBoardReader::feed(std::uint8_t byte)
 {
     switch (m_state) {
@@ -157,6 +180,7 @@ D878Uv2LinkBoardReader::Result D878Uv2LinkBoardReader::feed(std::uint8_t byte)
         return Result::None;
     case State::FrameStart:
         m_frameLength = 0;
+        m_lastFlag = NoFlag;
         m_state = byte == Flag ? State::Frame : State::Idle;
         return Result::None;
     case State::Frame:
@@ -165,14 +189,22 @@ D878Uv2LinkBoardReader::Result D878Uv2LinkBoardReader::feed(std::uint8_t byte)
             const auto check = static_cast<std::uint16_t>(m_frame[body] | m_frame[body + 1] << 8);
             if (ax25::frameCheck({m_frame.data(), body}) == check) {
                 m_state = State::Idle;
+                ++m_goodCount;
                 return Result::Frame;
             }
+            m_lastFlag = m_frameLength;
         }
         if (m_frameLength == m_frame.size()) {
             m_state = State::Idle;
-            return Result::None;
+            return failFrame();
         }
         m_frame[m_frameLength++] = byte;
+        // The next packet's header right after a flag ends a failed frame.
+        if (m_lastFlag != NoFlag && m_frameLength == m_lastFlag + 1 + PacketHeader.size() &&
+            std::string_view(reinterpret_cast<const char *>(&m_frame[m_lastFlag + 1]), PacketHeader.size()) == PacketHeader) {
+            m_state = State::FrameStart;
+            return failFrame();
+        }
         return Result::None;
     }
     return Result::None;
