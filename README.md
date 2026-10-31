@@ -42,9 +42,11 @@ automatic roaming on it moves to a clearly better repeater by itself.
 Searches, on a side key set to roaming or when PTT finds no repeater,
 try the most likely repeaters first. The codeplug's repeater range check
 is followed. Menu > Roaming shows what the radio hears (Status), turns
-roaming off until a restart and picks another roaming zone. The
-design is in `docs/roaming.md`; moving between two real repeaters is
-still to be tested.
+roaming off until a restart and picks another roaming zone. How to set
+roaming up and use it is in `docs/roaming-setup.md`, the design in
+`docs/design/roaming.md` (the fork's own copy, with comparisons, in
+`docs/roaming.md`); moving between two real repeaters is still to be
+tested.
 
 **Channels.** Channels, zones and the VFO come from the codeplug already
 on the radio. Pick zones from a list, step channels with the knob, or type
@@ -126,7 +128,7 @@ radio face.
    as features are added
 3. Programming over USB, compatible with existing codeplug tools
 4. Scan and dual watch
-5. GPS
+5. Clock from GPS time, with the codeplug's time zone
 6. Calibration tool
 7. APRS, Bluetooth, recording, DTMF and selective calling
 8. Complete DMR: talkgroups and contacts picked on the radio, private

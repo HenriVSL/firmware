@@ -13,7 +13,7 @@ constexpr char Identify = 0x02;
 constexpr char Finish = 0x18;
 constexpr int FrameSize = 1 + 4 + UpdateClient::FrameDataSize + 2 + 1;
 constexpr int ReplyTimeoutMs = 1000;
-// A frame that starts a flash page waits for its erase, about 80 ms.
+// A frame that starts a flash page waits for its erase.
 constexpr int FrameTimeoutMs = 2000;
 
 void setError(QString *error, const QString &text)

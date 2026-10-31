@@ -16,7 +16,7 @@
 namespace dmm::services {
 
 /// The D878UVII's PC programming protocol, as codeplug tools speak it on
-/// the radio's serial port. As observed:
+/// the radio's serial port:
 ///   "PROGRAM"                       enters program mode; answer "QX" 06
 ///   02                              identify; answer 'I', the model (7
 ///                                   bytes), the band code, the version

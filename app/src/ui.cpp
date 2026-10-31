@@ -416,6 +416,8 @@ enum class View : std::uint8_t
 
 // The radio's working channel, from the codeplug; nullptr without one.
 ChannelSelector *channels = nullptr;
+// The channel in use while there is no selector.
+const std::optional<Channel> NoChannel;
 StandbyScreen standby;
 ListPicker zonePicker;
 ListPicker menuValue;
@@ -1331,7 +1333,7 @@ void uiMain(void *)
         clockNow = clockText();
         s.clock = clockNow.view();
         s.beacons = aprsStation && beaconIntervalS != 0;
-        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        const std::optional<Channel> &ch = channels != nullptr ? channels->current() : NoChannel;
         s.roaming = roamingOn && ch && ch->digital() && ch->roaming && roamingSites > 0;
         s.roamSearching = roam.searching;
         s.roamHz = roam.receiveHz;
@@ -1407,7 +1409,7 @@ void uiMain(void *)
         constexpr const char *Powers[] = {"LOW", "MID", "HIGH", "TURBO"};
         TransmitInfo t;
         t.seconds = static_cast<std::uint32_t>((os::nowMs() - transmitStarted) / 1000);
-        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        const std::optional<Channel> &ch = channels != nullptr ? channels->current() : NoChannel;
         if (!ch) {
             return t;
         }
@@ -1438,7 +1440,7 @@ void uiMain(void *)
         c.targetName = heard.target;
         c.targetId = heard.destination;
         c.callerHeadline = heard.caller;
-        const std::optional<Channel> ch = channels != nullptr ? channels->current() : std::nullopt;
+        const std::optional<Channel> &ch = channels != nullptr ? channels->current() : NoChannel;
         if (ch && ch->receiveHz != ch->transmitHz) {
             c.slot = ch->dmr.slot;
         }
