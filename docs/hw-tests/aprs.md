@@ -45,3 +45,8 @@ merged, from a DMR roaming channel working through a hotspot, beacon
 power low: the radio listened on 144.800 MHz for 1.6 s, sent the
 72-byte beacon in 0.8 s and went straight back to the hotspot; roaming
 went on, and the hotspot's next beacon came on time.
+
+2026-10-31, step 10 on the same build: with the codeplug's APRS
+frequency cleared, the start line said `no frequency wide`; `aprs send`
+gave `beacon not sent: the codeplug has no APRS frequency` and the
+notice `No APRS frequency`, and nothing was transmitted.
