@@ -15,6 +15,11 @@ constexpr std::uint32_t ChannelBanks = 0x00800000;
 constexpr std::uint32_t ChannelBankStride = 0x00040000;
 constexpr unsigned ChannelsPerBank = 128;
 constexpr std::uint32_t ChannelBytes = 0x40;
+// The radio's own preferences: in the first channel bank's block, past
+// the space its 128 channels and their extensions can take, where no
+// codeplug tool reads or writes. A mark, a version and a checksum tell a
+// kept record from an empty one.
+constexpr std::uint32_t Preferences = 0x0081E000;
 constexpr std::uint32_t ZoneChannels = 0x01000000;
 constexpr std::uint32_t ZoneChannelStride = 0x200;
 constexpr std::uint32_t Settings = 0x02500000;

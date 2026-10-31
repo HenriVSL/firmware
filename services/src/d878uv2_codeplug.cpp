@@ -3,6 +3,8 @@
 
 #include "dmm/services/d878uv2_codeplug.h"
 
+#include "dmm/services/d878uv2_preferences.h"
+
 #include "d878uv2_layout.h"
 
 #include <algorithm>
@@ -171,6 +173,7 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     s.batterySave = b[0x0B] <= 2 ? b[0x0B] : 1;
     constexpr std::uint16_t BacklightTimes[] = {0, 5, 10, 15, 20, 25, 30, 60, 120, 180, 240, 300, 900, 1800, 2700, 3600};
     s.backlightS = b[0x27] < std::size(BacklightTimes) ? BacklightTimes[b[0x27]] : 0;
+    s.backlightLevel = static_cast<std::uint8_t>((b[0x26] > 4 ? 3 : b[0x26]) + 1);
     s.gps = b[0x28] != 0;
     // The time zone in half hours from UTC-12:00 (0) through UTC (24).
     s.timeZoneMinutes = b[0x30] <= 52 ? static_cast<std::int16_t>((b[0x30] - 24) * 30) : 0;
@@ -353,6 +356,15 @@ std::optional<CodeplugSettings> D878Uv2Codeplug::settings()
         decodeSettingsExtension(e, s);
     }
     return s;
+}
+
+std::optional<RadioPreferences> D878Uv2Codeplug::preferences()
+{
+    std::array<std::uint8_t, d878uv2::PreferencesRecordBytes> r{};
+    if (!readable(read(Preferences, r))) {
+        return std::nullopt;
+    }
+    return d878uv2::decodePreferences(r);
 }
 
 bool D878Uv2Codeplug::bitSet(std::uint32_t bitmap, unsigned index)

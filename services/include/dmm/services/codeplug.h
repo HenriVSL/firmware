@@ -112,6 +112,7 @@ struct CodeplugSettings
     KeyLockSettings keyLock;
     std::uint8_t batterySave = 0;     // 0 = off; 1 or 2 = the receiver sleeps 150 or 70 ms per cycle
     std::uint16_t backlightS = 0;     // backlight time after the last key; 0 = always on
+    std::uint8_t backlightLevel = 4;  // display brightness, 1..5
     bool voiceEnhancement = false;    // transmit voice shaped by the radio's equalizer
     bool gps = false;                 // GPS receiver on
     std::uint8_t gpsSystems = 3;      // satellite systems, gps_systems bits
@@ -120,6 +121,18 @@ struct CodeplugSettings
     /// The side keys' functions on a short and a long press.
     KeyFunction sideShort[SideKeys] = {};
     KeyFunction sideLong[SideKeys] = {};
+};
+
+/// Settings of the radio's own that no codeplug field holds, kept with
+/// the codeplug.
+struct RadioPreferences
+{
+    /// Added to every frequency, to make up for the radio's reference.
+    std::int32_t frequencyOffsetHz = 0;
+    bool bigContactName = false;    // the contact's name large rather than the channel's
+    bool volumeBesidePower = false; // the volume next to the power rather than the voltage
+    bool clockUtc = false;          // the clock shows UTC rather than local time
+    bool aprsReceive = true;        // stations heard through the APRS receiver
 };
 
 /// One repeater of a roaming zone.
@@ -170,6 +183,8 @@ public:
     static constexpr std::size_t ContactNameBytes = 16;
 
     virtual std::optional<CodeplugSettings> settings() = 0;
+    /// The radio's own preferences, if any were kept.
+    virtual std::optional<RadioPreferences> preferences() = 0;
     /// The APRS settings, if the codeplug has a callsign for them.
     virtual std::optional<AprsSettings> aprsSettings() = 0;
     /// Channel @p index (0-based), if it is in use.

@@ -55,6 +55,7 @@ public:
     StorageResult read(std::uint32_t address, std::span<std::uint8_t> data);
 
     std::optional<CodeplugSettings> settings() override;
+    std::optional<RadioPreferences> preferences() override;
     std::optional<AprsSettings> aprsSettings() override;
     std::optional<Channel> channel(std::uint16_t index) override;
     std::optional<Channel> vfo(bool sideB) override;
