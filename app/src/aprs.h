@@ -6,6 +6,7 @@
 #include "dmm/board/parts.h"
 #include "dmm/services/codeplug.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -40,7 +41,14 @@ struct Receive
     bool on;
 };
 
-using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive>;
+/// Bytes for the board, from the console; it must be receiving.
+struct BoardCommand
+{
+    std::array<std::uint8_t, board::AprsLinkReader::MaxCommand> bytes;
+    std::uint8_t length;
+};
+
+using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand>;
 
 /// A station heard, as the Heard list shows it.
 struct HeardStation
