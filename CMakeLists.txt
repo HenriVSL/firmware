@@ -10,7 +10,7 @@ project(deltamm
 # Preview builds of upstream with the open pull requests merged:
 # <upstream version>-PR-<build>, counted from 1 for each upstream version.
 set(DMM_PREVIEW_BASE 0.22.0)
-set(DMM_PREVIEW_BUILD 3)
+set(DMM_PREVIEW_BUILD 4)
 if(NOT PROJECT_VERSION VERSION_EQUAL DMM_PREVIEW_BASE)
     message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}: set DMM_PREVIEW_BASE to it and "
                         "DMM_PREVIEW_BUILD to 1.")
