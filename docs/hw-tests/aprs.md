@@ -39,3 +39,9 @@ beacon took about 0.8 s on air and the radio was back on the working
 channel at once. Received packets were listed, but the board decoded only
 strong ones: a station the second radio decoded at a noise reading of
 42 dB was missed.
+
+2026-10-31, step 2 on upstream 0.22.0 with the open pull requests
+merged, from a DMR roaming channel working through a hotspot, beacon
+power low: the radio listened on 144.800 MHz for 1.6 s, sent the
+72-byte beacon in 0.8 s and went straight back to the hotspot; roaming
+went on, and the hotspot's next beacon came on time.
