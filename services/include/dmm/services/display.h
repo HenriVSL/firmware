@@ -56,6 +56,17 @@ public:
     /// Panel sleep: off keeps the picture memory but blanks the screen.
     virtual void setPanelOn(bool on) = 0;
 
+    /// The drawing for one change of the screen is complete.
+    virtual void frameDone() {}
+
+    /// The display's console commands, answered in the log; false when
+    /// @p text is none of them.
+    virtual bool debugCommand(std::string_view text)
+    {
+        (void)text;
+        return false;
+    }
+
 protected:
     ~Display() = default;
 };
