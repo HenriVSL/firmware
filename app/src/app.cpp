@@ -742,7 +742,7 @@ void start(Platform &p)
 {
     platform = &p;
     if (p.display != nullptr) {
-        ui::start(*p.display, p.codeplug, p.input, p.plugEditor);
+        ui::start(*p.display, p.codeplug, p.input, p.plugEditor, p.settingsStore);
     }
     if (p.input != nullptr) {
         input::start(*p.input);

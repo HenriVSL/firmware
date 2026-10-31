@@ -20,6 +20,7 @@
 #include "dmm/services/d878uv2_link_board.h"
 #include "dmm/services/d878uv2_plug_editor.h"
 #include "dmm/services/d878uv2_programming.h"
+#include "dmm/services/d878uv2_settings_store.h"
 #include "dmm/services/packet_modem.h"
 #include "dmm/services/programming.h"
 #include "dmm/services/serial_link.h"
@@ -32,6 +33,7 @@ using Baseband = services::NoBaseband;
 using Calibration = services::D878Uv2Calibration;
 using Programming = services::D878Uv2Programming;
 using PlugEditor = services::D878Uv2PlugEditor;
+using SettingsStore = services::D878Uv2SettingsStore;
 using Input = SimInput;
 using Battery = SimBattery;
 // No data port: the platform's pointer stays empty.

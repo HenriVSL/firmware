@@ -344,6 +344,24 @@ void hal::boardMain()
         return ok ? SaveResult::Saved : SaveResult::Failed;
     };
     static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
+    // Settings changed in the menus, the same way: every piece, then one finish.
+    static auto writeSettings = [](std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces) {
+        using dmm::services::plug::SaveResult;
+        if (programming.active(dmm::os::nowMs())) {
+            return SaveResult::Busy;
+        }
+        bool ok = true;
+        for (const auto &p : pieces) {
+            ok = ok && codeplugWriter.write(p.address, p.data);
+        }
+        ok = ok && codeplugWriter.finish();
+        if (!ok) {
+            codeplugWriter.abandon();
+        }
+        codeplug.forgetCopies();
+        return ok ? SaveResult::Saved : SaveResult::Failed;
+    };
+    static dmm::services::D878Uv2SettingsStore settingsStore{codeplug, writeSettings};
 
     adc().start();
     static BoardInput input;
@@ -435,6 +453,7 @@ void hal::boardMain()
         .calibration = &calibration,
         .codeplug = &codeplug,
         .plugEditor = &plugEditor,
+        .settingsStore = &settingsStore,
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,

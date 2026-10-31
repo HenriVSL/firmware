@@ -39,6 +39,10 @@ os::Task<1024> uiTask;
 os::Queue<Message, 16> inbox;
 // The codeplug editor, and a console command waiting for it.
 board::PlugEditor *plugEditor = nullptr;
+board::SettingsStore *settingsStore = nullptr;
+// The general settings as changed on the radio, kept in the codeplug.
+services::CodeplugSettings keptSettings;
+bool settingsKnown = false;
 lib::StaticString<128> plugCommandText;
 std::atomic<bool> plugCommandWaiting{false};
 lib::StaticString<64> screenCommandText;
@@ -1090,6 +1094,22 @@ void uiMain(void *)
             gpsAtStart = selector.settings().gps;
             gpsSystems = selector.settings().gpsSystems;
             timeZoneMinutes = selector.settings().timeZoneMinutes;
+            keptSettings = selector.settings();
+            settingsKnown = true;
+            backlightLevel = keptSettings.backlightLevel;
+            d.setBacklight(backlightLevel);
+            if (const auto p = codeplug->preferences()) {
+                bigContactName = p->bigContactName;
+                volumeBesidePower = p->volumeBesidePower;
+                clockUtc = p->clockUtc;
+                aprsReceive = p->aprsReceive;
+                offsetKhz = p->frequencyOffsetHz / 1000;
+                radio::post(radio::FrequencyOffset{p->frequencyOffsetHz});
+                if (!aprsReceive) {
+                    aprs::post(aprs::Receive{false});
+                }
+                log::info("ui") << "preferences from the codeplug";
+            }
             if (const auto a = codeplug->aprsSettings()) {
                 beaconIntervalS = a->beaconIntervalS;
                 beaconPower = a->power;
@@ -2005,6 +2025,10 @@ void uiMain(void *)
         if (view == View::Standby) {
             redrawView();
         }
+        if (settingsStore != nullptr && !channels->vfoMode()) {
+            settingsStore->keepZone(channels->sideB(), channels->zone(),
+                static_cast<std::uint16_t>(channels->position() - 1), os::nowMs());
+        }
     };
     // The codeplug editor: books, records, fields.
     auto plugPlaceOf = [&](Book book, std::ptrdiff_t record) {
@@ -2612,21 +2636,53 @@ void uiMain(void *)
         zonePicker.select(channels->zone());
         show(View::ZonePicker);
     };
-    // The value chosen in the menu takes effect at once, for this session.
+    // Changes kept in the codeplug; the store writes them after a quiet time.
+    auto keepSettings = [&] {
+        if (settingsStore != nullptr && settingsKnown) {
+            if (channels != nullptr) {
+                keptSettings.squelchA = channels->settings().squelchA;
+                keptSettings.squelchB = channels->settings().squelchB;
+            }
+            settingsStore->keepSettings(keptSettings, os::nowMs());
+        }
+    };
+    auto keepPreferences = [&] {
+        if (settingsStore != nullptr) {
+            services::RadioPreferences p;
+            p.frequencyOffsetHz = offsetKhz * 1000;
+            p.bigContactName = bigContactName;
+            p.volumeBesidePower = volumeBesidePower;
+            p.clockUtc = clockUtc;
+            p.aprsReceive = aprsReceive;
+            settingsStore->keepPreferences(p, os::nowMs());
+        }
+    };
+    auto keepChannel = [&] {
+        if (settingsStore != nullptr && channels != nullptr && channels->current() &&
+            channels->channelIndex() != CodeplugSource::NoChannel) {
+            const Channel &c = *channels->current();
+            settingsStore->keepChannel(channels->channelIndex(), c.power, c.squelchMode, os::nowMs());
+        }
+    };
+    // The value chosen in the menu takes effect at once and is kept in the
+    // codeplug; roaming off lasts only until restart.
     auto applyMenuValue = [&] {
         const std::uint8_t v = menuValue.chosen();
         switch (menuItem) {
         case MenuItem::Squelch:
             channels->setSquelch(v);
             log::info("ui") << "squelch " << v;
+            keepSettings();
             break;
         case MenuItem::SquelchMode:
             channels->setSquelchMode(v == 1 ? SquelchMode::Tone : SquelchMode::Carrier);
             log::info("ui") << "squelch opens on " << (v == 1 ? "the tone" : "the carrier");
+            keepChannel();
             break;
         case MenuItem::Power:
             channels->setPower(static_cast<PowerLevel>(v));
             log::info("ui") << "power " << v;
+            keepChannel();
             break;
         case MenuItem::Roaming:
             roamingOn = v == 1;
@@ -2639,28 +2695,39 @@ void uiMain(void *)
                 roamingZone = v;
                 loadRoamingSites();
                 log::info("ui") << "roaming zone " << v << ", " << roamingSites << " repeaters";
+                keptSettings.roaming.zone = v;
+                keepSettings();
             }
             break;
         case MenuItem::FrequencyOffset:
             offsetKhz = static_cast<int>(v) - MaxOffsetKhz;
             radio::post(radio::FrequencyOffset{offsetKhz * 1000});
+            keepPreferences();
             break;
         case MenuItem::Backlight:
             backlightLevel = v;
             d.setBacklight(v);
+            keptSettings.backlightLevel = static_cast<std::uint8_t>(v < 1 ? 1 : v);
+            keepSettings();
             break;
         case MenuItem::BacklightTime:
             backlightS = BacklightTimes[v < std::size(BacklightTimes) ? v : 0];
             log::info("ui") << "light time " << durationText(backlightS).view();
+            keptSettings.backlightS = backlightS;
+            keepSettings();
             break;
         case MenuItem::BigName:
             bigContactName = v == 1;
+            keepPreferences();
             break;
         case MenuItem::BesidePower:
             volumeBesidePower = v == 1;
+            keepPreferences();
             break;
         case MenuItem::BatterySave:
             setBatterySave(v);
+            keptSettings.batterySave = v;
+            keepSettings();
             break;
         case MenuItem::KeyLock: {
             services::KeyLockSettings s = keyLock.settings();
@@ -2669,6 +2736,8 @@ void uiMain(void *)
             s.knob = v == 0;
             keyLock.setSettings(s);
             logLockSettings();
+            keptSettings.keyLock = s;
+            keepSettings();
             break;
         }
         case MenuItem::AutoLock: {
@@ -2676,23 +2745,32 @@ void uiMain(void *)
             s.autoLockMs = static_cast<std::uint32_t>(v) * 1000;
             keyLock.setSettings(s);
             logLockSettings();
+            keptSettings.keyLock = s;
+            keepSettings();
             break;
         }
         case MenuItem::Gps:
             // The menu shows the new value before the gps task reports it.
             gpsState.on = v == 1;
             gps::post(gps::Power{v == 1});
+            keptSettings.gps = v == 1;
+            keepSettings();
             break;
         case MenuItem::GpsSystems:
             gpsSystems = v;
             gps::post(gps::Systems{v});
+            keptSettings.gpsSystems = v;
+            keepSettings();
             break;
         case MenuItem::ClockZone:
             timeZoneMinutes = (v - 24) * 30;
             log::info("ui") << "time zone " << zoneText(timeZoneMinutes).view();
+            keptSettings.timeZoneMinutes = static_cast<std::int16_t>(timeZoneMinutes);
+            keepSettings();
             break;
         case MenuItem::ClockShown:
             clockUtc = v == 1;
+            keepPreferences();
             break;
         case MenuItem::ClockCalibration:
             if (v < CalibrationInfo) {
@@ -2703,14 +2781,21 @@ void uiMain(void *)
             beaconIntervalS = BeaconIntervals[v < std::size(BeaconIntervals) ? v : 0];
             aprs::post(aprs::BeaconInterval{beaconIntervalS});
             refreshLockMark();
+            if (settingsStore != nullptr) {
+                settingsStore->keepAprs(beaconIntervalS, beaconPower, os::nowMs());
+            }
             break;
         case MenuItem::AprsPower:
             beaconPower = static_cast<PowerLevel>(v & 3);
             aprs::post(aprs::BeaconPower{beaconPower});
+            if (settingsStore != nullptr) {
+                settingsStore->keepAprs(beaconIntervalS, beaconPower, os::nowMs());
+            }
             break;
         case MenuItem::AprsReceive:
             aprsReceive = v == 1;
             aprs::post(aprs::Receive{aprsReceive});
+            keepPreferences();
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
@@ -2949,6 +3034,14 @@ void uiMain(void *)
     while (!os::stopRequested()) {
         // Whatever the last pass drew is one frame.
         d.frameDone();
+        if (settingsStore != nullptr) {
+            const auto saved = settingsStore->flush(os::nowMs());
+            if (saved == services::plug::SaveResult::Saved) {
+                log::info("ui") << "settings kept in the codeplug";
+            } else if (saved == services::plug::SaveResult::Failed) {
+                log::warning("ui") << "settings not kept: the codeplug write failed";
+            }
+        }
         Message m;
         if (inbox.receive(m, RedrawStepMs)) {
             auto refreshValues = [&] {
@@ -3419,12 +3512,13 @@ void uiMain(void *)
 
 } // namespace
 
-void start(Display &d, CodeplugSource *c, const board::Input *i, board::PlugEditor *e)
+void start(Display &d, CodeplugSource *c, const board::Input *i, board::PlugEditor *e, board::SettingsStore *k)
 {
     display = &d;
     codeplug = c;
     input = i;
     plugEditor = e;
+    settingsStore = k;
     log::setTap(onLogLine);
     uiTask.start("ui", 4, uiMain, nullptr);
 }

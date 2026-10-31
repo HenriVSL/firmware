@@ -52,6 +52,8 @@ struct Platform
     services::CodeplugSource *codeplug = nullptr;
     /// Edits the codeplug on the radio, or nullptr.
     board::PlugEditor *plugEditor = nullptr;
+    /// Keeps settings changed on the radio in the codeplug, or nullptr.
+    board::SettingsStore *settingsStore = nullptr;
     /// The GPS receiver's serial link, or nullptr.
     board::Gps *gps = nullptr;
     /// The real-time clock, or nullptr.

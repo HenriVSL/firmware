@@ -159,6 +159,16 @@ int main(int argc, char *argv[])
         return writeCodeplug(storage, codeplug, address, data);
     };
     static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
+    static auto writeSettings = [](std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces) {
+        for (const auto &p : pieces) {
+            const auto r = writeCodeplug(storage, codeplug, p.address, p.data);
+            if (r != dmm::services::plug::SaveResult::Saved) {
+                return r;
+            }
+        }
+        return dmm::services::plug::SaveResult::Saved;
+    };
+    static dmm::services::D878Uv2SettingsStore settingsStore{codeplug, writeSettings};
     static SimAudio audio;
     static SimFm fm;
     static SimGps gps;
@@ -179,6 +189,7 @@ int main(int argc, char *argv[])
         .calibration = &calibration,
         .codeplug = &codeplug,
         .plugEditor = &plugEditor,
+        .settingsStore = &settingsStore,
         .gps = &gps,
         .rtc = &rtc,
         .modem = &modem,

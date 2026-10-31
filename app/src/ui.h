@@ -204,9 +204,10 @@ using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog,
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.
-/// @p plugEditor (may be nullptr) edits the codeplug.
+/// @p plugEditor (may be nullptr) edits the codeplug; @p settingsStore
+/// (may be nullptr) keeps settings changed on the radio in it.
 void start(services::Display &display, services::CodeplugSource *codeplug, const board::Input *input,
-    board::PlugEditor *plugEditor);
+    board::PlugEditor *plugEditor, board::SettingsStore *settingsStore);
 
 /// Queues a message for the ui task; false when the queue is full or there
 /// is no display.
