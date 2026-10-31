@@ -1083,7 +1083,7 @@ void drawValueSpinner(Display &d, std::string_view title, std::string_view value
         const int mark = Margin + static_cast<int>(static_cast<std::size_t>(trackW - MarkW) * at / (n - 1));
         // Left of the marker, the marker, right of it: ground above and
         // below a two-pixel track.
-        for (const auto [x0, x1] : {std::pair{Margin, mark}, std::pair{mark + MarkW, Margin + trackW}}) {
+        for (const auto &[x0, x1] : {std::pair{Margin, mark}, std::pair{mark + MarkW, Margin + trackW}}) {
             fillArea(d, x0, scaleY, x1 - x0, 3, p::Ground);
             fillArea(d, x0, scaleY + 3, x1 - x0, 2, palette::Panel);
             fillArea(d, x0, scaleY + 5, x1 - x0, ScaleH - 5, p::Ground);
