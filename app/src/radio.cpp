@@ -1612,6 +1612,17 @@ void packetStep()
     if (packetState != PacketState::Waiting) {
         return;
     }
+    if (now - packetQueuedAt >= GiveUpMs) {
+        log::warning("packet") << "dropped: the channel stayed busy for " << GiveUpMs / 1000 << " s";
+        endPacket(false);
+        return;
+    }
+    // A transmission of the user's own goes first: the frame waits for it
+    // on the working channel.
+    if (transmitting) {
+        nextSlot = now + SlotMs;
+        return;
+    }
     if (!hopped && packetChannel.hz != 0 && (!fm->receiving() || fmChannel.receiveHz != packetChannel.hz)) {
         hop();
         return;
@@ -1621,12 +1632,7 @@ void packetStep()
         endPacket(false);
         return;
     }
-    if (now - packetQueuedAt >= GiveUpMs) {
-        log::warning("packet") << "dropped: the channel stayed busy for " << GiveUpMs / 1000 << " s";
-        endPacket(false);
-        return;
-    }
-    if (transmitting || carrierPolled) {
+    if (carrierPolled) {
         nextSlot = now + SlotMs;
         return;
     }
