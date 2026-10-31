@@ -316,6 +316,16 @@ void gpsMain(void *)
                                    startCalibration(c.minutes);
                                }
                            },
+                           [&](const Fake &f) {
+                               GpsFix fix = parser.fix();
+                               fix.valid = true;
+                               fix.quality = 1;
+                               fix.satellitesUsed = 4;
+                               fix.latitudeE7 = f.latitudeE7;
+                               fix.longitudeE7 = f.longitudeE7;
+                               shareFix(fix);
+                               logFix(fix, "fake fix: ");
+                           },
                            [&](const ChipCommand &c) {
                                if (!powered) {
                                    log::info("gps") << "the receiver is off";
