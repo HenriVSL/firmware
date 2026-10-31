@@ -62,7 +62,15 @@ struct CalibrateClock
     std::uint8_t minutes;
 };
 
-using Message = std::variant<Power, PowerSave, Need, Report, Raw, Systems, ChipCommand, CalibrateClock>;
+/// A made-up fix at the given position, shared as if the receiver had
+/// sent it (console test).
+struct Fake
+{
+    std::int32_t latitudeE7;
+    std::int32_t longitudeE7;
+};
+
+using Message = std::variant<Power, PowerSave, Need, Report, Raw, Systems, ChipCommand, CalibrateClock, Fake>;
 
 /// Starts the gps task, which owns @p port. The receiver stays off until
 /// a Power message.
