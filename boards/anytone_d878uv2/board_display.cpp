@@ -8,6 +8,7 @@
 
 #include "dmm/lib/format.h"
 #include "dmm/lib/strings.h"
+#include "dmm/os/os.h"
 #include "dmm/services/log.h"
 
 #include <charconv>
@@ -49,7 +50,12 @@ void BoardDisplay::fillRect(int x, int y, int w, int h, dmm::services::Color col
 {
     PanelPinsGuard guard;
     m_panel.fillRect(x, y, w, h, color);
-    m_mirror.fill(x, y, w, h, color);
+    if (m_streaming) {
+        waitForLogRoom();
+        dmm::services::log::info("scr") << "f " << m_streamLine++ << ' ' << x << ' ' << y << ' ' << w << ' ' << h
+                                        << ' ' << dmm::lib::hex(color, 4);
+        m_drew = true;
+    }
 }
 
 void BoardDisplay::drawBitmap(int x, int y, int w, int h, const std::uint8_t *rows, int stride,
@@ -57,7 +63,63 @@ void BoardDisplay::drawBitmap(int x, int y, int w, int h, const std::uint8_t *ro
 {
     PanelPinsGuard guard;
     m_panel.drawBitmap(x, y, w, h, rows, stride, fg, bg);
-    m_mirror.bitmap(x, y, w, h, rows, stride, fg, bg);
+    if (!m_streaming) {
+        return;
+    }
+    // As many rows to a line as fit in about 48 bytes.
+    const int rowBytes = (w + 7) / 8;
+    const int perLine = rowBytes >= 48 ? 1 : 48 / rowBytes;
+    for (int first = 0; first < h; first += perLine) {
+        const int n = h - first < perLine ? h - first : perLine;
+        waitForLogRoom();
+        auto line = dmm::services::log::info("scr");
+        line << "b " << m_streamLine++ << ' ' << x << ' ' << y + first << ' ' << w << ' ' << n << ' '
+             << dmm::lib::hex(fg, 4) << ' ' << dmm::lib::hex(bg, 4) << ' ';
+        for (int r = first; r < first + n; ++r) {
+            for (int b = 0; b < rowBytes; ++b) {
+                line << dmm::lib::hex(rows[r * stride + b], 2);
+            }
+        }
+    }
+    m_drew = true;
+}
+
+void BoardDisplay::frameDone()
+{
+    if (!m_streaming) {
+        return;
+    }
+    if (m_drew) {
+        waitForLogRoom();
+        dmm::services::log::info("scr") << "e " << m_streamLine++;
+        m_drew = false;
+    }
+    if (m_streamUntil != 0 && static_cast<std::int32_t>(dmm::os::nowMs() - m_streamUntil) >= 0) {
+        stream(false);
+    }
+}
+
+void BoardDisplay::stream(bool on)
+{
+    if (on == m_streaming) {
+        return;
+    }
+    m_streaming = on;
+    m_drew = false;
+    if (on) {
+        m_streamLine = 0;
+        dmm::services::log::info("scr") << "start " << width() << ' ' << height();
+    } else {
+        dmm::services::log::info("scr") << "stop " << m_streamLine;
+    }
+}
+
+// Waits a little for the log task to make room, so no line is dropped.
+void BoardDisplay::waitForLogRoom()
+{
+    for (int i = 0; i < 100 && dmm::services::log::room() < dmm::services::log::MaxLineLength + 1; ++i) {
+        dmm::os::sleepMs(1);
+    }
 }
 
 void BoardDisplay::setBacklight(int level)
@@ -69,50 +131,23 @@ void BoardDisplay::setBacklight(int level)
 
 bool BoardDisplay::debugCommand(std::string_view text)
 {
-    namespace log = dmm::services::log;
-    using Mirror = decltype(m_mirror);
-    auto number = [&text](int &out) {
-        while (!text.empty() && text.front() == ' ') {
-            text.remove_prefix(1);
-        }
-        const auto r = std::from_chars(text.data(), text.data() + text.size(), out);
-        if (r.ec != std::errc{}) {
-            return false;
-        }
-        text.remove_prefix(static_cast<std::size_t>(r.ptr - text.data()));
-        return true;
-    };
-    if (text == "colours") {
-        auto line = log::info("display");
-        line << "screen colours " << m_mirror.colourCount();
-        for (const auto c : m_mirror.colours()) {
-            line << ' ' << dmm::lib::hex(c, 4);
-        }
+    if (text == "stream on" || text == "stream off") {
+        m_streamUntil = 0;
+        stream(text == "stream on");
         return true;
     }
-    if (text == "flicker") {
-        std::uint32_t worst = 0;
-        const std::uint32_t n = m_mirror.takeFlicker(worst);
-        log::info("display") << "screen flicker " << n << ", worst frame " << worst;
-        return true;
-    }
-    if (dmm::lib::startsWith(text, "rows ")) {
-        text.remove_prefix(5);
-        int first = 0;
-        int count = 0;
-        if (!number(first) || !number(count) || first < 0 || count < 1 || first + count > Mirror::Height) {
+    if (dmm::lib::startsWith(text, "watch ")) {
+        text.remove_prefix(6);
+        int seconds = 0;
+        const auto r = std::from_chars(text.data(), text.data() + text.size(), seconds);
+        if (r.ec != std::errc{} || r.ptr != text.data() + text.size() || seconds < 1 || seconds > 600) {
             return false;
         }
-        constexpr char Hex[] = "0123456789abcdef";
-        for (int y = first; y < first + count; ++y) {
-            for (int half = 0; half < 2; ++half) {
-                char buf[Mirror::Width / 2 + 1];
-                for (int i = 0; i < Mirror::Width / 2; ++i) {
-                    buf[i] = Hex[m_mirror.at(half * (Mirror::Width / 2) + i, y)];
-                }
-                buf[Mirror::Width / 2] = '\0';
-                log::info("display") << "screen " << y << ' ' << half << ' ' << buf;
-            }
+        stream(true);
+        // 0 means until off.
+        m_streamUntil = dmm::os::nowMs() + static_cast<std::uint32_t>(seconds) * 1000;
+        if (m_streamUntil == 0) {
+            m_streamUntil = 1;
         }
         return true;
     }

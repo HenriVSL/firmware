@@ -170,6 +170,10 @@ LogView logView;
 
 void onLogLine(Level level, std::string_view line)
 {
+    // The screen's own drawing, streamed for tests, would draw itself again.
+    if (line.find(" scr: ") != std::string_view::npos) {
+        return;
+    }
     logView.add(level, line);
 }
 
@@ -3250,7 +3254,14 @@ void uiMain(void *)
                            },
                            [&](const ClockRate &) { refreshCalibration(); },
                            [&](const ScreenCommand &) {
-                               if (!d.debugCommand(screenCommandText.view())) {
+                               // One whole screen, streamed: a picture for tests.
+                               if (screenCommandText.view() == "shot") {
+                                   d.frameDone();
+                                   d.debugCommand("stream on");
+                                   redrawView();
+                                   d.frameDone();
+                                   d.debugCommand("stream off");
+                               } else if (!d.debugCommand(screenCommandText.view())) {
                                    log::info("console") << "unknown command";
                                }
                                screenCommandWaiting.store(false);

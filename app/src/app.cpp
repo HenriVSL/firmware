@@ -525,7 +525,7 @@ void runCommand(std::string_view command)
         log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
-        log::info("console") << "tests: screen rows <first> <count>|colours|flicker, key <name> [long], knob <steps>";
+        log::info("console") << "tests: screen shot|watch <s>|stream on|off, key <name> [long], knob <steps>";
     } else if (lib::startsWith(command, "screen ")) {
         if (!ui::screenCommand(std::string_view(command.data() + 7, command.size() - 7))) {
             log::info("console") << "busy";

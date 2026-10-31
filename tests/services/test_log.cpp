@@ -51,3 +51,14 @@ TEST_CASE("a full log queue drops lines and says so")
     CHECK(sink.lines.back().find("lines dropped") != std::string::npos);
     CHECK(sink.lines.front().find("line 0 ") != std::string::npos);
 }
+
+TEST_CASE("the queue's room shrinks with each line and comes back when drained")
+{
+    CaptureSink sink;
+    log::drain(sink);
+    const std::size_t empty = log::room();
+    log::info("test") << "a line";
+    CHECK(log::room() < empty);
+    log::drain(sink);
+    CHECK(log::room() == empty);
+}
