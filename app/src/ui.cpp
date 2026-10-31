@@ -2250,6 +2250,10 @@ void uiMain(void *)
         case View::PlugText: {
             const std::size_t max = plugEditor->field(plugField).maxChars;
             const os::Ticks now = os::nowMs();
+            // A key's release would end the tapping on it.
+            if (!step) {
+                return;
+            }
             if (press && digit) {
                 const std::string_view set = KeyLetters[static_cast<int>(key)];
                 const bool again = key == plugLastKey && now - plugLastTap < TapMs && plugCursor > 0;
