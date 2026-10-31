@@ -7,6 +7,7 @@
 #include "dmm/os/os.h"
 #include "dmm/services/d878uv2_codeplug.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -53,6 +54,13 @@ public:
     /// In program mode, where the port carries only this protocol.
     bool active(os::Ticks now);
 
+    /// For a write of the radio's own through the same codeplug writer,
+    /// from another task: false while the PC is in program mode. Until
+    /// endLocalWrite(), "PROGRAM" waits for it, up to LocalWriteWaitMs.
+    bool beginLocalWrite();
+    void endLocalWrite() { m_localWrite.store(false); }
+    static constexpr os::Ticks LocalWriteWaitMs = 1500;
+
     /// The console's commands, answered in the log:
     ///   watch on|off   logs the bytes each write from the PC changes, to
     ///                  learn what a setting changes in the codeplug
@@ -75,7 +83,8 @@ private:
 
     D878Uv2Codeplug &m_codeplug;
     D878Uv2CodeplugWriter &m_writer;
-    bool m_program = false;
+    std::atomic<bool> m_program{false};
+    std::atomic<bool> m_localWrite{false};
     bool m_changed = false;
     bool m_watch = false;
     std::size_t m_changedBytes = 0; // in this program mode, while watching

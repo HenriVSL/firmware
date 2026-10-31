@@ -6,6 +6,9 @@
 
 #include <doctest/doctest.h>
 
+#include <chrono>
+#include <thread>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -182,4 +185,27 @@ TEST_CASE("programming: watching the PC's writes leaves them as they are")
     s.send("PROGRAM");
     CHECK(s.read(Block + 0x110) == Bytes(16, 0x6B));
     CHECK(s.p.debugCommand("watch off"));
+}
+
+TEST_CASE("programming: a write of the radio's own and the PC's never overlap")
+{
+    Session s;
+    REQUIRE(s.p.beginLocalWrite());
+    // Still writing after the wait: no answer, and no program mode.
+    CHECK(s.send("PROGRAM").empty());
+    CHECK_FALSE(s.p.active(s.now));
+    s.p.endLocalWrite();
+
+    // A write that ends during the wait lets the PC in.
+    REQUIRE(s.p.beginLocalWrite());
+    std::thread local([&s] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        s.p.endLocalWrite();
+    });
+    CHECK(s.send("PROGRAM") == Bytes{'Q', 'X', 0x06});
+    local.join();
+    CHECK_FALSE(s.p.beginLocalWrite());
+    CHECK(s.send("END") == Bytes{0x06});
+    CHECK(s.p.beginLocalWrite());
+    s.p.endLocalWrite();
 }

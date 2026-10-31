@@ -329,17 +329,19 @@ void hal::boardMain()
     static dmm::services::D878Uv2Codeplug programmingCodeplug{storage};
     static dmm::services::D878Uv2CodeplugWriter codeplugWriter{storage, programmingCodeplug};
     static dmm::services::D878Uv2Programming programming{programmingCodeplug, codeplugWriter};
-    // Edits on the radio go through the same writer, never while the PC
-    // writes; the ui task's reader then forgets which copies were valid.
+    // Edits on the radio go through the same writer, never at the same time
+    // as the PC (beginLocalWrite); the ui task's reader then forgets which
+    // copies were valid.
     static auto writeRecord = [](std::uint32_t address, std::span<const std::uint8_t> data) {
         using dmm::services::plug::SaveResult;
-        if (programming.active(dmm::os::nowMs())) {
+        if (!programming.beginLocalWrite()) {
             return SaveResult::Busy;
         }
         const bool ok = codeplugWriter.write(address, data) && codeplugWriter.finish();
         if (!ok) {
             codeplugWriter.abandon();
         }
+        programming.endLocalWrite();
         codeplug.forgetCopies();
         return ok ? SaveResult::Saved : SaveResult::Failed;
     };
@@ -347,7 +349,7 @@ void hal::boardMain()
     // Settings changed in the menus, the same way: every piece, then one finish.
     static auto writeSettings = [](std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces) {
         using dmm::services::plug::SaveResult;
-        if (programming.active(dmm::os::nowMs())) {
+        if (!programming.beginLocalWrite()) {
             return SaveResult::Busy;
         }
         bool ok = true;
@@ -358,6 +360,7 @@ void hal::boardMain()
         if (!ok) {
             codeplugWriter.abandon();
         }
+        programming.endLocalWrite();
         codeplug.forgetCopies();
         return ok ? SaveResult::Saved : SaveResult::Failed;
     };
