@@ -216,6 +216,69 @@ bool numbersAfter(std::string_view command, std::string_view prefix, int base, s
     return true;
 }
 
+// "key <name> [long]": presses a key as the keypad would, with a long
+// press before the release when asked; for tests. Names as the log
+// writes them, in any case; PTT is left to the radio's own command.
+bool keyCommand(std::string_view command)
+{
+    if (!lib::startsWith(command, "key ")) {
+        return false;
+    }
+    command.remove_prefix(4);
+    const std::size_t space = command.find(' ');
+    const std::string_view name(command.data(), space == std::string_view::npos ? command.size() : space);
+    const std::string_view rest(command.data() + name.size(), command.size() - name.size());
+    const bool held = rest == " long";
+    if (!held && !rest.empty()) {
+        return false;
+    }
+    auto same = [](std::string_view a, std::string_view b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < a.size(); ++i) {
+            const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+            if (lower(a[i]) != lower(b[i])) {
+                return false;
+            }
+        }
+        return true;
+    };
+    for (unsigned k = 0; k < static_cast<unsigned>(services::Key::Ptt); ++k) {
+        const auto key = static_cast<services::Key>(k);
+        if (!same(name, services::keyName(key))) {
+            continue;
+        }
+        using Type = services::KeyDebouncer::EventType;
+        ui::post(ui::KeyEvent{key, Type::Press});
+        if (held) {
+            ui::post(ui::KeyEvent{key, Type::LongPress});
+        }
+        ui::post(ui::KeyEvent{key, Type::Release});
+        return true;
+    }
+    return false;
+}
+
+// "knob <steps>": turns the knob by that many steps, negative for back;
+// for tests.
+bool knobCommand(std::string_view command)
+{
+    if (!lib::startsWith(command, "knob ")) {
+        return false;
+    }
+    command.remove_prefix(5);
+    const bool back = !command.empty() && command.front() == '-';
+    if (back) {
+        command.remove_prefix(1);
+    }
+    std::int32_t steps = 0;
+    if (!numbersAfter(command, "", 10, &steps, 1) || steps > 100) {
+        return false;
+    }
+    return ui::post(ui::KnobTurn{back ? -steps : steps});
+}
+
 // "fm tone tx|rx <tone>": off, a CTCSS tone in 0.1 Hz (600..2600), or a
 // DCS code as d and three octal digits, then n (normal, the default) or i
 // (inverted).
@@ -462,6 +525,19 @@ void runCommand(std::string_view command)
         log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
+        log::info("console") << "tests: screen rows <first> <count>|colours|flicker, key <name> [long], knob <steps>";
+    } else if (lib::startsWith(command, "screen ")) {
+        if (!ui::screenCommand(std::string_view(command.data() + 7, command.size() - 7))) {
+            log::info("console") << "busy";
+        }
+    } else if (lib::startsWith(command, "key ")) {
+        if (!keyCommand(command)) {
+            log::info("console") << "unknown key";
+        }
+    } else if (lib::startsWith(command, "knob ")) {
+        if (!knobCommand(command)) {
+            log::info("console") << "knob <steps>, -100 to 100";
+        }
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();

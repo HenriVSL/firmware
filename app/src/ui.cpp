@@ -41,6 +41,8 @@ os::Queue<Message, 16> inbox;
 board::PlugEditor *plugEditor = nullptr;
 lib::StaticString<128> plugCommandText;
 std::atomic<bool> plugCommandWaiting{false};
+lib::StaticString<64> screenCommandText;
+std::atomic<bool> screenCommandWaiting{false};
 Display *display = nullptr;
 CodeplugSource *codeplug = nullptr;
 const board::Input *input = nullptr;
@@ -2903,7 +2905,42 @@ void uiMain(void *)
         }
     };
 
+    // The knob's steps, as the view takes them.
+    auto turnKnob = [&](std::int32_t moved) {
+        if (channels == nullptr || moved == 0) {
+            return;
+        }
+        if (view >= View::PlugList && view <= View::PlugSave) {
+            plugKnob(static_cast<int>(moved));
+        } else if (view == View::Menu) {
+            moveMenu(moved);
+        } else if (view == View::MenuValue) {
+            menuValue.move(moved);
+            drawMenuValue(false);
+        } else if (isList(view)) {
+            ListPicker &list = listOf(view);
+            list.move(moved);
+            list.draw(d, StandbyScreen::StatusH, listHint());
+        } else if (view == View::Heard && heardShownCount > 0) {
+            const int last = static_cast<int>(heardShownCount) - 1;
+            stationShown = static_cast<std::size_t>(
+                std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
+            drawHeard();
+        } else if (view == View::Standby) {
+            entryLength = 0;
+            if (channels->vfoMode()) {
+                channels->tune(channels->current()->receiveHz +
+                    static_cast<std::uint32_t>(moved * static_cast<int>(VfoStepHz)));
+            } else {
+                channels->step(moved);
+            }
+            useChannel();
+        }
+    };
+
     while (!os::stopRequested()) {
+        // Whatever the last pass drew is one frame.
+        d.frameDone();
         Message m;
         if (inbox.receive(m, RedrawStepMs)) {
             auto refreshValues = [&] {
@@ -3141,34 +3178,11 @@ void uiMain(void *)
                                lastClicks = c.clicks;
                                keyTest.setClicks(c.clicks);
                                refreshValues();
-                               if (channels != nullptr && moved != 0) {
-                                   if (view >= View::PlugList && view <= View::PlugSave) {
-                                       plugKnob(static_cast<int>(moved));
-                                   } else if (view == View::Menu) {
-                                       moveMenu(moved);
-                                   } else if (view == View::MenuValue) {
-                                       menuValue.move(moved);
-                                       drawMenuValue(false);
-                                   } else if (isList(view)) {
-                                       ListPicker &list = listOf(view);
-                                       list.move(moved);
-                                       list.draw(d, StandbyScreen::StatusH, listHint());
-                                   } else if (view == View::Heard && heardShownCount > 0) {
-                                       const int last = static_cast<int>(heardShownCount) - 1;
-                                       stationShown = static_cast<std::size_t>(
-                                           std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
-                                       drawHeard();
-                                   } else if (view == View::Standby) {
-                                       entryLength = 0;
-                                       if (channels->vfoMode()) {
-                                           channels->tune(channels->current()->receiveHz +
-                                               static_cast<std::uint32_t>(moved * static_cast<int>(VfoStepHz)));
-                                       } else {
-                                           channels->step(moved);
-                                       }
-                                       useChannel();
-                                   }
-                               }
+                               turnKnob(moved);
+                           },
+                           [&](const KnobTurn &k) {
+                               useLight(d);
+                               turnKnob(k.steps);
                            },
                            [&](const EncoderRaw &r) {
                                keyTest.setRaw(r.raw);
@@ -3231,6 +3245,12 @@ void uiMain(void *)
                                }
                            },
                            [&](const ClockRate &) { refreshCalibration(); },
+                           [&](const ScreenCommand &) {
+                               if (!d.debugCommand(screenCommandText.view())) {
+                                   log::info("console") << "unknown command";
+                               }
+                               screenCommandWaiting.store(false);
+                           },
                            [&](const PlugCommand &) {
                                if (!plugEditor->debugCommand(plugCommandText.view())) {
                                    log::info("console") << "unknown command";
@@ -3405,6 +3425,21 @@ bool post(const Message &message)
 bool takeRestart()
 {
     return restartWanted.exchange(false);
+}
+
+bool screenCommand(std::string_view text)
+{
+    if (screenCommandWaiting.load()) {
+        return false;
+    }
+    screenCommandText.clear();
+    screenCommandText << text;
+    screenCommandWaiting.store(true);
+    if (!post(ScreenCommand{})) {
+        screenCommandWaiting.store(false);
+        return false;
+    }
+    return true;
 }
 
 bool plugCommand(std::string_view text)

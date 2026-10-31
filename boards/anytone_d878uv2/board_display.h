@@ -6,6 +6,7 @@
 #include "dmm/drivers/display/st7735.h"
 #include "dmm/hal/gd32f30x/pwm.h"
 #include "dmm/services/display.h"
+#include "dmm/services/screen_mirror.h"
 
 namespace board {
 
@@ -25,9 +26,19 @@ public:
         dmm::services::Color bg) override;
     void setBacklight(int level) override;
     void setPanelOn(bool on) override;
+    void frameDone() override { m_mirror.endFrame(); }
+    /// For tests, a copy of the screen read over the console:
+    ///   rows <first> <count>  each row as hexadecimal colour indices, two
+    ///                         lines of 80 pixels, low nibble left
+    ///   colours               the colours the indices stand for (RGB565)
+    ///   flicker               pixels that changed colour more than once in
+    ///                         one frame since the last ask, and the worst
+    ///                         frame
+    bool debugCommand(std::string_view text) override;
 
 private:
     bool m_strap;
+    dmm::services::ScreenMirror<160, 128> m_mirror;
     dmm::drivers::display::St7735 m_panel;
     dmm::hal::gd32f30x::Timer7ComplementaryPwm m_pwm;
 };

@@ -37,6 +37,15 @@ struct ShowKeyTest
 struct PlugCommand
 {
 };
+/// The console's display command waits in screenCommand()'s buffer.
+struct ScreenCommand
+{
+};
+/// The knob turned by @c steps, from the console (tests).
+struct KnobTurn
+{
+    std::int32_t steps;
+};
 /// Between the key test and the log.
 struct ToggleView
 {
@@ -191,7 +200,7 @@ struct AprsProblem
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, Notice, PlugCommand>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, Notice, PlugCommand, ScreenCommand, KnobTurn>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.
@@ -211,5 +220,9 @@ bool takeRestart();
 /// codeplug editor; false while the last one is still waiting, or without
 /// an editor.
 bool plugCommand(std::string_view text);
+
+/// Hands a console display command to the display, in the ui task; false
+/// while the last one is still waiting.
+bool screenCommand(std::string_view text);
 
 } // namespace dmm::app::ui
