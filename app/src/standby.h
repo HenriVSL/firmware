@@ -6,6 +6,7 @@
 #include "aprs.h"
 
 #include "dmm/services/channel_selector.h"
+#include "dmm/services/codeplug.h"
 #include "dmm/services/display.h"
 #include "dmm/services/nmea.h"
 
@@ -58,8 +59,15 @@ struct StandbyState
     /// The battery voltage, 0 while unknown, and whether it is low.
     int millivolts = 0;
     bool batteryLow = false;
-    /// The volume next to the power instead of the battery voltage.
-    bool volumeShown = false;
+    /// What each row of the working screen shows.
+    services::HomeLayout layout;
+    /// The signal level, when known: the repeater's on a roaming channel
+    /// while it is quiet, else the receiver's.
+    bool signalKnown = false;
+    int signalDbm = 0;
+    /// The last caller ("OH0ABC 2m"), or empty; the GPS position, or empty.
+    std::string_view lastCaller;
+    std::string_view position;
     GpsState gps;
     /// The time, "14:32" local or "11:32Z" UTC, or empty while it is
     /// unknown.
@@ -68,8 +76,6 @@ struct StandbyState
     /// contact's name, or empty.
     std::string_view talkgroup;
     std::string_view talkgroupName;
-    /// The contact's name large instead of the channel's.
-    bool contactNameLarge = false;
     /// APRS beacons go out on their own.
     bool beacons = false;
     /// The channel roams: a search under way, or the repeater in use (its
@@ -140,9 +146,13 @@ public:
     void drawTransmit(services::Display &d, const StandbyState &s, const TransmitInfo &t);
     /// Only the transmit screen's running time.
     void drawTransmitTime(services::Display &d, const TransmitInfo &t);
-    /// Only the working screen's volume or battery voltage next to the
-    /// power, in place.
+    /// Only the working screen's reading next to the power (voltage,
+    /// volume or signal), in place.
     void drawReading(services::Display &d, const StandbyState &s);
+    /// Only the row under the name, in place.
+    void drawMiddle(services::Display &d, const services::ChannelSelector &sel, const StandbyState &s);
+    /// Only the bottom row, in place.
+    void drawBottom(services::Display &d, const services::ChannelSelector &sel, const StandbyState &s);
     /// Where the caller may draw the battery: x of its left edge.
     int batteryX(const services::Display &d) const { return d.width() - 48; }
 };

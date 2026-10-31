@@ -450,8 +450,6 @@ enum class MenuItem : std::uint8_t
     RoamStatus, // opens the roaming status screen
     Backlight,
     BacklightTime,
-    BigName,     // the channel's name or the contact's, large
-    BesidePower, // the battery voltage or the volume next to the power
     BatterySave,
     KeyLock,
     AutoLock,
@@ -461,6 +459,13 @@ enum class MenuItem : std::uint8_t
     ClockZone,
     ClockShown, // local time or UTC on the screen
     ClockCalibration,
+    HomePreset, // a whole home screen layout at once
+    HomeTop,
+    HomeClock,
+    HomeBig,
+    HomeMiddle,
+    HomeBeside,
+    HomeBottom,
     AprsSend, // queues a beacon
     AprsBeacon,
     AprsPower,
@@ -490,6 +495,7 @@ enum class MenuGroup : std::uint8_t
     Roaming,
     Position,
     Radio,
+    Home,
     Codeplug,
     Tools,
     Count,
@@ -513,10 +519,14 @@ constexpr GroupInfo Groups[] = {
             MenuItem::AprsReceive, MenuItem::AprsSend},
         7},
     {"Radio", "Display, keys, battery", "and the clock",
-        {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::BigName, MenuItem::BesidePower, MenuItem::KeyLock,
+        {MenuItem::Backlight, MenuItem::BacklightTime, MenuItem::KeyLock,
             MenuItem::AutoLock, MenuItem::BatterySave, MenuItem::ClockZone, MenuItem::ClockShown,
             MenuItem::ClockCalibration},
-        10},
+        8},
+    {"Home screen", "What the main screen", "shows, row by row",
+        {MenuItem::HomePreset, MenuItem::HomeTop, MenuItem::HomeClock, MenuItem::HomeBig, MenuItem::HomeMiddle,
+            MenuItem::HomeBeside, MenuItem::HomeBottom},
+        7},
     {"Codeplug", "Every record and value", "of the codeplug, edited",
         {MenuItem::PlugChannels, MenuItem::PlugZones, MenuItem::PlugContacts, MenuItem::PlugGroups,
             MenuItem::PlugRepeaters, MenuItem::PlugRoamZones, MenuItem::PlugRadioIds, MenuItem::PlugSettings,
@@ -553,10 +563,20 @@ ItemAbout itemAbout(MenuItem item)
         return {"Display brightness", ""};
     case MenuItem::BacklightTime:
         return {"How long the light stays", "on after a key"};
-    case MenuItem::BigName:
-        return {"Large on the main screen:", "channel or contact name"};
-    case MenuItem::BesidePower:
-        return {"Next to the power: the", "battery voltage or volume"};
+    case MenuItem::HomePreset:
+        return {"A whole layout at once;", "the rows can then change"};
+    case MenuItem::HomeTop:
+        return {"The small line at the", "top, left of the clock"};
+    case MenuItem::HomeClock:
+        return {"The time at the top", "right"};
+    case MenuItem::HomeBig:
+        return {"Large on the main screen", ""};
+    case MenuItem::HomeMiddle:
+        return {"The row under the name:", "frequency, contact, signal"};
+    case MenuItem::HomeBeside:
+        return {"Next to the power:", "voltage, volume or signal"};
+    case MenuItem::HomeBottom:
+        return {"The bottom row: details,", "last caller or position"};
     case MenuItem::BatterySave:
         return {"Sleep between checks for", "a signal while quiet"};
     case MenuItem::KeyLock:
@@ -702,9 +722,52 @@ lib::StaticString<10> zoneText(int minutes)
 // The time is shown in UTC ("11:32Z") instead of local time.
 bool clockUtc = false;
 // A DMR channel's large name is its contact's, not the channel's own.
-bool bigContactName = false;
+// What each row of the home screen shows, and its presets.
+services::HomeLayout homeLayout;
+using Layout = services::HomeLayout;
+constexpr std::string_view TopNames[] = {"Talkgroup", "Zone", "Number", "None"};
+constexpr std::string_view BigNames[] = {"Channel", "Contact", "Zone"};
+constexpr std::string_view MiddleNames[] = {"Frequency", "Talkgroup", "Signal"};
+constexpr std::string_view BesideNames[] = {"Voltage", "Volume", "Signal"};
+constexpr std::string_view BottomNames[] = {"Details", "Last caller", "Position", "None"};
+constexpr std::string_view PresetNames[] = {"Detailed", "Simple", "Roaming"};
+
+// Preset @p i: Detailed (as the radio starts), Simple (the contact large,
+// the last caller under it) or Roaming (a signal meter).
+Layout presetLayout(std::size_t i)
+{
+    Layout l;
+    if (i == 1) {
+        l.top = Layout::Top::None;
+        l.big = Layout::Big::Contact;
+        l.middle = Layout::Middle::Talkgroup;
+        l.bottom = Layout::Bottom::LastCaller;
+    } else if (i == 2) {
+        l.middle = Layout::Middle::Signal;
+    }
+    return l;
+}
+
+// The preset @p l is, or -1 for a layout of one's own.
+int presetOf(const Layout &l)
+{
+    for (std::size_t i = 0; i < std::size(PresetNames); ++i) {
+        const Layout p = presetLayout(i);
+        if (p.top == l.top && p.clock == l.clock && p.big == l.big && p.middle == l.middle && p.beside == l.beside &&
+            p.bottom == l.bottom) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
+// The last call heard, for the home screen: the caller and when it ended.
+char lastCaller[CodeplugSource::ContactNameBytes + 1] = {};
+std::uint32_t lastCallerId = 0;
+os::Ticks lastCallerAt = 0;
+lib::StaticString<32> lastCallerText;
+lib::StaticString<24> positionText;
 // The volume next to the power instead of the battery voltage.
-bool volumeBesidePower = false;
 
 // The time @p agoS seconds ago as "14:32", or "11:32Z" in UTC; empty while
 // the clock does not know it.
@@ -1099,8 +1162,7 @@ void uiMain(void *)
             backlightLevel = keptSettings.backlightLevel;
             d.setBacklight(backlightLevel);
             if (const auto p = codeplug->preferences()) {
-                bigContactName = p->bigContactName;
-                volumeBesidePower = p->volumeBesidePower;
+                homeLayout = p->home;
                 clockUtc = p->clockUtc;
                 aprsReceive = p->aprsReceive;
                 offsetKhz = p->frequencyOffsetHz / 1000;
@@ -1137,6 +1199,7 @@ void uiMain(void *)
     const os::Ticks startUntil = os::nowMs() + StartScreenMs;
     bool startingShown = false;
     os::Ticks lastSecond = 0;
+    os::Ticks lastLiveTick = 0;
     os::Ticks noticeUntil = 0;
     bool noticeShown = false;
     bool volumeNoticeUp = false; // the notice up is the volume one
@@ -1189,7 +1252,7 @@ void uiMain(void *)
         s.locked = keyLock.locked() || keyLock.settings().forced;
         s.entry = std::string_view(entry, entryLength);
         s.volume = volumeLevel;
-        s.volumeShown = volumeBesidePower;
+        s.layout = homeLayout;
         s.millivolts = batteryState.millivolts;
         s.batteryLow = batteryState.low;
         s.keys = quickKeys.view();
@@ -1209,11 +1272,61 @@ void uiMain(void *)
             roamSiteText << "repeater " << roam.site + 1;
         }
         s.roamSite = roamSiteText.view();
+        // The signal: a quiet roaming repeater's last level, else what the
+        // receiver measures.
+        if (homeLayout.middle == Layout::Middle::Signal || homeLayout.beside == Layout::Beside::Signal) {
+            if (s.roaming && !receiving && roam.site >= 0) {
+                static radio::RoamingView heardNow;
+                radio::roamingView(heardNow);
+                for (std::size_t i = 0; i < heardNow.count; ++i) {
+                    const auto &e = heardNow.entries[i];
+                    if (e.position == roam.site && e.fresh(os::nowMs())) {
+                        s.signalKnown = true;
+                        s.signalDbm = e.levelDbm;
+                    }
+                }
+            }
+            const radio::SignalLevel level = radio::signalLevel();
+            if (!s.signalKnown && level.known && os::nowMs() - level.atMs < 2000) {
+                s.signalKnown = true;
+                s.signalDbm = level.dbm;
+            }
+        }
+        if (homeLayout.bottom == Layout::Bottom::LastCaller && lastCallerAt != 0) {
+            const std::uint32_t ageS = static_cast<std::uint32_t>((os::nowMs() - lastCallerAt) / 1000);
+            lastCallerText.clear();
+            if (lastCaller[0] != '\0') {
+                lastCallerText << lastCaller;
+            } else {
+                lastCallerText << lastCallerId;
+            }
+            lastCallerText << "  ";
+            if (ageS < 60) {
+                lastCallerText << "now";
+            } else if (ageS < 3600) {
+                lastCallerText << ageS / 60 << " min ago";
+            } else {
+                lastCallerText << ageS / 3600 << " h ago";
+            }
+            s.lastCaller = lastCallerText.view();
+        }
+        if (homeLayout.bottom == Layout::Bottom::Position && gpsState.fix.valid) {
+            // Degrees with four decimals: north and east positive.
+            auto degrees = [](std::int32_t e7, char plus, char minus) {
+                lib::StaticString<12> t;
+                const std::uint32_t a = static_cast<std::uint32_t>(e7 < 0 ? -e7 : e7) / 1000;
+                t << a / 10000 << '.' << lib::zeroPadded(a % 10000, 4) << (e7 < 0 ? minus : plus);
+                return t;
+            };
+            positionText.clear();
+            positionText << degrees(gpsState.fix.latitudeE7, 'N', 'S').view() << "  "
+                         << degrees(gpsState.fix.longitudeE7, 'E', 'W').view();
+            s.position = positionText.view();
+        }
         if (ch && hasTalkgroup(*ch)) {
             nameTalkgroup(ch->dmr.contact);
             s.talkgroup = talkgroupText;
             s.talkgroupName = talkgroupName;
-            s.contactNameLarge = bigContactName;
         }
         return s;
     };
@@ -1234,9 +1347,9 @@ void uiMain(void *)
         copyName(callChannel, ch->name);
         if (hasTalkgroup(*ch)) {
             nameTalkgroup(ch->dmr.contact);
-            t.target = bigContactName && talkgroupName[0] != '\0' ? std::string_view(talkgroupName)
-                : callChannel[0] != '\0'                          ? std::string_view(callChannel)
-                                                                  : std::string_view(talkgroupText);
+            t.target = homeLayout.big == Layout::Big::Contact && talkgroupName[0] != '\0' ? std::string_view(talkgroupName)
+                : callChannel[0] != '\0'                                                  ? std::string_view(callChannel)
+                                                                                          : std::string_view(talkgroupText);
             t.name = talkgroupText;
         } else {
             copyName(callChannel, ch->name);
@@ -1435,13 +1548,35 @@ void uiMain(void *)
             label = "Light time";
             value << durationText(backlightS).view();
             break;
-        case MenuItem::BigName:
-            label = "Big name";
-            value << (bigContactName ? "Contact" : "Channel");
+        case MenuItem::HomePreset: {
+            label = "Preset";
+            const int preset = presetOf(homeLayout);
+            value << (preset < 0 ? std::string_view("Own") : PresetNames[preset]);
             break;
-        case MenuItem::BesidePower:
+        }
+        case MenuItem::HomeTop:
+            label = "Top row";
+            value << TopNames[static_cast<int>(homeLayout.top)];
+            break;
+        case MenuItem::HomeClock:
+            label = "Clock";
+            value << (homeLayout.clock ? "On" : "Off");
+            break;
+        case MenuItem::HomeBig:
+            label = "Big name";
+            value << BigNames[static_cast<int>(homeLayout.big)];
+            break;
+        case MenuItem::HomeMiddle:
+            label = "Middle row";
+            value << MiddleNames[static_cast<int>(homeLayout.middle)];
+            break;
+        case MenuItem::HomeBeside:
             label = "Next to power";
-            value << (volumeBesidePower ? "Volume" : "Voltage");
+            value << BesideNames[static_cast<int>(homeLayout.beside)];
+            break;
+        case MenuItem::HomeBottom:
+            label = "Bottom row";
+            value << BottomNames[static_cast<int>(homeLayout.bottom)];
             break;
         case MenuItem::BatterySave:
             label = "Battery save";
@@ -2455,17 +2590,55 @@ void uiMain(void *)
                 }
             }
             break;
-        case MenuItem::BigName:
-            menuValue.open("Big name");
-            menuValue.add(0, "Channel");
-            menuValue.add(1, "Contact");
-            menuValue.select(bigContactName ? 1 : 0);
+        case MenuItem::HomePreset: {
+            menuValue.open("Preset");
+            for (std::size_t i = 0; i < std::size(PresetNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), PresetNames[i]);
+            }
+            const int preset = presetOf(homeLayout);
+            menuValue.select(static_cast<std::uint8_t>(preset < 0 ? 0 : preset));
             break;
-        case MenuItem::BesidePower:
+        }
+        case MenuItem::HomeTop:
+            menuValue.open("Top row");
+            for (std::size_t i = 0; i < std::size(TopNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), TopNames[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(homeLayout.top));
+            break;
+        case MenuItem::HomeClock:
+            menuValue.open("Clock");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(homeLayout.clock ? 1 : 0);
+            break;
+        case MenuItem::HomeBig:
+            menuValue.open("Big name");
+            for (std::size_t i = 0; i < std::size(BigNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), BigNames[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(homeLayout.big));
+            break;
+        case MenuItem::HomeMiddle:
+            menuValue.open("Middle row");
+            for (std::size_t i = 0; i < std::size(MiddleNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), MiddleNames[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(homeLayout.middle));
+            break;
+        case MenuItem::HomeBeside:
             menuValue.open("Next to power");
-            menuValue.add(0, "Voltage");
-            menuValue.add(1, "Volume");
-            menuValue.select(volumeBesidePower ? 1 : 0);
+            for (std::size_t i = 0; i < std::size(BesideNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), BesideNames[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(homeLayout.beside));
+            break;
+        case MenuItem::HomeBottom:
+            menuValue.open("Bottom row");
+            for (std::size_t i = 0; i < std::size(BottomNames); ++i) {
+                menuValue.add(static_cast<std::uint8_t>(i), BottomNames[i]);
+            }
+            menuValue.select(static_cast<std::uint8_t>(homeLayout.bottom));
             break;
         case MenuItem::BatterySave:
             menuValue.open("Battery save");
@@ -2650,8 +2823,7 @@ void uiMain(void *)
         if (settingsStore != nullptr) {
             services::RadioPreferences p;
             p.frequencyOffsetHz = offsetKhz * 1000;
-            p.bigContactName = bigContactName;
-            p.volumeBesidePower = volumeBesidePower;
+            p.home = homeLayout;
             p.clockUtc = clockUtc;
             p.aprsReceive = aprsReceive;
             settingsStore->keepPreferences(p, os::nowMs());
@@ -2716,12 +2888,32 @@ void uiMain(void *)
             keptSettings.backlightS = backlightS;
             keepSettings();
             break;
-        case MenuItem::BigName:
-            bigContactName = v == 1;
+        case MenuItem::HomePreset:
+            homeLayout = presetLayout(v < std::size(PresetNames) ? v : 0);
             keepPreferences();
             break;
-        case MenuItem::BesidePower:
-            volumeBesidePower = v == 1;
+        case MenuItem::HomeTop:
+            homeLayout.top = static_cast<Layout::Top>(v);
+            keepPreferences();
+            break;
+        case MenuItem::HomeClock:
+            homeLayout.clock = v == 1;
+            keepPreferences();
+            break;
+        case MenuItem::HomeBig:
+            homeLayout.big = static_cast<Layout::Big>(v);
+            keepPreferences();
+            break;
+        case MenuItem::HomeMiddle:
+            homeLayout.middle = static_cast<Layout::Middle>(v);
+            keepPreferences();
+            break;
+        case MenuItem::HomeBeside:
+            homeLayout.beside = static_cast<Layout::Beside>(v);
+            keepPreferences();
+            break;
+        case MenuItem::HomeBottom:
+            homeLayout.bottom = static_cast<Layout::Bottom>(v);
             keepPreferences();
             break;
         case MenuItem::BatterySave:
@@ -3215,6 +3407,9 @@ void uiMain(void *)
                                } else if (heard.active) {
                                    heard.active = false;
                                    heard.ended = os::nowMs();
+                                   std::copy(std::begin(heard.caller), std::end(heard.caller), lastCaller);
+                                   lastCallerId = heard.source;
+                                   lastCallerAt = heard.ended;
                                }
                                if (view == View::Standby && !noticeShown) {
                                    redrawView();
@@ -3303,7 +3498,7 @@ void uiMain(void *)
                                    // Only what changes: the volume next to the
                                    // power, and the notice's number and bar once
                                    // it is up.
-                                   if (workingScreen() && volumeBesidePower) {
+                                   if (workingScreen() && homeLayout.beside == Layout::Beside::Volume) {
                                        standby.drawReading(d, standbyState());
                                    }
                                    drawVolumeNotice(d, step, !(noticeShown && volumeNoticeUp));
@@ -3317,7 +3512,7 @@ void uiMain(void *)
                                if (view != View::Start && view != View::TestPattern && view != View::Message) {
                                    drawBattery(d);
                                }
-                               if (workingScreen() && !volumeBesidePower && !noticeShown) {
+                               if (workingScreen() && homeLayout.beside == Layout::Beside::Voltage && !noticeShown) {
                                    standby.drawReading(d, standbyState());
                                }
                            },
@@ -3332,6 +3527,10 @@ void uiMain(void *)
                                    logEvent(services::EventKind::GpsFix);
                                }
                                gpsState = {g.on, g.receiving, g.fix, g.asleep};
+                               if (homeLayout.bottom == Layout::Bottom::Position && workingScreen() && !noticeShown &&
+                                   channels != nullptr) {
+                                   standby.drawBottom(d, *channels, standbyState());
+                               }
                                if (view == View::Gps) {
                                    if (tagChanged) {
                                        standby.drawStatus(d, standbyState());
@@ -3487,6 +3686,29 @@ void uiMain(void *)
             } else if (heard.active && second != lastSecond) {
                 lastSecond = second;
                 standby.drawCallTime(d, callInfo());
+            }
+        }
+        // The home screen's live rows: the signal twice a second, the last
+        // caller's age each minute.
+        if (workingScreen() && !noticeShown && channels != nullptr) {
+            const os::Ticks half = os::nowMs() / 500;
+            if (half != lastLiveTick) {
+                lastLiveTick = half;
+                const bool middle = homeLayout.middle == Layout::Middle::Signal;
+                const bool beside = homeLayout.beside == Layout::Beside::Signal;
+                const bool caller = homeLayout.bottom == Layout::Bottom::LastCaller && half % 120 == 0;
+                if (middle || beside || caller) {
+                    const StandbyState st = standbyState();
+                    if (middle) {
+                        standby.drawMiddle(d, *channels, st);
+                    }
+                    if (beside) {
+                        standby.drawReading(d, st);
+                    }
+                    if (caller) {
+                        standby.drawBottom(d, *channels, st);
+                    }
+                }
             }
         }
         if (view == View::RoamStatus && !noticeShown) {

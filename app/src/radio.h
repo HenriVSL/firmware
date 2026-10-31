@@ -6,6 +6,7 @@
 #include "dmm/app/app.h"
 #include "dmm/lib/fn_ref.h"
 #include "dmm/lib/format.h"
+#include "dmm/os/os.h"
 #include "dmm/services/ax25.h"
 #include "dmm/services/codeplug.h"
 #include "dmm/services/fm_transceiver.h"
@@ -271,5 +272,14 @@ struct RoamingView
     std::uint32_t receiveHz[services::roaming::HeardList::Capacity] = {};
 };
 void roamingView(RoamingView &out);
+
+/// The signal level the receiver last measured, for the home screen.
+struct SignalLevel
+{
+    bool known = false;
+    int dbm = 0;
+    os::Ticks atMs = 0;
+};
+SignalLevel signalLevel();
 
 } // namespace dmm::app::radio

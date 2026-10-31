@@ -215,31 +215,180 @@ void StandbyScreen::drawStatus(Display &d, const StandbyState &s)
                                                                                         : p::Rule);
 }
 
+namespace {
+
+using Layout = services::HomeLayout;
+
+// The signal meter: ten bars from -125 dBm (none lit) to -65 dBm (all).
+constexpr int MeterX = 26;
+constexpr int MeterBars = 10;
+constexpr int MeterStep = 7;
+
+int litBars(int dbm)
+{
+    const int lit = (dbm + 125) / 6;
+    return lit < 0 ? 0 : lit > MeterBars ? MeterBars
+                                         : lit;
+}
+
+// The channel is a DMR channel with a contact, not tuned freely.
+bool hasTalkgroup(const services::ChannelSelector &sel, const StandbyState &s)
+{
+    const auto &c = sel.current();
+    return c && !c->analog() && !s.talkgroup.empty() && s.entry.empty() && !sel.vfoMode();
+}
+
+} // namespace
+
 void StandbyScreen::drawReading(Display &d, const StandbyState &s)
 {
     lib::StaticString<8> v;
+    std::string_view label = "BAT";
     Color ink = p::Text;
-    if (s.volumeShown) {
+    switch (s.layout.beside) {
+    case Layout::Beside::Volume:
+        label = "VOL";
         if (s.volume >= 0) {
             v << s.volume;
         }
         ink = s.volume == 0 ? p::Warn : p::Text;
-    } else if (s.millivolts > 0) {
-        const int cv = (s.millivolts + 5) / 10;
-        v << cv / 100 << '.' << lib::zeroPadded(static_cast<std::uint32_t>(cv % 100), 2) << 'V';
-        ink = s.batteryLow ? p::Transmit : p::Text;
+        break;
+    case Layout::Beside::Signal:
+        label = "SIG";
+        if (s.signalKnown) {
+            v << s.signalDbm;
+        }
+        break;
+    case Layout::Beside::Voltage:
+    case Layout::Beside::Count:
+        if (s.millivolts > 0) {
+            const int cv = (s.millivolts + 5) / 10;
+            v << cv / 100 << '.' << lib::zeroPadded(static_cast<std::uint32_t>(cv % 100), 2) << 'V';
+            ink = s.batteryLow ? p::Transmit : p::Text;
+        }
+        break;
     }
     band(d, SettingsY, InfoY - SettingsY - 1,
-        {{RightX, SettingsY + 5, s.volumeShown ? "VOL" : "BAT", &Small, p::Dim},
-            {RightX + 22, SettingsY + 3, v.view(), &Body, ink}},
-        p::Ground, RightX);
+        {{RightX, SettingsY + 5, label, &Small, p::Dim}, {RightX + 22, SettingsY + 3, v.view(), &Body, ink}}, p::Ground,
+        RightX);
 }
 
 void StandbyScreen::drawClock(Display &d, const StandbyState &s)
 {
     const int w = d.width();
-    band(d, LabelY, NameY - LabelY, {{w - 4 - textWidth(Medium, s.clock), LabelY + 2, s.clock, &Medium, p::Text}},
-        p::Ground, RightX);
+    const std::string_view clock = s.layout.clock ? s.clock : std::string_view{};
+    band(d, LabelY, NameY - LabelY, {{w - 4 - textWidth(Medium, clock), LabelY + 2, clock, &Medium, p::Text}}, p::Ground,
+        RightX);
+}
+
+void StandbyScreen::drawMiddle(Display &d, const services::ChannelSelector &sel, const StandbyState &s)
+{
+    const auto &c = sel.current();
+    const int hh = SettingsY - PanelY;
+    const bool frequency = !s.entry.empty() || !c || s.layout.middle == Layout::Middle::Frequency ||
+        (s.layout.middle == Layout::Middle::Talkgroup && !hasTalkgroup(sel, s));
+
+    if (frequency) {
+        // Frequency and slot.
+        lib::StaticString<24> freq;
+        lib::StaticString<8> slot;
+        lib::StaticString<16> slotNote;
+        if (s.entry.empty() && c && s.roaming && s.roamSearching) {
+            freq << "Searching";
+        } else if (s.entry.empty() && c) {
+            freq << mhz(s.roaming && s.roamHz != 0 ? s.roamHz : c->receiveHz).view();
+            if (!c->analog()) {
+                slot << "TS" << c->dmr.slot;
+                slotNote << "CC" << (s.roaming ? s.roamColourCode : c->dmr.colourCode);
+            } else {
+                slot << "FM";
+                slotNote << (c->wide ? "25k" : "12.5k");
+            }
+        }
+        band(d, PanelY, hh,
+            {{4, PanelY + 7, freq.view().empty() ? std::string_view{} : "MHz", &Small, p::Dim},
+                {26, PanelY + 5, freq.view(), &Body, p::Text}, {RightX, PanelY + 5, slot.view(), &Body, p::Text},
+                {RightX + 24, PanelY + 8, slotNote.view(), &Small, p::Dim}},
+            palette::Panel);
+        return;
+    }
+    if (s.layout.middle == Layout::Middle::Talkgroup) {
+        // The contact, and its name small after it.
+        band(d, PanelY, hh,
+            {{4, PanelY + 5, s.talkgroup, &Body, p::Text},
+                {8 + textWidth(Body, s.talkgroup), PanelY + 8, cut(s.talkgroupName, 14), &Small, p::Dim}},
+            palette::Panel);
+        return;
+    }
+    // The signal meter, each pixel painted once: label, bars, then the
+    // level in dBm.
+    band(d, PanelY, hh, {{4, PanelY + 7, "SIG", &Small, p::Dim}}, palette::Panel, 0, MeterX);
+    const int barY = PanelY + 6;
+    const int barH = hh - 12;
+    const int lit = s.signalKnown ? litBars(s.signalDbm) : 0;
+    fillArea(d, MeterX, PanelY, RightX - MeterX, barY - PanelY, palette::Panel);
+    for (int i = 0; i < MeterBars; ++i) {
+        const int x = MeterX + i * MeterStep;
+        d.fillRect(x, barY, MeterStep - 1, barH, i < lit ? p::Text : p::Rule);
+        d.fillRect(x + MeterStep - 1, barY, 1, barH, palette::Panel);
+    }
+    fillArea(d, MeterX + MeterBars * MeterStep, barY, RightX - MeterX - MeterBars * MeterStep, barH, palette::Panel);
+    fillArea(d, MeterX, barY + barH, RightX - MeterX, PanelY + hh - barY - barH, palette::Panel);
+    lib::StaticString<8> level;
+    if (s.signalKnown) {
+        level << s.signalDbm;
+    }
+    band(d, PanelY, hh,
+        {{RightX + 4, PanelY + 5, s.signalKnown ? level.view() : std::string_view("-"), &Body, p::Text},
+            {RightX + 36, PanelY + 8, "dBm", &Small, p::Dim}},
+        palette::Panel, RightX);
+}
+
+void StandbyScreen::drawBottom(Display &d, const services::ChannelSelector &sel, const StandbyState &s)
+{
+    const auto &c = sel.current();
+    const int h = d.height();
+    lib::StaticString<40> info;
+    if (!s.entry.empty()) {
+        info << "Menu: tune  Exit: cancel";
+    } else if (s.layout.bottom == Layout::Bottom::LastCaller) {
+        info << (s.lastCaller.empty() ? std::string_view("No call heard yet") : std::string_view("Last: "))
+             << s.lastCaller;
+    } else if (s.layout.bottom == Layout::Bottom::Position) {
+        info << (s.position.empty() ? std::string_view("No GPS position") : s.position);
+    } else if (s.layout.bottom == Layout::Bottom::None) {
+    } else if (c && s.roaming) {
+        // The repeater a roaming channel works through.
+        if (s.roamSearching) {
+            info << "Looking for a repeater";
+        } else if (!s.roamSite.empty()) {
+            info << "via " << s.roamSite;
+        } else {
+            info << "via the channel's repeater";
+        }
+    } else if (c && c->analog()) {
+        // Tones and offset on FM.
+        if (c->transmitTone.kind != Tone::Kind::None) {
+            info << "T" << toneText(c->transmitTone).view() << "  ";
+        }
+        if (c->receiveTone.kind != Tone::Kind::None) {
+            info << "R" << toneText(c->receiveTone).view() << "  ";
+        }
+        if (c->transmitHz != c->receiveHz) {
+            const bool up = c->transmitHz > c->receiveHz;
+            const std::uint32_t off = up ? c->transmitHz - c->receiveHz : c->receiveHz - c->transmitHz;
+            info << (up ? '+' : '-') << mhz(off).view();
+        }
+    } else if (c && !sel.vfoMode()) {
+        // The channel's name when something else is large; else the zone.
+        const bool otherLarge = s.layout.big != Layout::Big::Channel;
+        info << cut(otherLarge ? std::string_view(c->name) : sel.zoneName(), 16) << "  " << sel.position() << '/'
+             << sel.zoneSize();
+    }
+    if (c && c->receiveOnly && s.entry.empty()) {
+        info << "  RX ONLY";
+    }
+    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, info.view(), &Small, p::Dim}});
 }
 
 void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbyState &s)
@@ -248,22 +397,36 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     const int h = d.height();
     drawStatus(d, s);
     const auto &c = sel.current();
+    const bool talkgroup = hasTalkgroup(sel, s);
 
-    // What the screen is about, with the time on the right.
-    std::string_view label = "CHANNEL";
+    // The top line: what the screen is about, with the time on the right.
+    lib::StaticString<24> top;
     if (!s.entry.empty()) {
-        label = "ENTER MHz";
+        top << "ENTER MHz";
     } else if (sel.vfoMode()) {
-        label = "VFO";
-    } else if (c && !c->analog() && !s.talkgroup.empty()) {
-        label = s.talkgroup;
+        top << "VFO";
+    } else {
+        switch (s.layout.top) {
+        case Layout::Top::Talkgroup:
+            top << (talkgroup ? s.talkgroup : std::string_view("CHANNEL"));
+            break;
+        case Layout::Top::Zone:
+            top << cut(sel.zoneName(), 14);
+            break;
+        case Layout::Top::Number:
+            if (c) {
+                top << "CH " << sel.position() << '/' << sel.zoneSize();
+            }
+            break;
+        case Layout::Top::None:
+        case Layout::Top::Count:
+            break;
+        }
     }
-    const bool talkgroup = c && !c->analog() && !s.talkgroup.empty() && s.entry.empty() && !sel.vfoMode();
-    band(d, LabelY, NameY - LabelY, {{4, LabelY + 4, label, &Small, p::Dim}}, p::Ground, 0, RightX);
+    band(d, LabelY, NameY - LabelY, {{4, LabelY + 4, top.view(), &Small, p::Dim}}, p::Ground, 0, RightX);
     drawClock(d, s);
 
-    // The one thing that matters most, large: the channel's or the
-    // contact's name, or the frequency.
+    // The one thing that matters most, large.
     std::string_view primary;
     lib::StaticString<12> f;
     if (!s.entry.empty()) {
@@ -271,7 +434,10 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
         primary = f.view();
     } else if (c) {
         f = mhz(c->receiveHz);
-        if (talkgroup && (s.contactNameLarge || c->name[0] == '\0') && !s.talkgroupName.empty()) {
+        const bool contact = talkgroup && (s.layout.big == Layout::Big::Contact || c->name[0] == '\0');
+        if (s.layout.big == Layout::Big::Zone && !sel.vfoMode() && sel.zoneName()[0] != '\0') {
+            primary = sel.zoneName();
+        } else if (contact && !s.talkgroupName.empty()) {
             primary = s.talkgroupName;
         } else if (talkgroup && c->name[0] == '\0') {
             primary = s.talkgroup;
@@ -290,29 +456,9 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     band(d, NameY, nameH, {{4, py, primary, &pf, p::Text}});
     d.fillRect(0, PanelY - 1, w, 1, p::Rule);
 
-    // Frequency and slot on a panel.
-    lib::StaticString<24> freq;
-    lib::StaticString<8> slot;
-    lib::StaticString<16> slotNote;
-    if (s.entry.empty() && c && s.roaming && s.roamSearching) {
-        freq << "Searching";
-    } else if (s.entry.empty() && c) {
-        freq << mhz(s.roaming && s.roamHz != 0 ? s.roamHz : c->receiveHz).view();
-        if (!c->analog()) {
-            slot << "TS" << c->dmr.slot;
-            slotNote << "CC" << (s.roaming ? s.roamColourCode : c->dmr.colourCode);
-        } else {
-            slot << "FM";
-            slotNote << (c->wide ? "25k" : "12.5k");
-        }
-    }
-    band(d, PanelY, SettingsY - PanelY,
-        {{4, PanelY + 7, freq.view().empty() ? std::string_view{} : "MHz", &Small, p::Dim},
-            {26, PanelY + 5, freq.view(), &Body, p::Text}, {RightX, PanelY + 5, slot.view(), &Body, p::Text},
-            {RightX + 24, PanelY + 8, slotNote.view(), &Small, p::Dim}},
-        palette::Panel);
+    drawMiddle(d, sel, s);
 
-    // Power, and the battery voltage or the volume, on one line.
+    // Power, and the reading beside it, on one line.
     band(d, SettingsY, InfoY - SettingsY - 1,
         {{4, SettingsY + 5, c ? "PWR" : "", &Small, p::Dim},
             {26, SettingsY + 3, c ? std::string_view(powerText(c->power)) : std::string_view{}, &Body, p::Text}},
@@ -320,41 +466,7 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     drawReading(d, s);
     d.fillRect(0, InfoY - 1, w, 1, p::Rule);
 
-    // Details: the repeater a roaming channel works through; the channel
-    // and its place in the zone; tones and offset on FM.
-    lib::StaticString<40> info;
-    if (!s.entry.empty()) {
-        info << "Menu: tune  Exit: cancel";
-    } else if (c && s.roaming) {
-        if (s.roamSearching) {
-            info << "Looking for a repeater";
-        } else if (!s.roamSite.empty()) {
-            info << "via " << s.roamSite;
-        } else {
-            info << "via the channel's repeater";
-        }
-    } else if (c && c->analog()) {
-        if (c->transmitTone.kind != Tone::Kind::None) {
-            info << "T" << toneText(c->transmitTone).view() << "  ";
-        }
-        if (c->receiveTone.kind != Tone::Kind::None) {
-            info << "R" << toneText(c->receiveTone).view() << "  ";
-        }
-        if (c->transmitHz != c->receiveHz) {
-            const bool up = c->transmitHz > c->receiveHz;
-            const std::uint32_t off = up ? c->transmitHz - c->receiveHz : c->receiveHz - c->transmitHz;
-            info << (up ? '+' : '-') << mhz(off).view();
-        }
-    } else if (c && !sel.vfoMode()) {
-        // The channel's name when the contact's is large; else the zone.
-        const bool contactLarge = talkgroup && s.contactNameLarge && !s.talkgroupName.empty();
-        info << cut(contactLarge ? std::string_view(c->name) : sel.zoneName(), 16) << "  " << sel.position() << '/'
-             << sel.zoneSize();
-    }
-    if (c && c->receiveOnly) {
-        info << "  RX ONLY";
-    }
-    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, info.view(), &Small, p::Dim}});
+    drawBottom(d, sel, s);
 
     // Bottom bar: the quick keys, or a short note.
     d.fillRect(0, h - HintH, w, 1, p::Rule);

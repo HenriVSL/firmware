@@ -225,6 +225,12 @@ os::Ticks listenUntil = 0;
 os::Ticks packetAirMs = 0;
 // The receiver heard a carrier at the last poll.
 bool carrierPolled = false;
+// The receiver's signal level, read twice a second for the home screen.
+constexpr os::Ticks SignalEveryMs = 500;
+os::Ticks lastSignalAt = 0;
+std::atomic<int> signalDbm{0};
+std::atomic<os::Ticks> signalAt{0};
+std::atomic<bool> signalKnown{false};
 std::uint32_t randomState = 0x2545F491;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
@@ -2036,6 +2042,12 @@ void radioMain(void *)
                 pollFm();
             }
         }
+        if (fm->receiving() && os::nowMs() - lastSignalAt >= SignalEveryMs) {
+            lastSignalAt = os::nowMs();
+            signalDbm.store(fm->status().rssiDbm);
+            signalAt.store(lastSignalAt);
+            signalKnown.store(true);
+        }
     }
 }
 
@@ -2047,6 +2059,15 @@ void start(board::Fm &f, board::Baseband *b, board::Modem *m)
     baseband = b;
     modem = m;
     radioTask.start("radio", 7, radioMain, nullptr);
+}
+
+SignalLevel signalLevel()
+{
+    SignalLevel l;
+    l.known = signalKnown.load();
+    l.dbm = signalDbm.load();
+    l.atMs = signalAt.load();
+    return l;
 }
 
 void roamingView(RoamingView &out)
