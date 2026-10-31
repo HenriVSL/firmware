@@ -870,7 +870,7 @@ void drawTitleBand(Display &d, int top, std::string_view title, std::size_t inde
         place << index + 1 << '/' << count;
     }
     band(d, top, TitleH,
-        {{4, top + 1, cut(title, 18), &Body, p::Dim}, {d.width() - 4 - textWidth(Body, place.view()), top + 1, place.view(), &Body, p::Rule}},
+        {{4, top + 1, cut(title, ListPicker::TitleChars), &Body, p::Dim}, {d.width() - 4 - textWidth(Body, place.view()), top + 1, place.view(), &Body, p::Rule}},
         palette::Panel);
 }
 

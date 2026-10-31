@@ -2768,7 +2768,12 @@ void uiMain(void *)
             lib::StaticString<12> value;
             itemRow(item, label, value);
             lib::StaticString<ListPicker::TitleBytes> title;
-            title << Groups[static_cast<int>(menuGroup)].name << " > " << label;
+            // The group's name too where both fit.
+            const std::string_view group = Groups[static_cast<int>(menuGroup)].name;
+            if (group.size() + 3 + std::string_view(label).size() <= ListPicker::TitleChars) {
+                title << group << " > ";
+            }
+            title << label;
             menuValue.retitle(title.view());
         }
         menuValueInUse = menuValue.cursor();

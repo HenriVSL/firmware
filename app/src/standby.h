@@ -205,6 +205,8 @@ public:
     static constexpr std::size_t MaxItems = 250;
     static constexpr std::size_t TextBytes = 17;
     static constexpr std::size_t TitleBytes = 27;
+    /// The characters the title band shows.
+    static constexpr std::size_t TitleChars = 18;
 
     void open(std::string_view title);
     /// Gives the open list another title, keeping its items.
