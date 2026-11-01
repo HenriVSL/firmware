@@ -222,7 +222,8 @@ bool numbersAfter(std::string_view command, std::string_view prefix, int base, s
 
 // "key <name> [long]": presses a key as the keypad would, with a long
 // press before the release when asked; for tests. Names as the log
-// writes them, in any case; PTT is left to the radio's own command.
+// writes them, in any case. PTT goes through the ui too (a dedicated
+// mode's own action); on a channel its release follows at once.
 bool keyCommand(std::string_view command)
 {
     if (!lib::startsWith(command, "key ")) {
@@ -248,7 +249,7 @@ bool keyCommand(std::string_view command)
         }
         return true;
     };
-    for (unsigned k = 0; k < static_cast<unsigned>(services::Key::Ptt); ++k) {
+    for (unsigned k = 0; k < static_cast<unsigned>(services::Key::Count); ++k) {
         const auto key = static_cast<services::Key>(k);
         if (!same(name, services::keyName(key))) {
             continue;

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "dmm/services/dedicated_mode.h"
 #include "dmm/services/dmr.h"
 #include "dmm/services/key_lock.h"
 #include "dmm/services/microphone_gain.h"
@@ -194,6 +195,10 @@ struct RadioPreferences
     /// channels; none: the codeplug's level.
     std::optional<std::uint8_t> micGainDb;
     std::optional<std::uint8_t> fmMicGainDb;
+    /// The dedicated receive mode on at the last change; it comes back on
+    /// after a restart.
+    DedicatedMode mode = DedicatedMode::Off;
+    bool aprsAudible = false; // the speaker opens for packets in APRS mode
 };
 
 /// One repeater of a roaming zone.

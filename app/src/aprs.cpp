@@ -16,6 +16,7 @@
 #include "dmm/services/ax25.h"
 #include "dmm/services/log.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -35,6 +36,9 @@ using services::GpsSchedule;
 // the MCU down to the heard list and the log (about 1.7 KB with the
 // kernel's calls and an interrupt), and a margin.
 os::Task<640> aprsTask;
+// Above the ui, gps and console tasks: a long screen redraw or codeplug
+// write must not keep the task from the sampler's ring.
+constexpr unsigned AprsPriority = 5;
 os::Queue<Message, 4> inbox;
 
 // The destination names the software (an experimental APZ tocall).
@@ -84,19 +88,31 @@ constexpr os::Ticks ReceivePollMs = 20;
 // command to it.
 constexpr os::Ticks BoardBytesMs = 2000;
 os::Ticks boardBytesUntil = 0;
+// A console command for the board, waiting for the task.
+std::array<std::uint8_t, board::AprsLinkReader::MaxCommand> boardCommand{};
+std::size_t boardCommandLength = 0;
+std::atomic<bool> boardCommandWaiting{false};
 
-// Decoding the received audio on the MCU: it starts once the radio has
-// listened on the APRS frequency for a moment, and stops as soon as it
-// does not (a transmission, another channel).
+// Decoding the received audio on the MCU: in APRS mode it starts once the
+// radio has listened on the mode's frequency for a moment, and stops as
+// soon as it does not (a transmission).
 board::AudioSampler *sampler = nullptr;
 services::AfskDemodulator demodulator;
 bool receiveWanted = false;
+bool modeOn = false;
+std::uint32_t modeHz = 0;
 McuMode mcuMode = McuMode::On;
 bool decoding = false;
 bool listenSeen = false;
 os::Ticks listenSince = 0;
 std::uint32_t lostSeen = 0;
 std::uint32_t lostTotal = 0;
+// The longest time between two reads of the sampler and when it ended,
+// and the longest one pass of decoding took.
+os::Ticks lastReadAt = 0;
+os::Ticks longestGapMs = 0;
+os::Ticks longestGapAt = 0;
+os::Ticks longestPassMs = 0;
 constexpr os::Ticks DecodeSettleMs = 1000;
 using services::AfskDemodulator;
 // The sampler is lent to the audio probe; the decoder holds it.
@@ -114,6 +130,11 @@ ax25::RecentFrames recentFrames;
 constexpr os::Ticks CopyWindowMs = 3000;
 std::uint32_t framesFrom[2] = {};
 std::uint32_t heardByBoth = 0;
+// For the home screen, read by other tasks.
+std::atomic<bool> decodingShown{false};
+std::atomic<std::uint32_t> packetsHeard{0};
+std::atomic<services::aprs::BeaconStatus::State> beaconShown{services::aprs::BeaconStatus::State::NoStation};
+std::atomic<os::Ticks> nextBeaconShown{0};
 
 // The heard list, newest first; other tasks read it.
 os::Mutex heardLock;
@@ -124,7 +145,7 @@ std::optional<AprsSettings> newStation;
 
 const char *mcuModeText()
 {
-    return mcuMode == McuMode::Off ? "off" : mcuMode == McuMode::On ? "on the APRS frequency"
+    return mcuMode == McuMode::Off ? "off" : mcuMode == McuMode::On ? "in APRS mode"
                                                                     : "on any analog channel";
 }
 
@@ -145,6 +166,7 @@ void report()
     if (link != nullptr) {
         log::info("aprs") << "board frames: " << reader.goodFrames() << " passed the check, " << reader.badFrames() << " failed";
     }
+    log::info("aprs") << "APRS mode " << (modeOn ? "on" : "off");
     if (sampler != nullptr) {
         log::info("aprs") << "MCU decoding " << mcuModeText() << (decoding ? ", running" : "") << ": "
                           << demodulator.stats().passed << " frames";
@@ -390,6 +412,7 @@ void heardFrame(std::span<const std::uint8_t> bytes, Source source, const AfskDe
     if (!ax25::decode(bytes, frame)) {
         return;
     }
+    packetsHeard.store(packetsHeard.load() + 1);
     remember();
     auto line = log::info("aprs");
     line << "heard ";
@@ -405,11 +428,12 @@ void mcuFrame(std::span<const std::uint8_t> bytes, const AfskDemodulator::FrameI
     heardFrame(bytes, Source::Mcu, info);
 }
 
-// The radio listens where the MCU decodes.
-bool onAprsFrequency()
+// The radio listens where the MCU decodes: on the mode's frequency, or
+// anywhere for a test.
+bool onDecodingFrequency()
 {
     const std::uint32_t hz = radio::analogListeningHz();
-    return hz != 0 && (mcuMode == McuMode::AnyChannel || (station && station->frequencyHz == hz));
+    return hz != 0 && (mcuMode == McuMode::AnyChannel || (modeOn && hz == modeHz));
 }
 
 void stopDecoding()
@@ -426,7 +450,7 @@ void stopDecoding()
 // Starts or stops decoding on the MCU as the radio and the settings say.
 void updateDecoding()
 {
-    const bool wanted = receiveWanted && mcuMode != McuMode::Off && sampler != nullptr && !samplerLent.load() && onAprsFrequency();
+    const bool wanted = mcuMode != McuMode::Off && sampler != nullptr && !samplerLent.load() && onDecodingFrequency();
     if (!wanted) {
         listenSeen = false;
         stopDecoding();
@@ -457,20 +481,34 @@ void updateDecoding()
     }
     demodulator.reset();
     lostSeen = sampler->lostSamples();
+    lastReadAt = now;
     decoding = true;
     log::info("aprs") << "MCU decoding on at " << frequencyText(radio::analogListeningHz()).view() << " MHz";
+}
+
+[[gnu::noinline, gnu::cold]] void logLost(std::uint32_t samples, os::Ticks gapMs)
+{
+    log::info("aprs") << samples << " samples lost: no read for " << gapMs << " ms";
 }
 
 // Decodes the samples taken since the last poll. Kept apart from the
 // task's other work, so a frame's path down to the log stays short.
 [[gnu::noinline]] void pollSampler()
 {
-    static std::uint16_t chunk[256];
+    static std::uint16_t chunk[64];
+    const os::Ticks start = os::nowMs();
+    const os::Ticks gap = start - lastReadAt;
+    lastReadAt = start;
+    if (gap > longestGapMs) {
+        longestGapMs = gap;
+        longestGapAt = start;
+    }
     for (;;) {
         const std::size_t n = sampler->read(chunk);
         const std::uint32_t lost = sampler->lostSamples();
         if (lost != lostSeen) {
             // A gap breaks the frame in progress.
+            logLost(lost - lostSeen, gap);
             lostTotal += lost - lostSeen;
             lostSeen = lost;
             demodulator.reset();
@@ -480,19 +518,22 @@ void updateDecoding()
         }
         demodulator.process(std::span<const std::uint16_t>(chunk, n), mcuFrame);
     }
+    longestPassMs = std::max(longestPassMs, os::nowMs() - start);
 }
 
 void receiveReport()
 {
-    log::info("aprs") << "receive " << (receiveWanted ? "on" : "off") << "; MCU decoding " << mcuModeText()
+    log::info("aprs") << "APRS mode " << (modeOn ? "on" : "off") << "; board receive " << (receiveWanted ? "on" : "off")
+                      << "; MCU decoding " << mcuModeText()
                       << (decoding ? ", running" : ", not running") << ", repair " << (demodulator.repair() ? "on" : "off")
                       << (samplerLent.load() ? ", sampler lent to the probe" : "");
-    log::info("aprs") << "frames: board " << framesFrom[0] << ", MCU " << framesFrom[1] << ", heard by both " << heardByBoth
-                      << "; board frames failing the check " << reader.badFrames();
     const AfskDemodulator::Stats &st = demodulator.stats();
-    log::info("aprs") << "MCU: " << st.passed << " frames, " << st.repaired << " repaired, " << st.duplicates
-                      << " copies between slicers, " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, "
-                      << lostTotal << " samples lost";
+    log::info("aprs") << "frames: board " << framesFrom[0] << " (" << reader.badFrames() << " failed the check), MCU "
+                      << framesFrom[1] << " (" << st.repaired << " repaired), heard by both " << heardByBoth;
+    log::info("aprs") << "MCU: " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, " << lostTotal
+                      << " samples lost, " << st.duplicates << " copies between slicers";
+    log::info("aprs") << "reads: longest gap " << longestGapMs << " ms (at " << longestGapAt / 1000
+                      << " s), longest decoding pass " << longestPassMs << " ms";
     auto line = log::info("aprs");
     line << "slicers (dB right/failed):";
     for (std::size_t i = 0; i < AfskDemodulator::Slicers; ++i) {
@@ -612,14 +653,22 @@ void logBadFrame()
                            stopReceiving();
                        }
                    },
-                   [](const BoardCommand &c) {
+                   [](const BoardCommand &) {
                        if (!receiving) {
                            log::info("aprs") << "the board is off: Menu, APRS, Receive: On";
-                           return;
+                       } else {
+                           link->write(std::span(boardCommand.data(), boardCommandLength));
+                           boardBytesUntil = os::nowMs() + BoardBytesMs;
+                           log::info("aprs") << "sent " << boardCommandLength << " bytes to the board";
                        }
-                       link->write(std::span(c.bytes.data(), c.length));
-                       boardBytesUntil = os::nowMs() + BoardBytesMs;
-                       log::info("aprs") << "sent " << c.length << " bytes to the board";
+                       boardCommandWaiting.store(false);
+                   },
+                   [](const ModeOn &m) {
+                       modeOn = m.on;
+                       modeHz = m.hz;
+                       log::info("aprs") << "APRS mode " << (m.on ? "on at " : "off")
+                                         << (m.on ? frequencyText(m.hz).view() : std::string_view())
+                                         << (m.on ? " MHz" : "");
                    },
                    [](const McuReceive &m) {
                        mcuMode = m.mode;
@@ -652,11 +701,25 @@ void takeStation()
     report();
 }
 
+// What the home screen shows of the beacon, for other tasks.
+void showBeacon()
+{
+    using State = services::aprs::BeaconStatus::State;
+    const State state = !station   ? State::NoStation
+        : pending && waitingForFix ? State::WaitingForFix
+        : pending                  ? State::Queued
+        : intervalS == 0           ? State::Off
+                                   : State::Next;
+    beaconShown.store(state);
+    nextBeaconShown.store(nextBeaconAt);
+    decodingShown.store(decoding);
+}
+
 void aprsMain(void *)
 {
     while (!os::stopRequested()) {
         Message m;
-        const bool listening = receiving || (receiveWanted && sampler != nullptr);
+        const bool listening = receiving || decoding || modeOn || mcuMode == McuMode::AnyChannel;
         if (inbox.receive(m, listening ? ReceivePollMs : pending ? RetryMs
                                                                  : IdleMs)) {
             handle(m);
@@ -677,6 +740,7 @@ void aprsMain(void *)
         if (pending && static_cast<std::int32_t>(now - nextTry) >= 0) {
             tryBeacon();
         }
+        showBeacon();
     }
 }
 
@@ -690,7 +754,7 @@ void start(board::AprsLink *l, board::AudioSampler *s)
 {
     link = l;
     sampler = s;
-    aprsTask.start("aprs", 2, aprsMain, nullptr);
+    aprsTask.start("aprs", AprsPriority, aprsMain, nullptr);
 }
 
 void setStation(const AprsSettings &settings)
@@ -738,6 +802,20 @@ bool post(const Message &message)
     return inbox.send(message);
 }
 
+ReceiveView receiveView()
+{
+    return {decodingShown.load(), packetsHeard.load()};
+}
+
+services::aprs::BeaconStatus beaconStatus()
+{
+    services::aprs::BeaconStatus b;
+    b.state = beaconShown.load();
+    const auto left = static_cast<std::int32_t>(nextBeaconShown.load() - os::nowMs());
+    b.nextInS = left > 0 ? static_cast<std::uint32_t>(left + 999) / 1000 : 0;
+    return b;
+}
+
 bool lendSampler(bool lent)
 {
     samplerLent.store(lent);
@@ -753,8 +831,8 @@ bool lendSampler(bool lent)
 
 const char *consoleHelp()
 {
-    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, aprs board <text>|hex <bytes>, "
-           "aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
+    return "aprs, aprs mode on|off, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, "
+           "aprs board <text>|hex <bytes>, aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
 }
 
 bool runCommand(std::string_view command)
@@ -769,13 +847,16 @@ bool runCommand(std::string_view command)
     std::string_view rest(command.data() + 5, command.size() - 5);
     const std::string_view word = lib::takeWord(rest);
     if (word == "board") {
-        BoardCommand c{};
-        std::size_t length = 0;
+        if (boardCommandWaiting.load()) {
+            log::info("console") << "busy";
+            return true;
+        }
         using CommandResult = board::AprsLinkReader::CommandResult;
-        switch (board::AprsLinkReader::command(rest, c.bytes, length)) {
+        switch (board::AprsLinkReader::command(rest, boardCommand, boardCommandLength)) {
         case CommandResult::Ok:
-            c.length = static_cast<std::uint8_t>(length);
-            if (!post(c)) {
+            boardCommandWaiting.store(true);
+            if (!post(BoardCommand{})) {
+                boardCommandWaiting.store(false);
                 log::info("console") << "busy";
             }
             break;
@@ -803,6 +884,12 @@ bool runCommand(std::string_view command)
             log::info("console") << "aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
         }
         if (!posted) {
+            log::info("console") << "busy";
+        }
+        return true;
+    }
+    if (word == "mode" && (rest == "on" || rest == "off")) {
+        if (!ui::post(ui::SetMode{rest == "on" ? services::DedicatedMode::Aprs : services::DedicatedMode::Off})) {
             log::info("console") << "busy";
         }
         return true;
