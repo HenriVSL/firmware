@@ -25,6 +25,18 @@ constexpr std::size_t HomeAt = 10;
 // The dedicated receive mode; a byte out of range is none.
 // Bytes 16 and 17 hold the microphone gain (feat/mic-gain).
 constexpr std::size_t ModeAt = 18;
+// The text mode: its kind (0: RTTY, the only one yet), its frequency in Hz
+// (unsigned, little-endian; 0 or all ones: not set), the tone pair, the
+// speed, and option bits; a byte out of range is the default.
+constexpr std::size_t TextKindAt = 19;
+constexpr std::size_t TextFrequencyAt = 20;
+constexpr std::size_t TextTonesAt = 24;
+constexpr std::size_t TextBaudAt = 25;
+constexpr std::size_t TextOptionsAt = 26;
+constexpr std::uint8_t TextReverse = 0x01;
+constexpr std::uint8_t TextNoUnshift = 0x02;
+constexpr std::uint8_t TextAudible = 0x04;
+constexpr std::uint8_t TextOptionsAll = 0x07;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
 
 template <typename E>
@@ -68,6 +80,14 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.home.beside = choice(record[HomeAt + 4], d.beside);
     p.home.bottom = choice(record[HomeAt + 5], d.bottom);
     p.mode = choice(record[ModeAt], DedicatedMode::Off);
+    const std::uint32_t textHz = le32(&record[TextFrequencyAt]);
+    p.text.frequencyHz = textHz == 0xFFFFFFFF ? 0 : textHz;
+    p.text.tones = choice(record[TextTonesAt], rtty::Tones::High);
+    p.text.baud = choice(record[TextBaudAt], rtty::Baud::Baud45);
+    const std::uint8_t options = record[TextOptionsAt] <= TextOptionsAll ? record[TextOptionsAt] : 0;
+    p.text.reverse = (options & TextReverse) != 0;
+    p.text.unshiftOnSpace = (options & TextNoUnshift) == 0;
+    p.text.audible = (options & TextAudible) != 0;
     return p;
 }
 
@@ -86,6 +106,12 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[HomeAt + 4] = static_cast<std::uint8_t>(p.home.beside);
     record[HomeAt + 5] = static_cast<std::uint8_t>(p.home.bottom);
     record[ModeAt] = static_cast<std::uint8_t>(p.mode);
+    record[TextKindAt] = 0;
+    putLe32(&record[TextFrequencyAt], p.text.frequencyHz);
+    record[TextTonesAt] = static_cast<std::uint8_t>(p.text.tones);
+    record[TextBaudAt] = static_cast<std::uint8_t>(p.text.baud);
+    record[TextOptionsAt] = static_cast<std::uint8_t>((p.text.reverse ? TextReverse : 0) |
+        (p.text.unshiftOnSpace ? 0 : TextNoUnshift) | (p.text.audible ? TextAudible : 0));
     putLe32(&record[CrcAt], lib::crc32(record.data(), CrcAt));
 }
 

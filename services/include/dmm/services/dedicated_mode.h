@@ -15,10 +15,11 @@ enum class DedicatedMode : std::uint8_t
 {
     Off,
     Aprs,
+    Text, // RTTY on a frequency the user enters
     Count,
 };
 
-/// The mode's name for the screen and the log: "APRS".
+/// The mode's name for the screen and the log: "APRS", "Text".
 const char *modeName(DedicatedMode mode);
 
 /// Where a dedicated mode holds the receiver: analog FM at @c hz.

@@ -192,6 +192,47 @@ TEST_CASE("a preferences record from before the dedicated modes has none on")
     CHECK_FALSE(q->aprsAudible);
 }
 
+TEST_CASE("the text mode's settings are kept in the preferences record")
+{
+    std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
+    RadioPreferences p;
+    p.mode = dmm::services::DedicatedMode::Text;
+    p.text.frequencyHz = 432'612'500;
+    p.text.tones = dmm::services::rtty::Tones::Low;
+    p.text.baud = dmm::services::rtty::Baud::Baud75;
+    p.text.reverse = true;
+    p.text.unshiftOnSpace = false;
+    p.text.audible = true;
+    dmm::services::d878uv2::encodePreferences(p, rec);
+    CHECK(rec[19] == 0);
+    CHECK(rec[20] == 0x94);
+    CHECK(rec[23] == 0x19);
+    const auto q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK(q->mode == dmm::services::DedicatedMode::Text);
+    CHECK(q->text == p.text);
+}
+
+TEST_CASE("a preferences record from before the text mode has its defaults")
+{
+    std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
+    RadioPreferences p;
+    p.text.frequencyHz = 144'000'000;
+    p.text.reverse = true;
+    dmm::services::d878uv2::encodePreferences(p, rec);
+    // Bytes past the dedicated mode were 0xFF then.
+    for (std::size_t i = 19; i < 27; ++i) {
+        rec[i] = 0xFF;
+    }
+    const std::uint32_t crc = dmm::lib::crc32(rec.data(), rec.size() - 4);
+    for (int i = 0; i < 4; ++i) {
+        rec[rec.size() - 4 + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(crc >> (8 * i));
+    }
+    const auto q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK(q->text == dmm::services::TextModeSettings{});
+}
+
 TEST_CASE("a damaged preferences record counts as none")
 {
     std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
