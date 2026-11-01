@@ -33,9 +33,11 @@ def put_offset(ctx):
 
 
 def status_ends(text):
+    """The `fm status` line names the offset @p text; the FM chip's own
+    figures may follow it."""
     def expectation(ctx):
         line = ctx.radio.ask('fm status', r'offset \S+ Hz')
-        return line.text.rstrip().endswith(text), '`%s`' % line.text
+        return re.search(r'\b' + re.escape(text) + r'(,|$)', line.text.rstrip()) is not None, '`%s`' % line.text
     return expectation
 
 
@@ -51,7 +53,7 @@ BEFORE = [keep_offset]
 UNDO = [put_offset]
 
 STEPS = [
-    Step('1.1', 'Offset 0 after a restart', changes=True, do=['cmd fm offset 0', 'restart'], expect=[
+    Step('1.1', 'Offset 0 after a restart', changes=True, do=['cmd fm offset 0', 'wait 5', 'restart'], expect=[
         status_ends('offset 0 Hz')]),
     Step('1.2', 'The radio\'s own error', transmit=True, do=ptt(), expect=[r'log \bfm: transmitting'],
          human=counter('note measured minus nominal: the radio\'s own error E.')),
