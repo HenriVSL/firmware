@@ -16,7 +16,9 @@ namespace {
 using namespace services;
 namespace log = services::log;
 
-os::Task<384> inputTask;
+// The deepest path is a knob log line down to the number formatting
+// (about 0.8 KB with an interrupt frame); the rest is margin.
+os::Task<416> inputTask;
 board::Input *devices = nullptr;
 
 constexpr os::Ticks StepMs = 10;
@@ -64,11 +66,24 @@ private:
     std::int32_t m_base = 0;
 };
 
+// Off the task's stack, as are the log lines below: the deepest path, a
+// key's log line down to the log tap and the kernel, stays well inside it.
+KeyDebouncer debouncer;
+Clicks clicks;
+
+[[gnu::noinline]] void logKey(const KeyDebouncer::Event &e)
+{
+    log::info("input") << "key " << keyName(e.key) << " " << eventName(e.type);
+}
+
+[[gnu::noinline]] void logKnob(int moved, std::int32_t total)
+{
+    log::info("input") << "knob " << (moved > 0 ? "+" : "") << moved << " (" << total << ")";
+}
+
 void inputMain(void *)
 {
     board::Input &dev = *devices;
-    KeyDebouncer debouncer;
-    Clicks clicks;
     const int perDetent = dev.encoderCountsPerDetent() > 0 ? dev.encoderCountsPerDetent() : 1;
     std::int32_t lastRaw = dev.encoderPosition();
     clicks.reset(lastRaw);
@@ -81,7 +96,7 @@ void inputMain(void *)
         const KeyMask before = debouncer.pressed();
         debouncer.update(dev.readKeys(), os::nowMs(), [](const KeyDebouncer::Event &e) {
             if (e.type != KeyDebouncer::EventType::Repeat) {
-                log::info("input") << "key " << keyName(e.key) << " " << eventName(e.type);
+                logKey(e);
             }
             ui::post(ui::KeyEvent{e.key, e.type});
         });
@@ -98,7 +113,7 @@ void inputMain(void *)
             if (moved != 0) {
                 system::noteActivity();
                 totalClicks += moved;
-                log::info("input") << "knob " << (moved > 0 ? "+" : "") << moved << " (" << totalClicks << ")";
+                logKnob(moved, totalClicks);
                 ui::post(ui::EncoderClicks{totalClicks});
             }
         }
