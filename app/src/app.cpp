@@ -5,6 +5,7 @@
 
 #include "aprs.h"
 #include "audio.h"
+#include "audio_probe.h"
 #include "gps.h"
 #include "input.h"
 #include "radio.h"
@@ -30,7 +31,9 @@ namespace log = services::log;
 
 Platform *platform = nullptr;
 
-os::Task<512> linkTask;
+// Room for the audio probe, which runs in this task with its meter and
+// a log line on the stack.
+os::Task<768> linkTask;
 
 constexpr os::Ticks LinkStepMs = 20;
 constexpr os::Ticks ProgrammingStepMs = 1;
@@ -525,6 +528,7 @@ void runCommand(std::string_view command)
         log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
+        log::info("console") << probe::consoleHelp();
         log::info("console") << "tests: screen shot|watch <s>|stream on|off, key <name> [long], knob <steps>";
     } else if (lib::startsWith(command, "screen ")) {
         if (!ui::screenCommand(std::string_view(command.data() + 7, command.size() - 7))) {
@@ -618,6 +622,7 @@ void runCommand(std::string_view command)
         }
     } else if (radioCommand(command)) {
     } else if (aprs::runCommand(command)) {
+    } else if (probe::runCommand(command, *platform)) {
     } else if (!command.empty()) {
         log::info("console") << "unknown command, try help";
     }
