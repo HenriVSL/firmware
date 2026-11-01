@@ -93,7 +93,7 @@ D878Uv2LinkBoardReader::CommandResult D878Uv2LinkBoardReader::command(std::strin
         return CommandResult::Invalid;
     }
     const std::span<const std::uint8_t> bytes(out.data(), length);
-    if (holds(bytes, "UPDATE") || holds(bytes, "PROGRAM")) {
+    if (holds(bytes, "UPDATE") || holds(bytes, "PROGRAM") || holds(bytes, "UARTE") || holds(bytes, "ATEST")) {
         length = 0;
         return CommandResult::Refused;
     }

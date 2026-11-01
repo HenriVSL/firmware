@@ -148,6 +148,8 @@ TEST_CASE("link board: console commands")
     CHECK(n == 0);
     CHECK(D878Uv2LinkBoardReader::command("program now", out, n) == CommandResult::Refused);
     CHECK(D878Uv2LinkBoardReader::command("AT+Update", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("AT+UARTE=115200", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("at+atest=1", out, n) == CommandResult::Refused);
     // "PROGRAM" in hex.
     CHECK(D878Uv2LinkBoardReader::command("hex 50 52 4f 47 52 41 4d", out, n) == CommandResult::Refused);
     CHECK(D878Uv2LinkBoardReader::command("hex 01 75 70 64 61 74 65 02", out, n) == CommandResult::Refused);
