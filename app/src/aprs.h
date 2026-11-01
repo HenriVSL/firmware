@@ -74,11 +74,10 @@ struct ReceiveReport
 {
 };
 
-/// Bytes for the board, from the console; it must be receiving.
+/// Bytes for the board, which the console left in the aprs task's buffer
+/// (runCommand); it must be receiving.
 struct BoardCommand
 {
-    std::array<std::uint8_t, board::AprsLinkReader::MaxCommand> bytes;
-    std::uint8_t length;
 };
 
 using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, ModeOn, McuReceive, RepairFrames, ReceiveReport>;
