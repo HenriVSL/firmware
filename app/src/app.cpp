@@ -33,7 +33,9 @@ namespace log = services::log;
 
 Platform *platform = nullptr;
 
-os::Task<512> linkTask;
+// Room for the audio probe, which runs in this task with its meter and
+// a log line on the stack.
+os::Task<768> linkTask;
 
 constexpr os::Ticks LinkStepMs = 20;
 constexpr os::Ticks ProgrammingStepMs = 1;
