@@ -498,3 +498,44 @@ TEST_CASE("the slot line leads by the calibrated time at High, 20 steps less at 
     REQUIRE(baseband.startDigitalCall(settings, lc, 430'475'000, false, PowerLevel::Low));
     CHECK(offset() == std::vector<std::uint8_t>{0x08, 0x7A, 0x00, 0x82, 1, 2, 3, 4, 5, 6});
 }
+
+TEST_CASE("the microphone gain goes to the codec before the transmit writes, by mode")
+{
+    FakeSct3258 chip;
+    FakeBoard board;
+    Sct3258 sct(chip, noDelay);
+    constexpr CodecWrite GainTransmit[] = {{0, 86, 0xA0}, {1, 52, 0x80}};
+    Sct3258Baseband::Audio audio = TestAudio;
+    audio.transmit = GainTransmit;
+    audio.microphoneGain = [](int db) {
+        return Sct3258Baseband::MicrophoneGainWrites{{{1, 59, static_cast<std::uint8_t>(2 * db)}, {0, 88, static_cast<std::uint8_t>(2 * db)}}};
+    };
+    Sct3258Baseband baseband(sct, board, Blob, audio, testTrims);
+    REQUIRE(baseband.start());
+    chip.packets.clear();
+
+    // The standard gain until set.
+    CHECK(baseband.setMicrophone(true));
+    REQUIRE(chip.packets.size() == 4);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 59, 32, 0x00, 0x00});
+    CHECK(chip.packets[1] == std::vector<std::uint8_t>{0x40, 0x00, 0x00, 88, 32, 0x00, 0x00});
+    CHECK(chip.packets[3] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 52, 0x80, 0x00, 0x00});
+
+    // Analog mode takes the analog gain, limited to the range.
+    baseband.setMicrophoneGain(24, 40);
+    chip.packets.clear();
+    CHECK(baseband.setMicrophone(true));
+    REQUIRE(chip.packets.size() == 4);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 59, 60, 0x00, 0x00});
+
+    // Digital mode takes the digital gain.
+    dmm::services::dmr::ChannelSettings settings;
+    settings.colourCode = 1;
+    settings.slot = 1;
+    REQUIRE(baseband.setDigital(settings, 433'450'000, true));
+    chip.packets.clear();
+    CHECK(baseband.setMicrophone(true));
+    REQUIRE(chip.packets.size() == 4);
+    CHECK(chip.packets[0] == std::vector<std::uint8_t>{0x40, 0x00, 0x01, 59, 48, 0x00, 0x00});
+    CHECK(chip.packets[1] == std::vector<std::uint8_t>{0x40, 0x00, 0x00, 88, 48, 0x00, 0x00});
+}
