@@ -184,6 +184,9 @@ os::Ticks listenUntil = 0;
 os::Ticks packetAirMs = 0;
 // The receiver heard a carrier at the last poll.
 bool carrierAtPoll = false;
+// The analog channel's receive frequency while the radio listens on it,
+// else 0; kept for other tasks.
+std::atomic<std::uint32_t> listeningHz{0};
 std::uint32_t randomState = 0x2545F491;
 
 // Transmit only inside the 2 m and 70 cm amateur bands.
@@ -1693,6 +1696,9 @@ void radioMain(void *)
             signalDbm.store(fm->status().rssiDbm);
             signalAt.store(lastSignalRead);
         }
+        // Battery save's sleep counts as listening: it wakes on a signal.
+        const bool listening = !onAir && !transmitting && !fmChannel.digital && (fm->receiving() || fm->receiverAsleep());
+        listeningHz.store(listening ? fmChannel.receiveHz : 0);
     }
 }
 
@@ -1737,6 +1743,11 @@ bool carrier()
 void setLevelLog(bool on)
 {
     levelLog.store(on, std::memory_order_relaxed);
+}
+
+std::uint32_t analogListeningHz()
+{
+    return listeningHz.load();
 }
 
 bool ready()
