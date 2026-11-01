@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "dmm/lib/format.h"
 #include "dmm/os/os.h"
 #include "dmm/services/display.h"
 
@@ -22,6 +23,12 @@ namespace dmm::app::ui {
 /// pixel in the top bit, each row whole bytes. @p n counts the lines, so a
 /// lost one shows. Drawing waits for room in the log rather than lose a
 /// line.
+///
+/// Asked for the screen's text, it writes each run of characters drawn
+/// side by side in one font and colour as the ui draws the whole screen:
+///   text
+///   t <x> <y> <font height> <fg> <bg> <characters, UTF-8>
+///   text end
 class ScreenStream final : public services::Display
 {
 public:
@@ -46,6 +53,7 @@ public:
         On,    // from now on
         Watch, // for some seconds
         Off,
+        Text, // the text on the whole screen
     };
     /// Asks for a picture or a change in streaming (console, for tests);
     /// any task. The ui carries it out at the end of its next pass.
@@ -62,6 +70,8 @@ public:
 
 private:
     void waitForRoom();
+    void addGlyph(int x, int y, int w, int h, const std::uint8_t *rows, services::Color fg, services::Color bg);
+    void endRun();
 
     services::Display &m_display;
     bool m_streaming = false;
@@ -70,6 +80,18 @@ private:
     os::Ticks m_until = 0;
     bool m_timed = false;
     bool m_shot = false;
+    // The text pass and the run of characters it is collecting.
+    bool m_text = false;
+    struct Run
+    {
+        int x = 0;
+        int y = 0;
+        int end = 0;
+        int height = 0;
+        services::Color fg = 0;
+        services::Color bg = 0;
+        lib::StaticString<72> chars;
+    } m_run;
 };
 
 } // namespace dmm::app::ui

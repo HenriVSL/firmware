@@ -276,14 +276,15 @@ bool knobCommand(std::string_view command)
     return true;
 }
 
-// "screen shot|on|off|watch <s>": the screen's drawing to the log.
+// "screen shot|text|on|off|watch <s>": the screen's drawing, or its text,
+// to the log.
 bool screenCommand(std::string_view command)
 {
     using Request = ui::ScreenStream::Request;
     command.remove_prefix(7);
     std::int32_t seconds[1] = {};
-    if (command == "shot") {
-        ui::ScreenStream::ask(Request::Shot);
+    if (command == "shot" || command == "text") {
+        ui::ScreenStream::ask(command == "shot" ? Request::Shot : Request::Text);
         return true;
     }
     if (command == "on" || command == "off") {
@@ -524,7 +525,7 @@ void runCommand(std::string_view command)
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
-        log::info("console") << "tests: key <name> [long], knob <steps>, screen shot|on|off|watch <s>";
+        log::info("console") << "tests: key <name> [long], knob <steps>, screen shot|text|on|off|watch <s>";
     } else if (lib::startsWith(command, "key ")) {
         if (!keyCommand(command)) {
             log::info("console") << "key <name> [long]: a key as the log names it, not PTT";
@@ -535,7 +536,7 @@ void runCommand(std::string_view command)
         }
     } else if (lib::startsWith(command, "screen ")) {
         if (!screenCommand(command)) {
-            log::info("console") << "screen shot|on|off|watch <1-600 s>";
+            log::info("console") << "screen shot|text|on|off|watch <1-600 s>";
         }
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
