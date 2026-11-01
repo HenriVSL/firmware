@@ -75,6 +75,8 @@ def main():
     parser.add_argument('--port', default=transport.LOG_PORT, help='the log port (glob)')
     parser.add_argument('--allow-transmit', action='store_true',
                         help='run steps marked transmit (they may key the radio or change power)')
+    parser.add_argument('--allow-qdmr-write', action='store_true',
+                        help='run QDMR write steps (each lowers the maximum speaker volume; skipped by default)')
     parser.add_argument('--out', help='report folder (default radio-test-<checklist>-<time>)')
     parser.add_argument('--steps', help='only these steps, e.g. 1,3-5,2.4')
     parser.add_argument('--no-human', action='store_true', help='never wait for the operator; list human steps')
@@ -103,7 +105,7 @@ def main():
                 radio.wait_boot(20, 0)
             runner = Runner(radio, checklist, os.path.abspath(out), args.allow_transmit,
                             interactive=False if args.no_human else None, only=parse_steps(args.steps),
-                            params=params)
+                            params=params, allow_qdmr_write=args.allow_qdmr_write)
             runner.run()
             path = runner.report(link.describe())
             print('report: %s' % path)

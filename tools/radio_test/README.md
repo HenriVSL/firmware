@@ -21,6 +21,7 @@ tools/radio_test/radio_test.py run menu --no-human --out /tmp/menu-run
 tools/radio_test/radio_test.py run home-screen --param dmr="Zone/Name" \
     --param roam="Zone/Name" --param fm="Zone/Name"
 tools/radio_test/radio_test.py run menu --steps 1-5,8a
+tools/radio_test/radio_test.py run menu --allow-qdmr-write   # with the QDMR round trip
 ```
 
 On the simulator (`build/host/boards/sim_headless/sim` unless a path is
@@ -67,6 +68,12 @@ tools/radio_test/radio_test.py cmd settings
   a step's `undo_now=True` runs its undo right after it.
 - Transmit steps are skipped without `--allow-transmit`, and listed for
   the human.
+- QDMR writes are skipped (the step reports why) unless the run has
+  `--allow-qdmr-write`: each write lowers the radio's maximum speaker
+  volume by one and may turn APRS beacons on again.
+- One program per port: the run stops at the start when another process
+  has the log port open, naming its PID, since a second reader takes
+  lines away.
 
 ## The menu by name
 
@@ -120,7 +127,10 @@ the screen while pressing keys, check the `settings` lines).
 
 - QDMR: `qdmr read|write <file>` run `dmrconf ... -D <data port> -R
   d878uv2` with the data port (`*DeltaMM*-if00`) by its device name;
-  `qdmr diff a b` compares two YAML files. The binary is
+  `qdmr diff a b` compares two YAML files. The changes QDMR 0.15.1
+  always makes on a write and read back (`maxSpeakerVolume` one lower,
+  an APRS `period: <n> s` added) are reported as a QDMR quirk; anything
+  else fails `nodiff`. The binary is
   `~/Documents/AnytoneSoftware/qdmr/build-0.15.1/cli/dmrconf`.
 - `dmm-radio <args>` runs `build/host/tools/dmm_radio/dmm-radio`, or
   `$DMM_RADIO`.

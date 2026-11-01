@@ -91,6 +91,30 @@ def find_port(pattern):
     return found[0] if found else None
 
 
+def port_users(path):
+    """The other processes that have the device @p path open, as
+    (pid, command line)."""
+    device = os.path.realpath(path)
+    users = []
+    for pid in os.listdir('/proc'):
+        if not pid.isdigit() or int(pid) == os.getpid():
+            continue
+        try:
+            fds = os.listdir('/proc/%s/fd' % pid)
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink('/proc/%s/fd/%s' % (pid, fd)) == device:
+                    with open('/proc/%s/cmdline' % pid, 'rb') as f:
+                        command = f.read().replace(b'\0', b' ').decode('utf-8', 'replace').strip()
+                    users.append((int(pid), command))
+                    break
+            except OSError:
+                continue
+    return users
+
+
 def data_device():
     """The data port's device name (ttyACM0), as dmrconf -D wants it."""
     port = find_port(DATA_PORT)
@@ -110,6 +134,13 @@ class SerialLink(Link):
         self.fd = None
         self.serial = None
         self.write_lock = threading.Lock()
+        # One program per port: another reader takes lines away.
+        port = find_port(pattern)
+        if port is not None:
+            users = port_users(port)
+            if users:
+                raise LinkError('the log port %s is open in another program: %s; close it first' % (
+                    os.path.realpath(port), ', '.join('PID %d (%s)' % u for u in users)))
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
         if not self.wait_connected(10):

@@ -19,6 +19,8 @@ sys.path.insert(0, os.path.join(REPO, 'tools', 'screen_picture'))
 import screen_picture  # noqa: E402
 
 BOOT = re.compile(r'\bsystem: DeltaMM (\S+) on (\S+)')
+READY = re.compile(r'\bradio: ready\b')
+ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
 DMRCONF = os.path.expanduser('~/Documents/AnytoneSoftware/qdmr/build-0.15.1/cli/dmrconf')
 
 # Console commands that key the transmitter or change its power.
@@ -32,6 +34,15 @@ TRANSMIT_LINES = re.compile(
     r'\b(dmr|fm): transmitting\b|\bfm: transmit (on|power)\b|\bui: power \d|\baprs: (sending|beacon sent)')
 # Log lines that show a setting changed.
 SETTING_LINES = re.compile(r'\bsettings: pending: settings|\bsettings kept in the codeplug')
+
+
+def clean_output(text):
+    """A tool's output without its progress bars and colours."""
+    lines = []
+    for line in ANSI.sub('', text.replace('\r', '\n')).splitlines():
+        if line.strip() and not re.match(r'^\s*\[[= ]*\]\s*\d+%\s*$', line):
+            lines.append(line.rstrip())
+    return '\n'.join(lines)
 
 
 class Failed(Exception):
@@ -162,16 +173,19 @@ class Radio:
     def restart(self, timeout=60.0, command='restart'):
         """Restarts the radio and waits for its start line; the log port
         is opened again when it comes back."""
-        at = self.cmd(command)
-        line = self.wait(BOOT, timeout, at)
-        # The console is ready once the start's lines have settled.
-        time.sleep(2.0 if self.sim else 3.0)
-        self._where = None
-        return line
+        return self.wait_boot(timeout, self.cmd(command))
 
     def wait_boot(self, timeout=90.0, since=None):
+        """Waits for a start line, then for the radio's chips to be up:
+        until then keys are refused and the start screen is shown."""
         line = self.wait(BOOT, timeout, since)
-        time.sleep(2.0 if self.sim else 3.0)
+        try:
+            # The simulator logs it before the start line.
+            self.wait(READY, 20, line.seq if since is None else since)
+        except Failed:
+            self.note('no `radio: ready` after the start')
+        time.sleep(1.0)
+        self._where = None
         return line
 
     # Screen --------------------------------------------------------------
@@ -227,17 +241,29 @@ class Radio:
     def on_standby(w):
         return w.kind == 'other' and not w.title and re.match(r'Menu\s+P1\b', w.hint) is not None
 
-    def home(self, tries=6):
-        """Back to the standby screen with Exit (held, if Exit alone does
-        not get there)."""
+    @staticmethod
+    def on_log_or_key_test(w):
+        """The key test, or the log page (lines of the small font from the
+        left edge), which held Exit leaves."""
+        if any(r.text.startswith('Keys (Exit=log)') for r in w.runs):
+            return True
+        return not w.title and sum(1 for r in w.runs if r.x == 0 and r.height == 8) >= 5
+
+    def home(self, tries=10):
+        """Back to the standby screen: Exit held on the log and the key
+        test (log, key test, standby), Exit on any other screen (menu,
+        zone list, GPS screen, activity pages); once in a while held."""
+        seen = []
         for i in range(tries):
             w = self.where(fresh=True)
             if self.on_standby(w):
                 return w
-            self.key('Exit', long=i >= 3)
+            seen.append(w.summary()[:80])
+            self.key('Exit', long=self.on_log_or_key_test(w) or i % 4 == 3)
         w = self.where(fresh=True)
         if not self.on_standby(w):
-            raise Failed('not back on the standby screen: ' + w.summary())
+            raise Failed('not back on the standby screen after %d keys; screens on the way: %s' % (
+                tries, ' / '.join(seen[-4:])))
         return w
 
     def choose(self, label, tries=None):
@@ -337,7 +363,7 @@ class Radio:
         cmd = [DMRCONF] + [a.replace('{dev}', dev) for a in args]
         self.note('$ ' + ' '.join(cmd))
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        out = (p.stdout + p.stderr).strip()
+        out = clean_output(p.stdout + p.stderr)
         if p.returncode != 0:
             raise Failed('dmrconf %s failed (%d): %s' % (args[0], p.returncode, out[-500:]))
         return out
@@ -360,6 +386,29 @@ class Radio:
             return list(difflib.unified_diff(fa.read().splitlines(), fb.read().splitlines(), a, b, lineterm='', n=1))
 
     @staticmethod
+    def qdmr_quirks(diff):
+        """Splits the changed lines of @p diff into those a QDMR 0.15.1
+        write and read back always gives (maxSpeakerVolume one lower, an
+        APRS `period: <n> s` added) and the others."""
+        removed = [l[1:] for l in diff if l.startswith('-') and not l.startswith('---')]
+        added = [l[1:] for l in diff if l.startswith('+') and not l.startswith('+++')]
+        quirks, others = [], []
+        volume = re.compile(r'^(\s*maxSpeakerVolume:\s*)(\d+)\s*$')
+        for line in added:
+            m = volume.match(line)
+            before = next((r for r in removed if m and volume.match(r) and
+                           volume.match(r).group(1) == m.group(1)), None)
+            if m and before is not None and int(volume.match(before).group(2)) == int(m.group(2)) + 1:
+                removed.remove(before)
+                quirks.append('maxSpeakerVolume %s -> %s' % (volume.match(before).group(2), m.group(2)))
+            elif re.match(r'^\s*period:\s*\d+ s\s*$', line):
+                quirks.append('added `%s`' % line.strip())
+            else:
+                others.append('+' + line)
+        others += ['-' + r for r in removed]
+        return quirks, others
+
+    @staticmethod
     def yaml_value(path, key):
         """The first `key: value` in a YAML file, as text."""
         with open(path) as f:
@@ -377,7 +426,7 @@ class Radio:
         cmd = [exe] + list(args)
         self.note('$ ' + ' '.join(cmd))
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-        out = (p.stdout + p.stderr).strip()
+        out = clean_output(p.stdout + p.stderr)
         if p.returncode != 0:
             raise Failed('dmm-radio %s failed (%d): %s' % (args[0], p.returncode, out[-500:]))
         return out

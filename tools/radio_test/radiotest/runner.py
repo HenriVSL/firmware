@@ -26,6 +26,9 @@ Context:
   shot <name>         a picture of the screen, saved with the report
   watch <s>           stream the screen for s seconds (for `flicker`)
   qdmr read <file> | qdmr write <file> | qdmr diff <a> <b>
+                      (a write skips the step without --allow-qdmr-write;
+                      the diff leaves out the changes QDMR 0.15.1 always
+                      makes, and reports them as a quirk)
   dmm-radio <args>    the flash tool; its output is kept
 
 Expectations (expect) are strings, or callables taking the Context and
@@ -102,6 +105,7 @@ class Context:
         self.last_diff = None
         self.last_output = ''
         self.shots = 0
+        self.allow_qdmr_write = False
 
     def path(self, name):
         name = name.format(out=self.out, **self.params)
@@ -168,11 +172,18 @@ def run_action(ctx, action):
         if sub == 'read':
             ctx.last_output = r.qdmr_read(files[0])
         elif sub == 'write':
+            if not ctx.allow_qdmr_write:
+                raise Skipped('QDMR writes need --allow-qdmr-write (each one lowers the radio\'s maximum speaker '
+                              'volume and may turn APRS beacons on)')
             ctx.last_output = r.qdmr_write(files[0])
         elif sub == 'diff':
-            ctx.last_diff = r.yaml_diff(files[0], files[1])
+            diff = r.yaml_diff(files[0], files[1])
+            quirks, ctx.last_diff = r.qdmr_quirks(diff)
             ctx.evidence('diff %s %s: %s' % (os.path.basename(files[0]), os.path.basename(files[1]),
-                                             'no differences' if not ctx.last_diff else '%d lines' % len(ctx.last_diff)))
+                                             'no differences' if not ctx.last_diff else '%d lines differ' %
+                                             len(ctx.last_diff)))
+            if quirks:
+                ctx.evidence('QDMR quirk (expected after a write): ' + '; '.join(quirks))
             if ctx.last_diff:
                 ctx.evidence('```\n' + '\n'.join(ctx.last_diff[:40]) + '\n```')
         else:
@@ -263,7 +274,7 @@ def check(ctx, expectation, timeout):
 
 class Runner:
     def __init__(self, radio, checklist, out, allow_transmit=False, interactive=None, only=None, params=None,
-                 echo=print):
+                 echo=print, allow_qdmr_write=False):
         self.radio = radio
         self.checklist = checklist
         self.out = out
@@ -274,6 +285,7 @@ class Runner:
         self.params.update(params or {})
         self.echo = echo
         self.ctx = Context(radio, out, self.params)
+        self.ctx.allow_qdmr_write = allow_qdmr_write
         self.results = []
         self.undo_stack = []  # (label, actions, transmit)
         self.undo_log = []
@@ -412,6 +424,8 @@ class Runner:
             try:
                 run_action(self.ctx, a)
                 self.undo_log.append((label, name, 'done'))
+            except Skipped as e:
+                self.undo_log.append((label, name, 'skipped: %s' % e))
             except Exception as e:
                 self.undo_log.append((label, name, 'FAILED: %s' % e))
         self.radio.guard.step_allows = False
@@ -435,9 +449,10 @@ class Runner:
                                                 getattr(self.checklist, 'SOURCE', '')))
         lines.append('- Target: %s; firmware `%s` on `%s`' % (target, self.radio.version or '?',
                                                               self.radio.board or '?'))
-        lines.append('- Started %s, took %.0f s; transmit %s' % (
+        lines.append('- Started %s, took %.0f s; transmit %s; QDMR writes %s' % (
             datetime.datetime.fromtimestamp(self.started).strftime('%Y-%m-%d %H:%M:%S'), total,
-            'allowed' if self.allow_transmit else 'refused'))
+            'allowed' if self.allow_transmit else 'refused',
+            'allowed' if self.ctx.allow_qdmr_write else 'skipped'))
         lines.append('- Result: ' + ', '.join('%d %s' % (counts[k], k) for k in ('pass', 'fail', 'human', 'skipped')
                                               if k in counts))
         if self.aborted:

@@ -34,8 +34,35 @@ UNDO = [
 TOP = ['Channel', 'Roaming', 'GPS', 'Settings', 'Tools']
 
 
+def level(text):
+    """The squelch level of a value as the screen shows it (0 is Open)."""
+    return 0 if str(text) == 'Open' else int(text)
+
+
+def shown(n):
+    """A squelch level as the screen shows it."""
+    return 'Open' if n == 0 else str(n)
+
+
+# The squelch's value screen goes round: Open, 1 to 5, Open.
 def up(squelch):
-    return min(int(squelch) + 1, 5)
+    return (level(squelch) + 1) % 6
+
+
+def roaming_on_first(ctx):
+    """Roaming On first when it is Off already, kept before going on, so
+    that setting Off is a change the log shows and writes (the checklist's
+    UNDO puts the old value back)."""
+    r = ctx.radio
+    w = r.goto('Roaming/Roaming')
+    if w.value == 'Off':
+        ctx.evidence('Roaming was Off already: set On first')
+        r.key('Menu')
+        at = r.mark()
+        r.set_value('On')
+        r.wait(r'\bsettings kept in the codeplug', 8, at)
+        r.home()
+    ctx.since = r.mark()
 
 STEPS = [
     Step(1, 'Menu from the standby screen', do=['home', 'key Menu'], expect=[
@@ -52,17 +79,17 @@ STEPS = [
         'screen ' + panel('Open, or 1 to 5: higher needs a stronger signal'),
         'hint ^Menu: change   Exit: back$']),
     Step(4, 'Squelch value screen', do=['at Channel/Squelch', 'key Menu', 'shot squelch'], expect=[
-        'title ^Channel > Squelch$', 'kind ^spinner$', r'in_use ^\d$', value_is(lambda p: p['squelch']),
+        'title ^Channel > Squelch$', 'kind ^spinner$', r'in_use ^(\d|Open)$', value_is(lambda p: p['squelch']),
         'screen ^In use: <<squelch>>$']),
     Step(5, 'Up, knob 2 back, Exit leaves the squelch', do=[
-        'key Up', now(value_is(lambda p: up(p['squelch']))),
-        'knob -2', now(value_is(lambda p: max(up(p['squelch']) - 2, 0))),
+        'key Up', now(value_is(lambda p: shown(up(p['squelch'])))),
+        'knob -2', now(value_is(lambda p: shown((up(p['squelch']) - 2) % 6))),
         'key Exit'], expect=[
         'title ^Menu > Channel$', 'row ^Squelch <<squelch>>$', r'nolog \bui: squelch\b']),
     Step(6, 'Menu, Up, Menu sets the squelch', changes=True, timeout=8, do=[
         'at Channel/Squelch', 'keys Menu Up Menu'], expect=[
         log_is(lambda p: r'\bui: squelch %d\b' % up(p['squelch'])),
-        value_is(lambda p: up(p['squelch'])), r'log@8 \bsettings kept in the codeplug']),
+        value_is(lambda p: shown(up(p['squelch']))), r'log@8 \bsettings kept in the codeplug']),
     Step(7, 'Squelch type: two buttons, the one in use starred', do=[
         'at Channel/Squelch', 'keys Down Menu', 'shot squelch-type'], expect=[
         'title ^Squelch type$', 'kind ^buttons$', r'in_use ^\S', rows_count(2)]),
@@ -114,7 +141,7 @@ STEPS = [
     Step(19, 'P2 on the row last chosen; squelch one lower, back to standby', changes=True, timeout=8, do=[
         'home', 'key P2', 'check row ^Power', 'keys Up Up', 'check row ^Squelch',
         remember('squelch_19'), 'keys Menu Down Menu'], expect=[
-        log_is(lambda p: r'\bui: squelch %d\b' % max(int(p['squelch_19']) - 1, 0)), standby]),
+        log_is(lambda p: r'\bui: squelch %d\b' % ((level(p['squelch_19']) - 1) % 6)), standby]),
     Step(20, 'P1: the zone list in the same style', do=[
         'home', 'key P1', 'shot zones', 'check title ^Zone$', 'check kind ^list$', 'check hint ^Menu: use   Exit: back$',
         'key Exit'], expect=[standby]),
@@ -124,10 +151,11 @@ STEPS = [
             'key Exit', 'key Menu', 'knob 1', 'knob -1', 'key Exit'])], expect=['flicker 0']),
     Step(22, 'Squelch and power kept across a restart', radio_only='nothing is kept across a restart',
          do=[remember('squelch_22', 'Channel/Squelch'), 'home', 'restart',
-             now(lambda ctx: settings_has(r'squelch %s/' % ctx.params['squelch_22'])(ctx)),
-             'key P2', 'check screen ^Squelch\n<<squelch_22>>$', 'check screen ^Power\n<<power>>$', 'key Exit'],
-         expect=[standby]),
-    Step('23a', 'Roaming Off', changes=True, timeout=8, do=['open Roaming/Roaming', 'set Off'], expect=[
+             now(lambda ctx: settings_has(r'squelch %d/' % level(ctx.params['squelch_22']))(ctx)),
+             'goto Channel/Squelch'],
+         expect=['title ^Menu > Channel$', 'screen ^Squelch\n<<squelch_22>>$', 'screen ^Power\n<<power>>$']),
+    Step('23a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'open Roaming/Roaming', 'set Off'],
+         expect=[
         r'log \bui: roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
     Step('23b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
          do=['home', 'restart', 'goto Roaming/Roaming'], expect=[
