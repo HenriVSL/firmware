@@ -21,11 +21,19 @@ second copy of a frame within 3 s is dropped. Log lines:
 
 Console:
 
-- `aprs rx`: APRS mode and receive state, frames from the board and the
-  MCU and how many both heard, the board frames failing the check, the
-  MCU's frames, repairs, copies between slicers, seconds of audio and lost
-  samples, the longest gap between two reads of the sampler (and when) and
-  the longest decoding pass, and per slicer `<dB> <right>/<failed>`.
+- `aprs rx`, five lines:
+  - `APRS mode on; board receive on; MCU decoding in APRS mode, running,
+    repair off`: the mode, the board, the MCU decoder's setting
+    (`aprs rx mcu`), whether it decodes now, and repairs.
+  - `frames: board <n> (<n> failed the check), MCU <n> (<n> repaired),
+    heard by both <n>`: frames with a right check from each source; a
+    frame both heard counts once for each source and once in `heard by
+    both`.
+  - `MCU: <s> s of audio, <n> samples lost, <n> copies between slicers`.
+  - `reads: longest gap <ms> ms (at <s> s), longest decoding pass <ms> ms`.
+  - `slicers (dB right/failed): -6 <right>/<failed> ...`: per slicer, the
+    frames it read with a right check (copies included) and those of a
+    possible length whose check failed.
 - `aprs: <n> samples lost: no read for <ms> ms` whenever the sampler's
   ring (0.4 s) overflowed; the time stamp shows what else happened then.
 - `aprs rx mcu on|off|any`: MCU decoding in APRS mode (default), off, or
@@ -68,6 +76,18 @@ the repository; report counts only.
 | 8 | An hour side by side on real traffic, then `aprs rx` | Count the distinct stations each decoded: the second radio's list, `heard (MCU)` lines (MCU only or first), `heard` lines without the mark plus `same frame from the board` lines (board), `same frame from the MCU` lines (board first, MCU too). Note the counts, the per-slicer counts and the board's failed frames. Pass: the MCU decodes at least the stations the board does, and close to the second radio |
 | 9 | Optionally `aprs rx repair on` for a second hour | Note `repaired` counts and check the repaired packets read sensibly |
 | 10 | The uptime line (`system: uptime ...`) after the hour | The aprs task's unused stack words about 200, at least 100 |
+
+## Human steps
+
+Steps 1, 2, 5, 6, 7 and 10 run from the console alone. These need a
+person:
+
+- A second APRS radio beside this one: step 3 (it sends a beacon), step 8
+  (an hour of real traffic, comparing its heard list) and the missed
+  packet below.
+- Transmitting on the APRS frequency: step 4, with a person at the radio
+  who has said transmitting is fine now.
+- Reading the repaired packets: step 9.
 
 ## A missed packet, offline
 
