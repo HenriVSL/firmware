@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
+#include <type_traits>
 
 namespace dmm::lib {
 
@@ -113,6 +114,41 @@ private:
     bool m_truncated = false;
 };
 
+namespace detail {
+
+/// How much of a StaticString is filled, and whether text was dropped.
+struct TextEnd
+{
+    std::size_t length = 0;
+    bool truncated = false;
+};
+
+// StaticString's appends, built once for every capacity: each writes
+// through a TextWriter after end.length and moves the end.
+void append(std::span<char> buffer, TextEnd &end, std::string_view s);
+void append(std::span<char> buffer, TextEnd &end, const char *s);
+void append(std::span<char> buffer, TextEnd &end, char c);
+void append(std::span<char> buffer, TextEnd &end, bool b);
+void append(std::span<char> buffer, TextEnd &end, Hex h);
+void append(std::span<char> buffer, TextEnd &end, ZeroPadded z);
+void append(std::span<char> buffer, TextEnd &end, std::int32_t value);
+void append(std::span<char> buffer, TextEnd &end, std::uint32_t value);
+void append(std::span<char> buffer, TextEnd &end, std::int64_t value);
+void append(std::span<char> buffer, TextEnd &end, std::uint64_t value);
+
+template <std::integral I>
+    requires(!std::same_as<I, char> && !std::same_as<I, bool>)
+void append(std::span<char> buffer, TextEnd &end, I value)
+{
+    if constexpr (std::is_signed_v<I>) {
+        append(buffer, end, static_cast<std::conditional_t<sizeof(I) <= 4, std::int32_t, std::int64_t>>(value));
+    } else {
+        append(buffer, end, static_cast<std::conditional_t<sizeof(I) <= 4, std::uint32_t, std::uint64_t>>(value));
+    }
+}
+
+} // namespace detail
+
 /// Fixed-capacity string that accepts everything TextWriter does.
 template <std::size_t N>
 class StaticString
@@ -124,28 +160,20 @@ public:
     template <typename T>
     StaticString &operator<<(const T &value)
     {
-        TextWriter w({m_data + m_len, N - m_len});
-        w << value;
-        m_len += w.size();
-        m_truncated = m_truncated || w.truncated();
+        detail::append(m_data, m_end, value);
         return *this;
     }
 
-    void clear()
-    {
-        m_len = 0;
-        m_truncated = false;
-    }
+    void clear() { m_end = {}; }
 
-    std::string_view view() const { return {m_data, m_len}; }
-    std::size_t size() const { return m_len; }
+    std::string_view view() const { return {m_data, m_end.length}; }
+    std::size_t size() const { return m_end.length; }
     static constexpr std::size_t capacity() { return N; }
-    bool truncated() const { return m_truncated; }
+    bool truncated() const { return m_end.truncated; }
 
 private:
     char m_data[N]{};
-    std::size_t m_len = 0;
-    bool m_truncated = false;
+    detail::TextEnd m_end;
 };
 
 } // namespace dmm::lib

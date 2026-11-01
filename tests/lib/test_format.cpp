@@ -46,6 +46,21 @@ TEST_CASE("StaticString appends across calls")
     CHECK(s.truncated());
 }
 
+TEST_CASE("StaticString takes what TextWriter takes")
+{
+    char name[8] = "abc";
+    const char *text = "def";
+    StaticString<96> s;
+    s << name << text << std::string_view("ghi") << ' ' << true << ' ' << std::uint8_t{200} << ' '
+      << std::int16_t{-300} << ' ' << -2147483647L << ' ' << 4294967295U << ' ' << std::int64_t{-12345678901}
+      << ' ' << std::uint64_t{18446744073709551615U} << ' ' << hex(0xbeef, 4) << ' ' << zeroPadded(5, 3);
+    CHECK(s.view() == "abcdefghi true 200 -300 -2147483647 4294967295 -12345678901 18446744073709551615 beef 005");
+    CHECK_FALSE(s.truncated());
+    s.clear();
+    CHECK(s.size() == 0);
+    CHECK_FALSE(s.truncated());
+}
+
 namespace {
 
 std::string hexOf(std::string_view text)
