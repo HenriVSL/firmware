@@ -5,6 +5,7 @@ add_library(dmm_services STATIC
     src/afsk.cpp
     src/afsk_demodulator.cpp
     src/aprs.cpp
+    src/aprs_home.cpp
     src/ax25.cpp
     src/battery.cpp
     src/channel_selector.cpp
@@ -16,6 +17,7 @@ add_library(dmm_services STATIC
     src/d878uv2_programming.cpp
     src/d878uv2_storage.cpp
     src/data_link.cpp
+    src/dedicated_mode.cpp
     src/dmr.cpp
     src/frequency_offset.cpp
     src/input.cpp
