@@ -190,6 +190,10 @@ struct RadioPreferences
     bool clockUtc = false;   // the clock shows UTC rather than local time
     bool aprsReceive = true; // stations heard through the APRS receiver
     HomeLayout home;
+    /// Microphone gain in dB (microphone_gain) on digital and on FM
+    /// channels; none: the codeplug's level.
+    std::optional<std::uint8_t> micGainDb;
+    std::optional<std::uint8_t> fmMicGainDb;
 };
 
 /// One repeater of a roaming zone.

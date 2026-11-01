@@ -10,6 +10,11 @@ against its standard setting. The console has `mic gain` (shows both),
 `mic gain dmr <dB>`, `mic gain fm <dB>` and `mic gain <dB>` (both),
 0 to 30 dB, from the next transmission.
 
+Menu, Settings, Audio sets either gain in dB on the radio, 0 to 30 dB
+in 1 dB steps, kept with the radio's preferences; a value set there wins
+over the codeplug's level until set back to Codeplug. The row shows
+`Plug +16 dB` while the codeplug's level applies.
+
 ## Before you start
 
 - The log port open in a terminal.
@@ -39,8 +44,15 @@ against its standard setting. The console has `mic gain` (shows both),
 | 12 | Tools, Codeplug editor, Settings: Mic gain 5; save (restarts) | `radio: microphone gain: DMR +24 dB, FM +16 dB` |
 | 13 | More settings: FM mic gain 1; save (restarts) | `radio: microphone gain: DMR +24 dB, FM +8 dB` |
 | 14 | Write a codeplug from the PC with both at 2 | After the restart `DMR +12 dB, FM +12 dB` |
+| 15 | Menu, Settings, Audio | DMR mic gain `Plug +12 dB`, FM mic gain `Plug +12 dB` |
+| 16 | DMR mic gain: +20 dB, then a parrot call without restarting | `radio: microphone gain: DMR +20 dB, FM +12 dB`, `ui: settings kept in the codeplug`; the row shows `+20 dB`; the parrot louder than at step 4's 16 dB |
+| 17 | Restart | `DMR +20 dB, FM +12 dB` at start |
+| 18 | Codeplug editor, Settings: Mic gain 1; save (restarts) | Still `DMR +20 dB`: the value set on the radio wins |
+| 19 | Menu, Settings, Audio, DMR mic gain: Codeplug | `DMR +8 dB`; the row shows `Plug +8 dB` |
+| 20 | FM mic gain: +6 dB, then an FM call | `FM +6 dB`; quieter on the other radio |
+| 21 | Write the codeplug from the PC again | After the restart the FM gain is still `+6 dB` |
 
 ## Undo
 
-Set Mic gain and FM mic gain back to 3 in the codeplug, or `mic gain 16`
-for the running radio.
+Menu, Settings, Audio: both Codeplug; Mic gain and FM mic gain back to
+3 in the codeplug. `mic gain 16` resets the running radio.
