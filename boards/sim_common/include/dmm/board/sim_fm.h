@@ -11,6 +11,8 @@
 class SimFm
 {
 public:
+    static constexpr std::uint32_t TuningStepMilliHz = 1'000;
+
     bool present() { return true; }
     bool start()
     {
