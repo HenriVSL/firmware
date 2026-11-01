@@ -312,6 +312,8 @@ for the console commands.
 | `tests/` | Host unit tests |
 | `docs/hw-tests/` | One hardware checklist per release |
 | `docs/update-mode.md` | Flashing through the boot loader, and its protocol |
+| `docs/update-mode.md` | Flashing through the boot loader |
+| `docs/loader.md` | DeltaMM's loader: updates over USB with a fallback |
 
 `ARCHITECTURE.md` describes how the parts fit together, `AGENTS.md`
 lists the coding and commit rules, and `CREDITS.md` thanks the people who

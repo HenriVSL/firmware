@@ -35,6 +35,8 @@ constexpr os::Ticks BatteryEveryMs = 250;
 constexpr os::Ticks LowBatteryBlinkMs = 800;
 // Time for the link task to send the last log lines before power goes.
 constexpr os::Ticks LogFlushMs = 200;
+// A trial image that confirms itself does so after running this long.
+constexpr os::Ticks AutoConfirmMs = 60'000;
 
 std::atomic<bool> feedingStopped{false};
 std::atomic<os::Ticks> lastActivity{0};
@@ -72,6 +74,42 @@ void feedWatchdog()
 {
     if (!feedingStopped.load(std::memory_order_relaxed)) {
         platform->system.feedWatchdog();
+    }
+}
+
+const char *fallbackName(services::boot::Fallback why)
+{
+    using services::boot::Fallback;
+    switch (why) {
+    case Fallback::AttemptsUsed:
+        return "the new image used its starts without being confirmed";
+    case Fallback::CheckFailed:
+        return "the new image failed its check";
+    case Fallback::Requested:
+        return "asked for";
+    case Fallback::NoImage:
+        return "no image in the run slot";
+    case Fallback::None:
+        break;
+    }
+    return "none";
+}
+
+// Confirms a trial image that confirms itself, once it has run a while.
+void autoConfirm(bool &done)
+{
+    if (done || os::nowMs() < AutoConfirmMs) {
+        return;
+    }
+    done = true;
+    const services::LoaderStatus l = platform->system.loaderStatus();
+    if (!l.present || !l.trial || l.manual) {
+        return;
+    }
+    if (platform->system.confirmImage()) {
+        log::info("system") << "loader: image confirmed after " << AutoConfirmMs / 1000 << " s";
+    } else {
+        log::error("system") << "loader: could not confirm the image";
     }
 }
 
@@ -312,6 +350,9 @@ void systemMain(void *)
         log::info("system") << platform->bootReport;
     }
     logResetReport();
+    if (platform->system.loaderStatus().present) {
+        logLoaderStatus("system");
+    }
     platform->system.holdPower();
     loadCalibration();
     startClock();
@@ -331,8 +372,10 @@ void systemMain(void *)
     os::Ticks sinceClock = 0;
     bool switchWasOff = false;
     bool emptyReported = false;
+    bool confirmChecked = false;
     while (!os::stopRequested()) {
         feedWatchdog();
+        autoConfirm(confirmChecked);
         const os::Ticks now = os::nowMs();
 
         // Two readings 10 ms apart, so a contact bounce does not power down.
@@ -513,6 +556,22 @@ lib::StaticString<12> perDayText(std::int32_t ppb)
 {
     // 86 400 s a day: tenths of a second are ppb * 864 / 10^6.
     return tenthsText(roundedDivide(static_cast<std::int64_t>(ppb) * 864, 1'000'000), "s");
+}
+
+void logLoaderStatus(std::string_view module)
+{
+    const services::LoaderStatus l = platform->system.loaderStatus();
+    if (!l.present) {
+        log::info(module) << "loader: none";
+        return;
+    }
+    auto line = log::info(module);
+    line << "loader: image " << (l.trial ? "on trial" : "confirmed");
+    if (l.trial) {
+        line << " (" << (l.manual ? "the PC confirms it" : "confirms itself") << "), start " << l.attempts << " of "
+             << l.maxAttempts;
+    }
+    line << ", previous image " << (l.previousKept ? "kept" : "not kept") << ", last fallback: " << fallbackName(l.fallback);
 }
 
 const board::Calibration *calibration()
