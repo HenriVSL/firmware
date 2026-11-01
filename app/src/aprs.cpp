@@ -32,8 +32,9 @@ using services::AprsSettings;
 using services::GpsSchedule;
 
 // Room for the deepest path, a packet read from the board or decoded on
-// the MCU, and a margin.
-os::Task<512> aprsTask;
+// the MCU down to the heard list and the log (about 1.7 KB with the
+// kernel's calls and an interrupt), and a margin.
+os::Task<640> aprsTask;
 os::Queue<Message, 4> inbox;
 
 // The destination names the software (an experimental APZ tocall).
@@ -544,8 +545,10 @@ void logBadFrame()
         link->write(board::AprsLinkReader::StartCommand);
         ++startCommandsSent;
     }
-    std::uint8_t buffer[64];
-    lib::StaticString<log::MaxLineLength> bytes;
+    // Static: the task's stack is for a frame's path down to the log.
+    static std::uint8_t buffer[64];
+    static lib::StaticString<log::MaxLineLength> bytes;
+    bytes.clear();
     const bool showBytes = static_cast<std::int32_t>(now - boardBytesUntil) < 0;
     for (;;) {
         const std::size_t n = link->read(buffer);
