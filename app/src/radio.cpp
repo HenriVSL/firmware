@@ -228,6 +228,9 @@ bool carrierPolled = false;
 // The receiver's signal level, read twice a second for the home screen.
 constexpr os::Ticks SignalEveryMs = 500;
 os::Ticks lastSignalAt = 0;
+// The analog channel's receive frequency while the radio listens on it,
+// else 0; kept for other tasks.
+std::atomic<std::uint32_t> listeningHz{0};
 std::atomic<int> signalDbm{0};
 std::atomic<os::Ticks> signalAt{0};
 std::atomic<bool> signalKnown{false};
@@ -2048,6 +2051,9 @@ void radioMain(void *)
             signalAt.store(lastSignalAt);
             signalKnown.store(true);
         }
+        // Battery save's sleep counts as listening: it wakes on a signal.
+        const bool listening = !onAir && !transmitting && !fmChannel.digital && (fm->receiving() || fm->receiverAsleep());
+        listeningHz.store(listening ? fmChannel.receiveHz : 0);
     }
 }
 
@@ -2105,6 +2111,11 @@ void setReceiveGroups(std::span<const std::uint32_t> ids)
 Activity activity()
 {
     return airActivity.load();
+}
+
+std::uint32_t analogListeningHz()
+{
+    return listeningHz.load();
 }
 
 bool ready()
