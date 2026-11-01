@@ -301,7 +301,7 @@ bool radioCommand(std::string_view command)
         if (!hz || *hz > services::FrequencyOffset::MaxHz) {
             return false;
         }
-        posted = radio::post(radio::FmOffset{minus ? -*hz : *hz});
+        posted = ui::post(ui::FrequencyOffset{minus ? -*hz : *hz});
     } else if (command == "roam") {
         posted = radio::post(radio::RoamStatus{});
     } else if (command == "roam now") {
