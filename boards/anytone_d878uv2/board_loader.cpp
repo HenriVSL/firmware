@@ -8,6 +8,7 @@
 #include "mcu_flash.h"
 
 #include "dmm/hal/cortex_m/core.h"
+#include "dmm/os/os.h"
 #include "dmm/services/boot_loader.h"
 #include "dmm/services/boot_record.h"
 #include "dmm/services/d878uv2_boot_layout.h"
@@ -23,11 +24,32 @@ namespace layout = dmm::services::d878uv2;
 
 DMM_HANDOVER_BLOCK(handover);
 
+// The link and system tasks both read the record and may both confirm.
+dmm::os::Mutex &recordLock()
+{
+    static dmm::os::Mutex lock;
+    return lock;
+}
+
 // The app only appends to the record; it never erases.
 McuFlash &recordFlash()
 {
     static McuFlash flash{{layout::RecordBase, layout::RecordEnd}};
     return flash;
+}
+
+bool confirmLocked()
+{
+    boot::BootRecord record(recordFlash(), layout::BootLayout.record);
+    if (!record.load()) {
+        return false;
+    }
+    const boot::BootState &s = record.state();
+    if (s.a.state == boot::SlotState::Confirmed) {
+        return true;
+    }
+    return s.a.state == boot::SlotState::Trial && record.append(boot::entry::confirm(s.a.crc)) &&
+        record.state().a.state == boot::SlotState::Confirmed;
 }
 
 } // namespace
@@ -36,7 +58,10 @@ dmm::services::LoaderStatus loaderStatus()
 {
     boot::BootRecord record(recordFlash(), layout::BootLayout.record);
     dmm::services::LoaderStatus status;
-    if (!record.load()) {
+    recordLock().lock();
+    const bool loaded = record.load();
+    recordLock().unlock();
+    if (!loaded) {
         return status;
     }
     const boot::BootState &s = record.state();
@@ -52,16 +77,10 @@ dmm::services::LoaderStatus loaderStatus()
 
 bool confirmImage()
 {
-    boot::BootRecord record(recordFlash(), layout::BootLayout.record);
-    if (!record.load()) {
-        return false;
-    }
-    const boot::BootState &s = record.state();
-    if (s.a.state == boot::SlotState::Confirmed) {
-        return true;
-    }
-    return s.a.state == boot::SlotState::Trial && record.append(boot::entry::confirm(s.a.crc)) &&
-        record.state().a.state == boot::SlotState::Confirmed;
+    recordLock().lock();
+    const bool confirmed = confirmLocked();
+    recordLock().unlock();
+    return confirmed;
 }
 
 void enterLoader(dmm::services::LoaderRequest request)

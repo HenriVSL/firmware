@@ -181,7 +181,8 @@ void writeAll(std::span<const std::uint8_t> bytes, Clock &clock)
 {
     hal::startSystemClock(board::CrystalHz);
     Clock clock;
-    boot::LoaderProtocol protocol(loader, "D878UV2", dmm::Version);
+    // Static: its request buffer is larger than the main stack.
+    static boot::LoaderProtocol protocol(loader, "D878UV2", dmm::Version);
     protocol.setStayReason(why);
     usbDevice.start();
     cm::enableInterrupts();
