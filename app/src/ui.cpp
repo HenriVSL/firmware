@@ -1254,6 +1254,8 @@ void uiMain(void *)
             if (selector.settings().voiceEnhancement) {
                 radio::post(radio::VoiceEnhancement{true});
             }
+            radio::post(radio::MicrophoneGain{static_cast<std::int8_t>(selector.settings().micGainDb),
+                static_cast<std::int8_t>(selector.settings().fmMicGainDb)});
             const services::RoamingSettings &roaming = selector.settings().roaming;
             roamingZone = roaming.zone;
             loadRoamingSites();
