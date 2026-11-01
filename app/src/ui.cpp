@@ -6,6 +6,7 @@
 #include "audio.h"
 #include "gps.h"
 #include "radio.h"
+#include "screen_stream.h"
 #include "standby.h"
 #include "system.h"
 
@@ -159,6 +160,10 @@ LogView logView;
 
 void onLogLine(Level level, std::string_view line)
 {
+    // The screen's own drawing, streamed, would draw itself again.
+    if (line.find(" scr: ") != std::string_view::npos) {
+        return;
+    }
     logView.add(level, line);
 }
 
@@ -799,7 +804,8 @@ void useLight(Display &d)
 
 void uiMain(void *)
 {
-    Display &d = *display;
+    static ScreenStream stream(*display);
+    Display &d = stream;
     d.start();
     logView.configure(d.width() / LogFont.width, (d.height() - HeaderFont.height) / LogFont.height);
     drawStartScreen(d);
@@ -958,6 +964,10 @@ void uiMain(void *)
             showLog(d);
         } else if (view == View::KeyTest) {
             keyTest.draw(d);
+        } else if (view == View::Start) {
+            drawStartScreen(d);
+        } else if (view == View::TestPattern) {
+            drawTestPattern(d);
         }
     };
     auto show = [&](View v) {
@@ -1511,6 +1521,12 @@ void uiMain(void *)
 
     while (!os::stopRequested()) {
         Message m;
+        // Whatever the last pass drew is one picture; a whole screen when
+        // one was asked for.
+        if (stream.passDone()) {
+            redrawView();
+            stream.passDone();
+        }
         if (inbox.receive(m, RedrawStepMs)) {
             auto refreshValues = [&] {
                 if (view == View::KeyTest) {

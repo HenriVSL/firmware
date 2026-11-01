@@ -211,6 +211,15 @@ and "DeltaMM log". Open the log port with any terminal program at any
 speed; lines written before the port was opened arrive first. Type `help`
 for the console commands.
 
+For tests, `key <name> [long]` presses a key (named as on the key test or
+in the log) and `knob <steps>` turns the channel knob. `screen shot`
+writes the drawing of the whole screen to the log, and
+`tools/screen_picture/screen_picture.py <log> <out.png>` puts the picture
+together. `screen watch <s>` streams the drawing for that many seconds
+(`screen on` and `screen off` without a time limit); `--passes <dir>` then
+writes a picture after each redraw, and `--flicker` counts the pixels
+painted twice in one redraw, which show as a flash.
+
 ## Project layout
 
 | Folder | Contents |
