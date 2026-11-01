@@ -88,6 +88,10 @@ constexpr os::Ticks ReceivePollMs = 20;
 // command to it.
 constexpr os::Ticks BoardBytesMs = 2000;
 os::Ticks boardBytesUntil = 0;
+// A console command for the board, waiting for the task.
+std::array<std::uint8_t, board::AprsLinkReader::MaxCommand> boardCommand{};
+std::size_t boardCommandLength = 0;
+std::atomic<bool> boardCommandWaiting{false};
 
 // Decoding the received audio on the MCU: in APRS mode it starts once the
 // radio has listened on the mode's frequency for a moment, and stops as
@@ -491,7 +495,7 @@ void updateDecoding()
 // task's other work, so a frame's path down to the log stays short.
 [[gnu::noinline]] void pollSampler()
 {
-    static std::uint16_t chunk[256];
+    static std::uint16_t chunk[64];
     const os::Ticks start = os::nowMs();
     const os::Ticks gap = start - lastReadAt;
     lastReadAt = start;
@@ -650,14 +654,15 @@ void logBadFrame()
                            stopReceiving();
                        }
                    },
-                   [](const BoardCommand &c) {
+                   [](const BoardCommand &) {
                        if (!receiving) {
                            log::info("aprs") << "the board is off: Menu, APRS, Receive: On";
-                           return;
+                       } else {
+                           link->write(std::span(boardCommand.data(), boardCommandLength));
+                           boardBytesUntil = os::nowMs() + BoardBytesMs;
+                           log::info("aprs") << "sent " << boardCommandLength << " bytes to the board";
                        }
-                       link->write(std::span(c.bytes.data(), c.length));
-                       boardBytesUntil = os::nowMs() + BoardBytesMs;
-                       log::info("aprs") << "sent " << c.length << " bytes to the board";
+                       boardCommandWaiting.store(false);
                    },
                    [](const ModeOn &m) {
                        modeOn = m.on;
@@ -843,13 +848,16 @@ bool runCommand(std::string_view command)
     std::string_view rest(command.data() + 5, command.size() - 5);
     const std::string_view word = lib::takeWord(rest);
     if (word == "board") {
-        BoardCommand c{};
-        std::size_t length = 0;
+        if (boardCommandWaiting.load()) {
+            log::info("console") << "busy";
+            return true;
+        }
         using CommandResult = board::AprsLinkReader::CommandResult;
-        switch (board::AprsLinkReader::command(rest, c.bytes, length)) {
+        switch (board::AprsLinkReader::command(rest, boardCommand, boardCommandLength)) {
         case CommandResult::Ok:
-            c.length = static_cast<std::uint8_t>(length);
-            if (!post(c)) {
+            boardCommandWaiting.store(true);
+            if (!post(BoardCommand{})) {
+                boardCommandWaiting.store(false);
                 log::info("console") << "busy";
             }
             break;
