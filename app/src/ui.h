@@ -115,6 +115,12 @@ struct KeyLockSettings
 {
     services::KeyLockSettings settings;
 };
+/// Sets the frequency offset as Menu, Settings, Radio does (console): the
+/// nearest step to @p hz, kept.
+struct FrequencyOffset
+{
+    std::int32_t hz;
+};
 /// Logs the key lock's state and settings.
 struct KeyLockReport
 {
@@ -171,7 +177,7 @@ struct Gps
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, SetAutoRoaming, MicrophoneGain, KeyLockSettings, KeyLockReport, SelectChannel, SettingsReport, Notice, Gps>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, SetAutoRoaming, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SelectChannel, SettingsReport, Notice, Gps>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels; @p settingsStore (may

@@ -5,6 +5,7 @@
 
 #include "dmm/services/gps.h"
 
+#include <algorithm>
 #include <iterator>
 
 namespace dmm::app::ui::menu {
@@ -17,7 +18,7 @@ constexpr Row TopRows[] = {Group::Channel, Group::Roaming, Group::Gps, Group::Di
 constexpr Row ChannelRows[] = {Item::Squelch, Item::SquelchMode, Item::Power};
 constexpr Row RoamingRows[] = {Item::Roaming, Item::RoamStatus, Item::RoamZone};
 constexpr Row GpsRows[] = {Item::Gps, Item::GpsStatus, Item::GpsSystems};
-constexpr Row SettingsRows[] = {Group::Home, Group::Audio, Group::Keys, Group::Battery, Group::Clock};
+constexpr Row SettingsRows[] = {Group::Home, Group::Audio, Group::Radio, Group::Keys, Group::Battery, Group::Clock};
 constexpr Row DisplayRows[] = {Item::Backlight, Item::BacklightTime, Item::MenuHelp};
 // The key test, for bringing up a radio, only in builds that have it.
 #ifdef DMM_KEY_TEST
@@ -30,6 +31,7 @@ constexpr std::string_view ToolsAbout = "The log and the version";
 constexpr Row HomeRows[] = {Item::HomePreset, Item::HomeTop, Item::HomeClock, Item::HomeBig, Item::HomeMiddle,
     Item::HomeBeside, Item::HomeBottom, Item::HomeUpDown};
 constexpr Row AudioRows[] = {Item::DmrMicGain, Item::FmMicGain};
+constexpr Row RadioRows[] = {Item::FrequencyOffset};
 constexpr Row KeysRows[] = {Item::KeyLock, Item::AutoLock};
 constexpr Row BatteryRows[] = {Item::BatterySave};
 constexpr Row ClockRows[] = {Item::TimeZone};
@@ -40,10 +42,11 @@ constexpr GroupInfo Groups[] = {
     {"Roaming", "Moving between the roaming zone's repeaters", RoamingRows},
     {"GPS", "On or off, the fix and the satellite systems", GpsRows},
     {"Display", "Brightness, light time, help text", DisplayRows},
-    {"Settings", "Home screen, audio, keys, battery, clock", SettingsRows},
+    {"Settings", "Screen, audio, radio, keys, battery, clock", SettingsRows},
     {"Tools", ToolsAbout, ToolsRows},
     {"Home screen", "What each row of the home screen shows", HomeRows},
     {"Audio", "The microphone gain on DMR and FM", AudioRows},
+    {"Radio", "Frequency offset for a drifted reference", RadioRows},
     {"Keys", "What the key lock covers, and auto lock", KeysRows},
     {"Battery", "Battery save while the radio is quiet", BatteryRows},
     {"Clock", "The time zone", ClockRows},
@@ -64,6 +67,7 @@ constexpr ItemInfo Items[] = {
     {"Help text", "These two lines about the chosen row", Kind::Value},
     {"DMR mic gain", "Voice level sent on DMR, from the next call", Kind::Value},
     {"FM mic gain", "Voice level sent on FM, from the next call", Kind::Value},
+    {"Freq offset", "Shifts every frequency; Up and Down 500 Hz", Kind::Value},
     {"Lock covers", "What the key lock covers", Kind::Value},
     {"Auto lock", "Lock the keys after this long without use", Kind::Value},
     {"Battery save", "Sleep between checks for a signal while quiet", Kind::Value},
@@ -125,6 +129,10 @@ constexpr int ZoneLastMinutes = 14 * 60;
 constexpr int ZoneStepMinutes = 30;
 constexpr int MaxLevel = 5;
 namespace mic = services::microphone_gain;
+// What Up and Down move the frequency offset: the whole steps nearest 500 Hz.
+constexpr std::uint32_t OffsetCoarseMilliHz = 500'000;
+constexpr std::size_t OffsetCoarseSteps =
+    std::max<std::size_t>(1, (OffsetCoarseMilliHz + OffsetSteps.stepMilliHz() / 2) / OffsetSteps.stepMilliHz());
 
 std::span<const Fixed> fixedChoices(Item item)
 {
@@ -163,6 +171,14 @@ std::span<const Fixed> fixedChoices(Item item)
     default:
         return {};
     }
+}
+
+// The offset applied for a kept @p hz.
+ValueText offsetText(std::int32_t hz)
+{
+    services::FrequencyOffset offset = OffsetSteps;
+    offset.setHz(hz);
+    return offset.text();
 }
 
 // "Always", "5 s", "2 min", "1 h".
@@ -302,6 +318,7 @@ Kept keptIn(Item item)
     case Item::MenuHelp:
     case Item::DmrMicGain:
     case Item::FmMicGain:
+    case Item::FrequencyOffset:
         return Kept::Preferences;
     case Item::Squelch:
     case Item::Roaming:
@@ -393,6 +410,8 @@ std::int32_t choiceOf(Item item, const Settings &s)
         return static_cast<std::int32_t>(s.home.bottom);
     case Item::HomeUpDown:
         return static_cast<std::int32_t>(s.upDown);
+    case Item::FrequencyOffset:
+        return s.frequencyOffsetHz;
     case Item::RoamStatus:
     case Item::GpsStatus:
     case Item::Log:
@@ -482,6 +501,9 @@ void setChoice(Item item, std::int32_t value, Settings &s)
     case Item::HomeUpDown:
         s.upDown = static_cast<services::HomeUpDown>(byte);
         break;
+    case Item::FrequencyOffset:
+        s.frequencyOffsetHz = static_cast<std::int16_t>(value);
+        break;
     case Item::RoamStatus:
     case Item::GpsStatus:
     case Item::Log:
@@ -534,6 +556,8 @@ ValueText valueText(Item item, std::int32_t value)
             return t;
         }
         break;
+    case Item::FrequencyOffset:
+        return offsetText(value);
     default:
         break;
     }
@@ -614,6 +638,15 @@ bool listChoices(Item item, Choices &out, const Settings &s)
         }
         return true;
     }
+    case Item::FrequencyOffset: {
+        services::FrequencyOffset offset = OffsetSteps;
+        for (int step = -offset.maxSteps(); step <= offset.maxSteps(); ++step) {
+            offset.setSteps(step);
+            out.add(offset.hz(), offset.text().view());
+        }
+        out.setScale(OffsetCoarseSteps);
+        return true;
+    }
     default:
         break;
     }
@@ -658,7 +691,8 @@ Navigator::Step Navigator::press(Key key)
     case Key::Down: {
         // A large value goes up with Up; lists and buttons move as drawn.
         const int up = m_choosing && style() == Style::Spinner ? 1 : -1;
-        return move(key == Key::Up ? up : -up);
+        const int by = m_choosing && m_choices.coarse() > 0 ? static_cast<int>(m_choices.coarse()) : 1;
+        return move(key == Key::Up ? up * by : -up * by);
     }
     case Key::Menu:
         return select();
@@ -691,7 +725,11 @@ Navigator::Step Navigator::move(int steps)
         return Step::None;
     }
     const int from = static_cast<int>(m_choosing ? m_cursor : row());
-    const int to = ((from + steps) % n + n) % n;
+    const bool scale = m_choosing && m_choices.coarse() > 0;
+    const int to = scale ? std::clamp(from + steps, 0, n - 1) : ((from + steps) % n + n) % n;
+    if (scale && to == from) {
+        return Step::None;
+    }
     if (m_choosing) {
         m_cursor = static_cast<std::size_t>(to);
     } else {

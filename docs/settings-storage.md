@@ -28,6 +28,7 @@ The code: `services/settings_store.h` (the interface the app uses),
 | Menu help text shown or hidden (Menu > Display > Help text) | Preferences record | `Preferences` |
 | What Up and Down do on the home screen (Menu > Settings > Home screen > Up/Down) | Preferences record | `Preferences` |
 | Microphone gain on DMR and FM (Menu > Settings > Audio) | Preferences record | `Preferences` |
+| Frequency offset (Menu > Settings > Radio, console `fm offset`) | Preferences record | `Preferences` |
 
 The auto lock time shares its field with the menu exit time, in 5 s
 steps up to 60 s.

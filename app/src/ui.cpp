@@ -505,6 +505,18 @@ void logMicrophoneGain()
                     << (dmrMicGainDb ? "" : " (codeplug)") << ", FM +" << fmMicGainDb.value_or(plugFmMicGainDb) << " dB"
                     << (fmMicGainDb ? "" : " (codeplug)");
 }
+
+// The frequency offset in use: a whole step of menu::OffsetSteps.
+std::int16_t frequencyOffsetHz = 0;
+
+// The step nearest @p hz, as the menu and the preferences record hold it.
+std::int16_t offsetStep(std::int32_t hz)
+{
+    services::FrequencyOffset offset = menu::OffsetSteps;
+    offset.setHz(hz);
+    return static_cast<std::int16_t>(offset.hz());
+}
+
 struct RoamState
 {
     bool searching = false;
@@ -870,8 +882,12 @@ void uiMain(void *)
             homeUpDown = p->upDown;
             dmrMicGainDb = p->dmrMicGainDb;
             fmMicGainDb = p->fmMicGainDb;
+            frequencyOffsetHz = offsetStep(p->frequencyOffsetHz);
         }
         postMicrophoneGain();
+        if (frequencyOffsetHz != 0) {
+            radio::post(radio::FmOffset{frequencyOffsetHz});
+        }
     }
 
     View view = View::Start;
@@ -1046,6 +1062,7 @@ void uiMain(void *)
         s.fmMicGainDb = fmMicGainDb;
         s.plugDmrMicGainDb = plugDmrMicGainDb;
         s.plugFmMicGainDb = plugFmMicGainDb;
+        s.frequencyOffsetHz = frequencyOffsetHz;
         return s;
     };
     // A row's value: the setting's, or the state of what the row opens.
@@ -1211,6 +1228,7 @@ void uiMain(void *)
             p.upDown = homeUpDown;
             p.dmrMicGainDb = dmrMicGainDb;
             p.fmMicGainDb = fmMicGainDb;
+            p.frequencyOffsetHz = frequencyOffsetHz;
             settingsStore->keepPreferences(p, os::nowMs());
         }
     };
@@ -1366,6 +1384,10 @@ void uiMain(void *)
             dmrMicGainDb = s.dmrMicGainDb;
             fmMicGainDb = s.fmMicGainDb;
             postMicrophoneGain();
+        }
+        if (s.frequencyOffsetHz != was.frequencyOffsetHz) {
+            frequencyOffsetHz = s.frequencyOffsetHz;
+            radio::post(radio::FmOffset{frequencyOffsetHz});
         }
         if (channel) {
             useChannel(false);
@@ -1828,6 +1850,11 @@ void uiMain(void *)
                                refreshLockMark();
                                logLockSettings();
                            },
+                           [&](const FrequencyOffset &o) {
+                               frequencyOffsetHz = offsetStep(o.hz);
+                               radio::post(radio::FmOffset{frequencyOffsetHz});
+                               keepPreferences();
+                           },
                            [&](const KeyLockReport &) { logLockSettings(); },
                            [&](const SelectChannel &s) {
                                // Debug feature.
@@ -1876,7 +1903,8 @@ void uiMain(void *)
                                                    << (p->menuHelp ? "on" : "off") << ", up/down "
                                                    << static_cast<int>(p->upDown) << ", mic gain DMR "
                                                    << keptGainText(p->dmrMicGainDb).view() << ", FM "
-                                                   << keptGainText(p->fmMicGainDb).view();
+                                                   << keptGainText(p->fmMicGainDb).view() << ", frequency offset "
+                                                   << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view();
                                } else {
                                    log::info("ui") << "no preferences record";
                                }
