@@ -475,6 +475,8 @@ enum class MenuItem : std::uint8_t
     AprsReceive,
     MicGain,      // on DMR channels
     FmMicGain,    // on FM channels
+    AprsMode,     // the APRS mode on or off
+    AprsAudible,  // packets heard on the speaker in APRS mode
     PlugChannels, // the codeplug's books, each opens its list
     PlugZones,
     PlugContacts,
@@ -546,8 +548,8 @@ constexpr GroupInfo Groups[] = {
     {"Roaming", "Moving between repeaters", "of the roaming zone",
         {MenuItem::RoamStatus, MenuItem::Roaming, MenuItem::RoamZone}, 3},
     {"GPS", "The position and", "the GPS receiver", {MenuItem::GpsStatus, MenuItem::Gps}, 2},
-    {"APRS", "Sending the position", "and stations heard", {MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard},
-        3},
+    {"APRS", "APRS mode, sending the", "position, stations heard",
+        {MenuItem::AprsMode, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard}, 4},
     {"Settings", "How the radio is set up:", "screen, keys, clock, GPS",
         {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenAudio, MenuItem::OpenKeys, MenuItem::OpenClock,
             MenuItem::OpenGpsSettings, MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
@@ -569,8 +571,9 @@ constexpr GroupInfo Groups[] = {
         MenuItem::OpenClock},
     {"GPS", "The satellite systems", "the receiver uses", {MenuItem::GpsSystems}, 1, MenuGroup::Settings,
         MenuItem::OpenGpsSettings},
-    {"APRS", "Send power and", "receiving stations", {MenuItem::AprsPower, MenuItem::AprsReceive}, 2,
-        MenuGroup::Settings, MenuItem::OpenAprsSettings},
+    {"APRS", "Send power, the board's", "receiver, packet sound",
+        {MenuItem::AprsPower, MenuItem::AprsReceive, MenuItem::AprsAudible}, 3, MenuGroup::Settings,
+        MenuItem::OpenAprsSettings},
     {"Radio", "The radio's frequency", "correction", {MenuItem::FrequencyOffset}, 1, MenuGroup::Settings,
         MenuItem::OpenRadioSettings},
     {"Codeplug editor", "Every record and value", "of the codeplug, edited",
@@ -667,11 +670,15 @@ ItemAbout itemAbout(MenuItem item)
     case MenuItem::AprsPower:
         return {"Transmit power for", "sending the position"};
     case MenuItem::AprsReceive:
-        return {"Listen for APRS stations", "(heard list under P2)"};
+        return {"The APRS board listens", "too (heard list: P2)"};
     case MenuItem::MicGain:
         return {"Transmit voice level on", "DMR; Codeplug: its level"};
     case MenuItem::FmMicGain:
         return {"Transmit voice level on", "FM; Codeplug: its level"};
+    case MenuItem::AprsMode:
+        return {"One receiver: APRS mode", "listens only on APRS"};
+    case MenuItem::AprsAudible:
+        return {"In APRS mode: packets", "heard on the speaker"};
     case MenuItem::PlugChannels:
         return {"Every channel: names,", "frequencies, DMR, tones"};
     case MenuItem::PlugZones:
@@ -810,6 +817,17 @@ lib::StaticString<8> gainText(int db)
     s << '+' << db << " dB";
     return s;
 }
+// The dedicated receive mode; the codeplug's APRS frequency it holds the
+// receiver at (0: none); whether packets open the speaker meanwhile; and
+// the mode the preferences turn on at start.
+services::DedicatedModeState modeState;
+std::uint32_t aprsFrequencyHz = 0;
+bool aprsWide = true;
+bool aprsAudible = false;
+services::DedicatedMode modeAtStart = services::DedicatedMode::Off;
+// The mode's home screen texts, and its hint bar.
+services::aprs::HomeRows modeRows;
+lib::StaticString<40> modeKeys;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -1251,6 +1269,7 @@ void uiMain(void *)
 
     quickKeys << keyText(Key::Menu) << "  " << keyText(Key::Front1) << " Zone  " << keyText(Key::Front2) << " Log  "
               << keyText(Key::Hash) << " VFO";
+    modeKeys << keyText(Key::Menu) << "  " << keyText(Key::Front2) << " Log  " << keyText(Key::Ptt) << " Beacon";
 
     // The codeplug: settings, and the channel the radio starts on.
     if (codeplug != nullptr) {
@@ -1274,6 +1293,8 @@ void uiMain(void *)
                 aprsReceive = p->aprsReceive;
                 micGainDb = p->micGainDb;
                 fmMicGainDb = p->fmMicGainDb;
+                aprsAudible = p->aprsAudible;
+                modeAtStart = p->mode;
                 offsetKhz = p->frequencyOffsetHz / 1000;
                 radio::post(radio::FrequencyOffset{p->frequencyOffsetHz});
                 if (!aprsReceive) {
@@ -1285,6 +1306,8 @@ void uiMain(void *)
                 beaconIntervalS = a->beaconIntervalS;
                 beaconPower = a->power;
                 aprsStation = a->callsign[0] != '\0';
+                aprsFrequencyHz = a->frequencyHz;
+                aprsWide = a->wide;
                 aprs::setStation(*a);
             }
             if (selector.settings().voiceEnhancement) {
@@ -1584,7 +1607,8 @@ void uiMain(void *)
             aprs::HeardStation s;
             if (i >= heardShownCount || !aprs::heardStation(heardCalls[i], s)) {
                 const bool empty = row == 0 && heardShownCount == 0;
-                drawLogRow(d, row, {}, empty ? (aprsReceive ? "Nothing yet" : "Receive is off") : "", palette::Dim);
+                drawLogRow(d, row, {}, empty ? (aprsReceive || modeState.on() ? "Nothing yet" : "Receive is off") : "",
+                    palette::Dim);
                 continue;
             }
             const std::uint32_t agoS = (now - s.heardAtMs) / 1000;
@@ -1771,6 +1795,14 @@ void uiMain(void *)
             value << gainText(set.value_or(dmr ? plugMicGainDb : plugFmMicGainDb)).view();
             break;
         }
+        case MenuItem::AprsMode:
+            label = "APRS mode";
+            value << (modeState.mode() == services::DedicatedMode::Aprs ? "On" : "Off");
+            break;
+        case MenuItem::AprsAudible:
+            label = "Hear packets";
+            value << (aprsAudible ? "On" : "Off");
+            break;
         case MenuItem::PlugChannels:
         case MenuItem::PlugZones:
         case MenuItem::PlugContacts:
@@ -1849,6 +1881,17 @@ void uiMain(void *)
         if (menuAtGroups) {
             about1 = Groups[menuRow].about1;
             about2 = Groups[menuRow].about2;
+        } else if (g.items[menuRow] == MenuItem::AprsMode) {
+            // The mode takes the one receiver: say where it listens.
+            uptime.clear();
+            if (aprsFrequencyHz != 0) {
+                uptime << "listens only on " << aprsFrequencyHz / 1'000'000 << '.'
+                       << lib::zeroPadded(aprsFrequencyHz / 1000 % 1000, 3);
+            } else {
+                uptime << "needs an APRS frequency";
+            }
+            about1 = itemAbout(MenuItem::AprsMode).line1;
+            about2 = uptime.view();
         } else if (g.items[menuRow] == MenuItem::Version) {
             uptime.clear();
             uptime << "up " << os::nowMs() / 60'000 << " min";
@@ -1913,7 +1956,9 @@ void uiMain(void *)
         return view == View::RoamStatus ? "Menu: search   Exit: back" : "Menu: use   Exit: back";
     };
     // The working screen is up, not a call or transmit screen over it.
-    auto workingScreen = [&] { return view == View::Standby && !(transmitting && transmitCall) && !heard.shown; };
+    auto workingScreen = [&] {
+        return view == View::Standby && !(transmitting && transmitCall) && !heard.shown && !modeState.on();
+    };
     // The codeplug editor's screens. Their texts live in plugTexts.
     auto plugText = [](std::size_t k) { return plug::Text(plugTexts[k], plug::TextBytes); };
     auto plugView = [](std::size_t k) { return std::string_view(plugTexts[k]); };
@@ -2144,6 +2189,43 @@ void uiMain(void *)
         drawMenuScreen(d, title.view(), plugSaveRow, count, rows, n, static_cast<int>(plugSaveRow - first), was.view(),
             changes.view(), "Menu: save Exit: edit #: drop");
     };
+    // The dedicated mode's home screen, from the heard list, the GPS and
+    // the aprs task.
+    auto modeScreen = [&] {
+        static aprs::HeardStation last;
+        services::aprs::HomeInput in;
+        in.frequencyHz = modeState.lock().hz;
+        if (aprs::heardStation(0, last)) {
+            in.call = last.call;
+            in.hasPosition = last.hasPosition;
+            in.latitudeE7 = last.latitudeE7;
+            in.longitudeE7 = last.longitudeE7;
+            in.text = last.text;
+            in.heardAgoS = (os::nowMs() - last.heardAtMs) / 1000;
+        }
+        in.fix = gpsState.fix.valid;
+        in.ourLatitudeE7 = gpsState.fix.latitudeE7;
+        in.ourLongitudeE7 = gpsState.fix.longitudeE7;
+        in.stations = aprs::heardCount();
+        const aprs::ReceiveView received = aprs::receiveView();
+        in.packets = received.packets;
+        in.decoding = received.decoding;
+        in.beacon = aprs::beaconStatus();
+        modeRows = services::aprs::homeRows(in);
+        ModeScreen m;
+        m.top = modeRows.top.view();
+        m.big = modeRows.big.view();
+        m.panel = modeRows.panel.view();
+        m.panelRight = modeRows.panelRight.view();
+        m.leftLabel = "STN";
+        m.left = modeRows.stations.view();
+        m.rightLabel = "PKT";
+        m.right = modeRows.packets.view();
+        m.rightWarn = modeRows.decoderIdle;
+        m.bottom = modeRows.bottom.view();
+        m.keys = modeKeys.view();
+        return m;
+    };
     auto redrawView = [&] {
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
@@ -2151,7 +2233,10 @@ void uiMain(void *)
         const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Heard ||
             view == View::Station || view == View::Activity;
         barHeader(radioScreen);
-        if (view == View::Standby && transmitting && transmitCall) {
+        if (view == View::Standby && modeState.on()) {
+            standby.drawMode(d, standbyState(), modeScreen());
+            drawBattery(d);
+        } else if (view == View::Standby && transmitting && transmitCall) {
             standby.drawTransmit(d, standbyState(), transmitInfo());
             drawBattery(d);
         } else if (view == View::Activity) {
@@ -2290,6 +2375,12 @@ void uiMain(void *)
         } else {
             show(View::Activity);
         }
+    };
+    // The dedicated mode's own list: the stations heard, newest first.
+    auto openModeList = [&] {
+        logPage = 2;
+        heardFromMenu = false;
+        openHeard({});
     };
     auto useChannel = [&] {
         if (channels == nullptr || !channels->current()) {
@@ -2935,6 +3026,18 @@ void uiMain(void *)
             menuValue.select(set.value_or(PlugGain));
             break;
         }
+        case MenuItem::AprsMode:
+            menuValue.open("APRS mode");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(modeState.on() ? 1 : 0);
+            break;
+        case MenuItem::AprsAudible:
+            menuValue.open("Hear packets");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(aprsAudible ? 1 : 0);
+            break;
         case MenuItem::Count:
             return;
         }
@@ -3008,6 +3111,8 @@ void uiMain(void *)
             p.aprsReceive = aprsReceive;
             p.micGainDb = micGainDb;
             p.fmMicGainDb = fmMicGainDb;
+            p.mode = modeState.mode();
+            p.aprsAudible = aprsAudible;
             settingsStore->keepPreferences(p, os::nowMs());
         }
     };
@@ -3017,6 +3122,47 @@ void uiMain(void *)
             const Channel &c = *channels->current();
             settingsStore->keepChannel(channels->channelIndex(), c.power, c.squelchMode, os::nowMs());
         }
+    };
+    // Turns a dedicated mode on (or Off): the radio holds the receiver at
+    // the mode's frequency or gives it back to the channel, and the aprs
+    // task decodes or stops. False if the mode has no frequency.
+    auto setMode = [&](services::DedicatedMode mode, bool keep) {
+        using Change = services::DedicatedModeState::Change;
+        switch (modeState.turnOn(mode, services::ReceiverLock{aprsFrequencyHz, aprsWide})) {
+        case Change::NoFrequency:
+            log::warning("ui") << "APRS mode refused: the codeplug has no APRS frequency";
+            return false;
+        case Change::Unchanged:
+            return true;
+        case Change::TurnedOn:
+        case Change::Moved: {
+            const services::ReceiverLock &l = modeState.lock();
+            entryLength = 0;
+            heard.shown = false;
+            radio::post(radio::LockReceiver{true, l.hz, l.wide, aprsAudible});
+            aprs::post(aprs::ModeOn{true, l.hz});
+            log::info("ui") << services::modeName(modeState.mode()) << " mode on";
+            break;
+        }
+        case Change::TurnedOff:
+            radio::post(radio::LockReceiver{false, 0, true, false});
+            aprs::post(aprs::ModeOn{false, 0});
+            log::info("ui") << "dedicated mode off";
+            break;
+        }
+        if (keep) {
+            keepPreferences();
+        }
+        return true;
+    };
+    // The mode from the menu or the console: the home screen shows the
+    // change; a refusal is told over the screen it came from.
+    auto chooseMode = [&](services::DedicatedMode mode) {
+        if (setMode(mode, true)) {
+            show(View::Standby);
+            return true;
+        }
+        return false;
     };
     // The value chosen in the menu takes effect at once and is kept in the
     // codeplug; roaming off lasts only until restart.
@@ -3178,6 +3324,20 @@ void uiMain(void *)
             postMicrophoneGain();
             keepPreferences();
             break;
+        case MenuItem::AprsMode:
+            if (!chooseMode(v == 1 ? services::DedicatedMode::Aprs : services::DedicatedMode::Off)) {
+                openGroup(menuGroup, false);
+                notice("No APRS frequency");
+            }
+            return;
+        case MenuItem::AprsAudible:
+            aprsAudible = v == 1;
+            if (modeState.on()) {
+                const services::ReceiverLock &l = modeState.lock();
+                radio::post(radio::LockReceiver{true, l.hz, l.wide, aprsAudible});
+            }
+            keepPreferences();
+            break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
         case MenuItem::PlugChannels:
@@ -3294,6 +3454,31 @@ void uiMain(void *)
                 show(View::Standby);
             }
             return;
+        }
+        // In a dedicated mode the channel waits: Menu opens the mode's group,
+        // Up and Down its list, and keys that would change the channel are
+        // refused.
+        if (modeState.on() && view == View::Standby) {
+            using Use = services::DedicatedModeState::KeyUse;
+            const Use use = modeState.keyUse(key);
+            if (use == Use::List && step) {
+                openModeList();
+                return;
+            }
+            if (use == Use::Refused) {
+                if (press) {
+                    notice("In APRS mode");
+                }
+                return;
+            }
+            if (press && key == Key::Menu) {
+                menuItem = MenuItem::AprsMode;
+                openGroup(MenuGroup::Aprs, false);
+                return;
+            }
+            if (use != Use::Usual) {
+                return;
+            }
         }
         // A key on the call screen goes back to standby; Exit does only that.
         if (press && heard.shown) {
@@ -3414,6 +3599,8 @@ void uiMain(void *)
             stationShown = static_cast<std::size_t>(
                 std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
             drawHeard();
+        } else if (view == View::Standby && modeState.on()) {
+            openModeList();
         } else if (view == View::Standby) {
             entryLength = 0;
             if (channels->vfoMode()) {
@@ -3483,7 +3670,20 @@ void uiMain(void *)
                                    if (e.type == Type::Press || e.type == Type::Release) {
                                        const bool down = e.type == Type::Press;
                                        const Verdict v = keyLock.ptt(down, lockContext());
-                                       if (v == Verdict::Pass) {
+                                       using Use = services::DedicatedModeState::KeyUse;
+                                       const Use use = modeState.keyUse(Key::Ptt);
+                                       if (v == Verdict::Pass && use == Use::Action) {
+                                           // One beacon now; never voice.
+                                           if (down) {
+                                               log::info("ui") << "PTT: beacon";
+                                               aprs::post(aprs::BeaconNow{});
+                                               notice("Beacon queued");
+                                           }
+                                       } else if (v == Verdict::Pass && use == Use::Refused) {
+                                           if (down) {
+                                               notice("Mode is on");
+                                           }
+                                       } else if (v == Verdict::Pass) {
                                            radio::post(radio::Ptt{down});
                                        } else {
                                            log::info("ui") << "PTT refused: keys locked";
@@ -3589,7 +3789,10 @@ void uiMain(void *)
                            },
                            [&](const Receiving &r) {
                                receiving = r.on;
-                               useLight(d);
+                               // In a dedicated mode packets come all day.
+                               if (!modeState.on()) {
+                                   useLight(d);
+                               }
                                refreshLockMark();
                            },
                            [&](const DmrCall &c) {
@@ -3807,6 +4010,15 @@ void uiMain(void *)
                            [&](const AprsHeard &) {
                                if (view == View::Heard && !noticeShown) {
                                    reopenHeard();
+                               } else if (view == View::Standby && modeState.on() && !noticeShown) {
+                                   redrawView();
+                               }
+                           },
+                           [&](const SetMode &s) {
+                               if (!hardwareUp() || channels == nullptr) {
+                                   log::info("ui") << "mode refused: the radio is not ready";
+                               } else if (!chooseMode(s.mode)) {
+                                   notice("No APRS frequency");
                                }
                            },
                            [&](const AprsProblem &p) {
@@ -3843,6 +4055,11 @@ void uiMain(void *)
             drawStarting(d);
         }
         if (view == View::Start && startShown && radio::ready()) {
+            // A mode kept over the restart holds the receiver before the
+            // channel is given, so the radio does not tune there first.
+            if (modeAtStart != services::DedicatedMode::Off && channels != nullptr) {
+                setMode(modeAtStart, false);
+            }
             show(channels != nullptr ? View::Standby : View::KeyTest);
             setBatterySave(batterySave);
             gps::post(gps::Systems{gpsSystems});
@@ -3854,7 +4071,7 @@ void uiMain(void *)
         }
         // The backlight goes off after its time, never during a signal or
         // a transmission.
-        if (backlightLit && backlightS != 0 && !transmitting && !receiving && view != View::Message &&
+        if (backlightLit && backlightS != 0 && !transmitting && (!receiving || modeState.on()) && view != View::Message &&
             os::nowMs() - lastLightUse >= static_cast<os::Ticks>(backlightS) * 1000) {
             backlightLit = false;
             d.setBacklight(0);
@@ -3902,6 +4119,15 @@ void uiMain(void *)
             } else if (heard.active && second != lastSecond) {
                 lastSecond = second;
                 standby.drawCallTime(d, callInfo());
+            }
+        }
+        // A dedicated mode's home screen: ages and the beacon countdown each
+        // second.
+        if (view == View::Standby && modeState.on() && !noticeShown) {
+            const os::Ticks second = os::nowMs() / 1000;
+            if (second != lastSecond) {
+                lastSecond = second;
+                standby.drawMode(d, standbyState(), modeScreen());
             }
         }
         // The home screen's live rows: the signal twice a second, the last

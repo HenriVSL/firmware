@@ -16,9 +16,9 @@ namespace board {
 class BoardAudioSampler
 {
 public:
-    /// Samples in the ring: about 0.2 s at 9600 Hz, the longest a reader
+    /// Samples in the ring: about 0.4 s at 9600 Hz, the longest a reader
     /// may wait between reads.
-    static constexpr std::size_t RingSamples = 2048;
+    static constexpr std::size_t RingSamples = 4096;
 
     bool start(std::uint32_t rateHz);
     std::size_t read(std::span<std::uint16_t> out);

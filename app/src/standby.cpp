@@ -4,10 +4,10 @@
 #include "standby.h"
 
 #include "dmm/lib/format.h"
+#include "dmm/services/aprs_home.h"
 #include "dmm/services/font.h"
 
 #include <algorithm>
-#include <cmath>
 #include <initializer_list>
 #include <iterator>
 #include <utility>
@@ -483,6 +483,39 @@ void StandbyScreen::draw(Display &d, const ChannelSelector &sel, const StandbySt
     band(d, h - HintH + 1, HintH - 1, {{3, h - HintH + 2, hints, &Small, p::Dim}});
 }
 
+void StandbyScreen::drawMode(Display &d, const StandbyState &s, const ModeScreen &m)
+{
+    const int w = d.width();
+    const int h = d.height();
+    drawStatus(d, s);
+    band(d, LabelY, NameY - LabelY, {{4, LabelY + 4, m.top, &Small, p::Beacon}}, p::Ground, 0, RightX);
+    drawClock(d, s);
+
+    const int nameH = PanelY - NameY - 1;
+    const Font &bf = textWidth(Large, m.big) <= w - 8 ? Large : Medium;
+    band(d, NameY, nameH, {{4, NameY + (Large.height - bf.height) / 2 + 1, m.big, &bf, p::Text}});
+    d.fillRect(0, PanelY - 1, w, 1, p::Rule);
+
+    band(d, PanelY, SettingsY - PanelY,
+        {{4, PanelY + 5, m.panel, &Body, p::Text},
+            {w - 4 - textWidth(Body, m.panelRight), PanelY + 5, m.panelRight, &Body, p::Dim}},
+        palette::Panel);
+
+    band(d, SettingsY, InfoY - SettingsY - 1,
+        {{4, SettingsY + 5, m.leftLabel, &Small, p::Dim}, {26, SettingsY + 3, m.left, &Body, p::Text}}, p::Ground, 0,
+        RightX);
+    band(d, SettingsY, InfoY - SettingsY - 1,
+        {{RightX, SettingsY + 5, m.rightLabel, &Small, p::Dim},
+            {RightX + 22, SettingsY + 3, m.right, &Body, m.rightWarn ? p::Warn : p::Text}},
+        p::Ground, RightX);
+    d.fillRect(0, InfoY - 1, w, 1, p::Rule);
+
+    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, m.bottom, &Small, p::Dim}});
+
+    d.fillRect(0, h - HintH, w, 1, p::Rule);
+    band(d, h - HintH + 1, HintH - 1, {{3, h - HintH + 2, m.keys, &Small, p::Dim}});
+}
+
 // The call and transmit screens' rows.
 constexpr int StateY = StandbyScreen::StatusH; // "RECEIVING" or "TRANSMITTING"
 constexpr int WhoY = StateY + 16;              // the caller or the talkgroup, large
@@ -682,74 +715,18 @@ void drawGpsScreen(Display &d, const GpsState &gps, bool full)
     line(d, Small, 3, h - StandbyScreen::HintH + 2, w - 6, "Exit: back", p::Dim);
 }
 
-namespace {
-
-struct Path
-{
-    float metres;
-    float bearingDeg;
-};
-
-// Distance and bearing between two positions, on a flat map around them:
-// within a few metres per kilometre at the ranges radio reaches.
-Path pathBetween(std::int32_t lat1E7, std::int32_t lon1E7, std::int32_t lat2E7, std::int32_t lon2E7)
-{
-    constexpr float MetresPerE7 = 6'371'000.0f * 3.14159265f / 180.0f / 1e7f;
-    const float meanLat = (static_cast<float>(lat1E7) + static_cast<float>(lat2E7)) / 2.0f * (3.14159265f / 180.0f / 1e7f);
-    const float north = static_cast<float>(lat2E7 - lat1E7) * MetresPerE7;
-    // Across the date line the short way round.
-    std::int64_t dLon = static_cast<std::int64_t>(lon2E7) - lon1E7;
-    if (dLon > 1'800'000'000) {
-        dLon -= 3'600'000'000;
-    } else if (dLon < -1'800'000'000) {
-        dLon += 3'600'000'000;
-    }
-    const float east = static_cast<float>(dLon) * MetresPerE7 * std::cos(meanLat);
-    float bearing = std::atan2(east, north) * (180.0f / 3.14159265f);
-    if (bearing < 0) {
-        bearing += 360;
-    }
-    return {std::sqrt(north * north + east * east), bearing};
-}
-
-const char *compassPoint(float degrees)
-{
-    constexpr const char *Points[] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
-    return Points[static_cast<int>((degrees + 22.5f) / 45.0f) % 8];
-}
-
-} // namespace
-
 lib::StaticString<10> distanceText(const GpsState &gps, const aprs::HeardStation &s)
 {
-    lib::StaticString<10> t;
     if (!gps.fix.valid || !s.hasPosition) {
-        return t;
+        return {};
     }
-    const Path path = pathBetween(gps.fix.latitudeE7, gps.fix.longitudeE7, s.latitudeE7, s.longitudeE7);
-    if (path.metres < 1000) {
-        t << static_cast<int>(path.metres) << " m";
-    } else if (path.metres < 100'000) {
-        const int tenths = static_cast<int>(path.metres / 100);
-        t << tenths / 10 << '.' << tenths % 10 << " km";
-    } else {
-        t << static_cast<int>(path.metres / 1000) << " km";
-    }
-    return t;
+    return services::aprs::distanceText(
+        services::aprs::pathBetween(gps.fix.latitudeE7, gps.fix.longitudeE7, s.latitudeE7, s.longitudeE7).metres);
 }
 
 lib::StaticString<8> ageText(std::uint32_t thenMs, std::uint32_t nowMs)
 {
-    lib::StaticString<8> t;
-    const std::uint32_t s = (nowMs - thenMs) / 1000;
-    if (s < 60) {
-        t << s << " s";
-    } else if (s < 3600) {
-        t << s / 60 << " min";
-    } else {
-        t << s / 3600 << " h";
-    }
-    return t;
+    return services::aprs::ageText((nowMs - thenMs) / 1000);
 }
 
 void drawAprsStation(Display &d, const aprs::HeardStation &s, const GpsState &gps, std::uint32_t nowMs)
@@ -777,8 +754,10 @@ void drawAprsStation(Display &d, const aprs::HeardStation &s, const GpsState &gp
     value(s.hasPosition ? longitudeText(s.longitudeE7).view() : "-");
     lib::StaticString<24> v;
     if (gps.fix.valid && s.hasPosition) {
-        const Path path = pathBetween(gps.fix.latitudeE7, gps.fix.longitudeE7, s.latitudeE7, s.longitudeE7);
-        v << distanceText(gps, s).view() << ' ' << static_cast<int>(path.bearingDeg + 0.5f) % 360 << ' ' << compassPoint(path.bearingDeg);
+        const services::aprs::Path path =
+            services::aprs::pathBetween(gps.fix.latitudeE7, gps.fix.longitudeE7, s.latitudeE7, s.longitudeE7);
+        v << distanceText(gps, s).view() << ' ' << static_cast<int>(path.bearingDeg + 0.5f) % 360 << ' '
+          << services::aprs::compassPoint(path.bearingDeg);
     } else {
         v << "-";
     }
