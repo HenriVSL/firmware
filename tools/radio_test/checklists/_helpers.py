@@ -213,7 +213,10 @@ def channel(spec):
     in every text on the screen, so any layout will do."""
     def action(ctx):
         r = ctx.radio
-        zone, _, name = spec.format(**ctx.params).rpartition('/')
+        # The zone up to the first '/'; names may hold spaces and '/'.
+        zone, _, name = spec.format(**ctx.params).partition('/')
+        if not name:
+            zone, name = '', zone
         r.home()
         if zone:
             r.key('P1')

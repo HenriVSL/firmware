@@ -57,9 +57,12 @@ def count_kept(n, seconds=5.0):
 
 
 def read_while_changing(ctx):
-    """dmrconf reads the codeplug while the console changes a setting:
-    the write waits for the read, then goes in."""
+    """A setting changed, then about 2 s later a QDMR read (about 2 s
+    long): the write waits for the read (`settings wait`), then goes in
+    right after it; a second change is kept 3 s later as usual."""
     r = ctx.radio
+    changed = r.cmd('light time 20')
+    time.sleep(2.0)
     out = {}
 
     def read():
@@ -68,16 +71,30 @@ def read_while_changing(ctx):
         except Exception as e:
             out['error'] = str(e)
 
+    started = r.mark()
     t = threading.Thread(target=read)
     t.start()
-    time.sleep(2.0)
-    r.cmd('light time 20')
     t.join(600)
+    ended = r.mark()
     if 'error' in out:
         return False, 'the read failed: %s' % out['error']
-    line = r.wait(r'\bsettings wait: the PC is programming', 1, ctx.since)
-    kept = r.wait(r'\bsettings kept in the codeplug', 10, ctx.since)
-    return True, '`%s`; then `%s`' % (line.text, kept.text)
+    waits = [l for l in r.find(r'\bsettings wait: the PC is programming', changed) if started <= l.seq <= ended]
+    if not waits:
+        return False, 'no `settings wait` while the read ran'
+    try:
+        kept = r.wait(r'\bsettings kept in the codeplug', 4.0, ended)
+    except Failed as e:
+        return False, '`%s`; but after the read: %s' % (waits[0].text, e)
+    early = [l for l in r.find(r'\bsettings kept in the codeplug', changed) if l.seq < ended]
+    if early:
+        return False, 'kept during the read: `%s`' % early[0].text
+    again = r.cmd('light time 30')
+    try:
+        second = r.wait(r'\bsettings kept in the codeplug', 6.0, again)
+    except Failed as e:
+        return False, 'light time 30: %s' % e
+    return True, '`%s` during the read; `%s` right after it; `%s` after light time 30' % (
+        waits[0].text, kept.text, second.text)
 
 
 BEFORE = [
@@ -153,7 +170,7 @@ STEPS = [
              lambda ctx: (ctx.radio.goto('Roaming/Roaming').value == 'Off', ctx.radio.where().summary())],
          human='The screen is dimmer (level 2) and on the zone and channel of step 9; the channel of step 7 has '
                'its new power and squelch type.'),
-    Step(11, 'A codeplug read waits out a setting', radio_only='no QDMR port', changes=True, timeout=600,
+    Step(11, 'A codeplug read waits for a setting to be kept', radio_only='no QDMR port', changes=True, timeout=600,
          expect=[read_while_changing]),
     Step(12, 'QDMR round trip: read', radio_only='no QDMR port', do=['qdmr read a.yaml'], expect=[
         settings_has(r'squelch', 'codeplug')]),

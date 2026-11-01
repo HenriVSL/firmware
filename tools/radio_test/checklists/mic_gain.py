@@ -21,7 +21,6 @@ SOURCE = 'docs/hw-tests/mic-gain.md (feat/mic-gain-db)'
 PARAMS = {
     'dmr': 'UHF/DMR repeater',
     'fm': 'UHF/Calling 70cm',
-    'other': 'VHF/Calling 2m',
     'parrot': '',
 }
 
@@ -57,8 +56,9 @@ def fm_register(value):
     """Expectation: the FM transceiver's voice gain register reads @p value
     on the FM channel, selected again so the gain is applied."""
     def expectation(ctx):
-        channel('{other}')(ctx)
         channel('{fm}')(ctx)
+        ctx.radio.knob(1)
+        ctx.radio.knob(-1)
         line = ctx.radio.ask('fm 41', r'register 41 = ')
         return value in line.text, '`%s` (want %s)' % (line.text, value)
     return expectation
@@ -129,9 +129,9 @@ STEPS = [
         gain_is(r'DMR \+30 dB, FM \+8 dB$')], undo=['qdmr write mic-a.yaml']),
     Step(10, 'Back to the codeplug\'s levels', do=['home', 'cmd mic gain dmr codeplug', 'cmd mic gain fm codeplug'],
          expect=[gain_is(r'DMR \+\d+ dB \(codeplug\), FM \+\d+ dB \(codeplug\)$')]),
-    Step('10b', 'The levels written in step 9', radio_only='no QDMR port', expect=[
+    Step('10b', 'The levels written in step 9', radio_only='no QDMR port', after=['9'], expect=[
         gain_is(r'DMR \+12 dB \(codeplug\), FM \+20 dB \(codeplug\)$')]),
-    Step(11, 'QDMR reads the same levels', radio_only='no QDMR port', do=['qdmr read mic-b.yaml'], expect=[
+    Step(11, 'QDMR reads the same levels', radio_only='no QDMR port', after=['9'], do=['qdmr read mic-b.yaml'], expect=[
         yaml_has('mic-b.yaml', {'micGain': 3, 'fmMicGain': 7})]),
     Step(12, 'The menu shows Plug +N dB', do=['goto Settings/Audio/DMR mic gain'], expect=[
         r'screen ^DMR mic gain\nPlug \+\d+ dB\nFM mic gain\nPlug \+\d+ dB$']),

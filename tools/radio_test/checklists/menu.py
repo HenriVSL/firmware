@@ -143,7 +143,8 @@ STEPS = [
         remember('squelch_19'), 'keys Menu Down Menu'], expect=[
         log_is(lambda p: r'\bui: squelch %d\b' % ((level(p['squelch_19']) - 1) % 6)), standby]),
     Step(20, 'P1: the zone list in the same style', do=[
-        'home', 'key P1', 'shot zones', 'check title ^Zone$', 'check kind ^list$', 'check hint ^Menu: use   Exit: back$',
+        'home', 'key P1', 'shot zones', 'check title ^Zone$', 'check kind ^list$',
+        'check hint ^Menu: use   Exit: back$',
         'key Exit'], expect=[standby]),
     Step(21, 'Everything drawn in place: no blank, no flash', timeout=8, do=[
         'home', press_while_watching(12, [

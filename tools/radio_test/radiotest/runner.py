@@ -27,8 +27,8 @@ Context:
   watch <s>           stream the screen for s seconds (for `flicker`)
   qdmr read <file> | qdmr write <file> | qdmr diff <a> <b>
                       (a write skips the step without --allow-qdmr-write;
-                      the diff leaves out the changes QDMR 0.15.1 always
-                      makes, and reports them as a quirk)
+                      the diff leaves out the changes a QDMR write is
+                      known to make, and reports them as a quirk)
   dmm-radio <args>    the flash tool; its output is kept
 
 Expectations (expect) are strings, or callables taking the Context and
@@ -66,7 +66,7 @@ from .radio import Failed, SafetyError, SETTING_LINES, Skipped
 
 class Step:
     def __init__(self, id, title, do=(), expect=(), undo=(), human=None, transmit=False, radio_only=None,
-                 changes=False, timeout=5.0, undo_now=False):
+                 changes=False, timeout=5.0, undo_now=False, after=()):
         self.id = str(id)
         self.title = title
         self.do = list(do)
@@ -80,6 +80,9 @@ class Step:
         self.changes = changes
         self.timeout = timeout
         self.undo_now = undo_now
+        # Steps that must have passed in this run, else this one is
+        # skipped.
+        self.after = [str(a) for a in after]
 
 
 class Result:
@@ -173,8 +176,8 @@ def run_action(ctx, action):
             ctx.last_output = r.qdmr_read(files[0])
         elif sub == 'write':
             if not ctx.allow_qdmr_write:
-                raise Skipped('QDMR writes need --allow-qdmr-write (each one lowers the radio\'s maximum speaker '
-                              'volume and may turn APRS beacons on)')
+                raise Skipped('QDMR writes need --allow-qdmr-write (a write puts the codeplug back as QDMR '
+                              'reads it, which may change settings)')
             ctx.last_output = r.qdmr_write(files[0])
         elif sub == 'diff':
             diff = r.yaml_diff(files[0], files[1])
@@ -352,6 +355,11 @@ class Runner:
             return res
         if step.radio_only and self.radio.sim:
             res.status, res.reason = 'skipped', 'sim: ' + step.radio_only
+            return res
+        passed = {r.step.id for r in self.results if r.status == 'pass'}
+        missing = [a for a in step.after if a not in passed]
+        if missing:
+            res.status, res.reason = 'skipped', 'needs step %s, which did not pass' % ', '.join(missing)
             return res
         guard = self.radio.guard
         guard.step_allows = step.transmit

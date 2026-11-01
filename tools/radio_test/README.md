@@ -69,8 +69,10 @@ tools/radio_test/radio_test.py cmd settings
 - Transmit steps are skipped without `--allow-transmit`, and listed for
   the human.
 - QDMR writes are skipped (the step reports why) unless the run has
-  `--allow-qdmr-write`: each write lowers the radio's maximum speaker
-  volume by one and may turn APRS beacons on again.
+  `--allow-qdmr-write`: a write puts back the codeplug as QDMR reads it,
+  which may change settings QDMR does not round-trip (with older QDMR
+  builds the maximum speaker volume and APRS beacons). Steps that need a
+  write's result (`after=['9']`) are skipped with it.
 - One program per port: the run stops at the start when another process
   has the log port open, naming its PID, since a second reader takes
   lines away.
@@ -127,11 +129,13 @@ the screen while pressing keys, check the `settings` lines).
 
 - QDMR: `qdmr read|write <file>` run `dmrconf ... -D <data port> -R
   d878uv2` with the data port (`*DeltaMM*-if00`) by its device name;
-  `qdmr diff a b` compares two YAML files. The changes QDMR 0.15.1
-  always makes on a write and read back (`maxSpeakerVolume` one lower,
-  an APRS `period: <n> s` added) are reported as a QDMR quirk; anything
-  else fails `nodiff`. The binary is
-  `~/Documents/AnytoneSoftware/qdmr/build-0.15.1/cli/dmrconf`.
+  `qdmr diff a b` compares two YAML files. The changes a write and read
+  back is known to make are reported as a QDMR quirk, anything else fails
+  `nodiff`: `backlightDurationRX` from seconds to `infinite`, and with
+  the older `build-0.15.1` also `maxSpeakerVolume` one lower and an APRS
+  `period: <n> s` added. The binary is
+  `~/Documents/AnytoneSoftware/qdmr-release/build/cli/dmrconf` (the
+  round-trip fixes), or `$DMRCONF`.
 - `dmm-radio <args>` runs `build/host/tools/dmm_radio/dmm-radio`, or
   `$DMM_RADIO`.
 - Pictures use `tools/screen_picture/screen_picture.py`, imported.

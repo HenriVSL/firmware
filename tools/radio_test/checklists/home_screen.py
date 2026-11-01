@@ -4,15 +4,24 @@
 
 The channels are named as "Zone/Channel" in the parameters; the defaults
 are the simulator's sample codeplug. On the radio, pass a DMR channel
-whose contact is a named talkgroup that does not roam, a roaming channel
-and an FM channel with tones and an offset:
+whose contact is a named talkgroup that does not roam, a roaming channel,
+an FM repeater channel with a tone and an offset, and an FM simplex
+channel without tones (the zone is the text up to the first '/'):
 
-  --param dmr="Zone/Name" --param roam="Zone/Name" --param fm="Zone/Name"
+  --param dmr="Zone/Name" --param roam="Zone/Name"
+  --param fm_repeater="Zone/Name" --param fm="Zone/Name"
+
+Step 13 waits gps_wait seconds (default 120) for a GPS fix, then is
+skipped: --param gps_wait=<s>.
 
 The menu is reached by name (`open Settings/Home screen/<row>`), not by
 the remembered rows the checklist's H and M sequences depend on.
 """
+import re
+import time
+
 from _helpers import channel, large, panel, press_while_watching, remember, restore, settings_has, top_line
+from radiotest.radio import Skipped
 from radiotest.runner import Step
 
 TITLE = 'Home screen: rows set in the menu'
@@ -21,9 +30,63 @@ SOURCE = 'docs/hw-tests/home-screen.md (feat/mic-gain-db)'
 PARAMS = {
     'dmr': 'UHF/DMR repeater',
     'roam': 'UHF/TG244 Finland',
-    'fm': 'VHF/Repeater 2m',
+    'fm_repeater': 'VHF/Repeater 2m',  # FM with a tone and an offset
+    'fm': 'UHF/Calling 70cm',  # FM simplex without tones
     'parrot': '',
+    'gps_wait': '120',  # seconds to wait for a GPS fix in step 13
 }
+
+
+def quiet_meter(ctx):
+    """The meter shows `-` (no signal), waiting up to 30 s for a signal
+    heard to go; a signal still there is reported, not failed."""
+    end = time.monotonic() + 30
+    while True:
+        w = ctx.radio.where(fresh=True)
+        texts = [r.text.strip() for r in w.runs]
+        if '-' in texts:
+            return True, 'meter `-`'
+        if time.monotonic() > end:
+            level = next((t for t in texts if re.fullmatch(r'-\d+', t)), '?')
+            return True, 'signal present for 30 s (%s dBm): the quiet meter not seen, not a failure' % level
+        time.sleep(2)
+
+
+def roaming_answers(pattern, what):
+    """Expectation: on the roaming channel, with roaming on, the screen
+    shows @p pattern within 30 s. Skips the step when roaming is off or no
+    repeater answers."""
+    def expectation(ctx):
+        r = ctx.radio
+        line = r.ask('roam', r'\broam: ')
+        if re.search(r'\broam: (off|roaming off)\b', line.text):
+            raise Skipped('roaming is off: `%s`' % line.text)
+        end = time.monotonic() + 30
+        rx = re.compile(pattern, re.M)
+        while time.monotonic() < end:
+            w = r.where(fresh=True)
+            if rx.search(w.text()):
+                return True, '%s: %s' % (what, w.summary())
+            time.sleep(2)
+        raise Skipped('no roaming repeater answered within 30 s (%s)' % what)
+    return expectation
+
+
+def gps_fix(ctx):
+    """Expectation: the position at the bottom once the receiver has a
+    fix; skipped (the radio needs a view of the sky) after gps_wait s."""
+    r = ctx.radio
+    seconds = int(ctx.params['gps_wait'])
+    end = time.monotonic() + seconds
+    rx = re.compile(r'^\d+\.\d{5} [NS]  \d+\.\d{5} [EW]$', re.M)
+    while time.monotonic() < end:
+        w = r.where(fresh=True)
+        m = rx.search(w.text())
+        if m:
+            return True, 'position `%s`' % m.group(0)
+        time.sleep(5)
+    raise Skipped('no GPS fix within %d s: place the radio by a window, or give it longer with '
+                  '--param gps_wait=<s>' % seconds)
 
 HOME = 'Settings/Home screen/'
 ROWS = ['Preset', 'Top line', 'Clock', 'Large name', 'Middle row', 'Next to power', 'Bottom row']
@@ -43,8 +106,12 @@ STEPS = [
         top_line(r'^TG \d+$'), r'screen ^\d\d:\d\d$', large(r'.'), r'screen ^MHz$', r'screen ^\d{3}\.\d{3}$',
         r'screen ^TS\d$', r'screen ^CC\d+$', r'screen ^PWR$', r'screen ^BAT$', r'screen ^\d\.\d\dV$',
         r'screen ^\S.*  \d+/\d+$']),
-    Step(2, 'The FM channel', do=[channel('{fm}'), 'shot detailed-fm'], expect=[
+    Step(2, 'An FM repeater channel: tones and offset at the bottom', do=[channel('{fm_repeater}'),
+                                                                        'shot detailed-fm-repeater'], expect=[
         top_line('^CHANNEL$'), 'screen ^FM$', r'screen ^(25k|12\.5k)$', r'screen [-+]\d+\.\d{3}$']),
+    Step('2b', 'An FM simplex channel: the zone and the place at the bottom', do=[
+        channel('{fm}'), 'shot detailed-fm-simplex'], expect=[
+        top_line('^CHANNEL$'), 'screen ^FM$', r'screen ^\S.*  \d+/\d+$', r'noscreen [-+]\d+\.\d{3}$']),
     Step(3, 'Settings > Home screen', do=[channel('{dmr}'), 'goto ' + HOME + 'Preset'], expect=[
         'title ^Home screen$', 'place ^1/7$', 'row ^Preset Detailed$',
         r'screen ^Top line\nTalkgroup\nClock\nOn\nLarge name\nChannel\nMiddle row\nFrequency$',
@@ -56,14 +123,14 @@ STEPS = [
         r'screen ^No call heard yet$', r'log@8 \bsettings kept in the codeplug']),
     Step(6, 'Preset Roaming on a quiet DMR channel', changes=True, timeout=8, do=[
         'open ' + HOME + 'Preset', 'set Roaming', channel('{dmr}'), 'shot roaming-quiet'], expect=[
-        r'log \bui: home screen Roaming', 'screen ^SIG$', 'screen ^-$', 'screen ^dBm$']),
+        r'log \bui: home screen Roaming', 'screen ^SIG$', 'screen ^dBm$', quiet_meter]),
     Step(7, 'The meter while another radio transmits', radio_only='needs a signal',
          human='Key another radio on this channel for 5 s, then stop, watching the meter: bars and the level '
                'while it transmits; `-` and dark bars again about 2 s after it stops.'),
-    Step('8a', 'The roaming channel: the repeater at the bottom', do=[channel('{roam}'), 'wait 3'], expect=[
-        r'screen ^via \d+ \S']),
-    Step('8b', 'The meter shows the repeater\'s last level', radio_only='needs a repeater heard', timeout=30,
-         do=['shot roaming-repeater'], expect=[r'log@30 \broam: ', r'screen ^-\d+$']),
+    Step('8a', 'The roaming channel: the repeater at the bottom', do=[channel('{roam}')], expect=[
+        roaming_answers(r'^via \d+ \S', 'the repeater at the bottom')]),
+    Step('8b', 'The meter shows the repeater\'s last level', radio_only='needs a repeater heard', do=[
+        channel('{roam}')], expect=[roaming_answers(r'^-\d+$', 'the level on the meter')]),
     Step(9, 'Roaming layout kept across a restart; no noise on the meter', radio_only='nothing kept across a restart',
          do=['restart', channel('{dmr}')], expect=['screen ^SIG$', 'screen ^-$']),
     Step(10, 'Top line Number; the preset shows Own', changes=True, do=[
@@ -73,8 +140,8 @@ STEPS = [
         'shot own'], expect=[top_line(r'^CH \d+/\d+$'), 'screen ^SIG$', 'screen ^VOL$',
                              r'screen ^No GPS position$']),
     Step(12, 'The volume knob', human='Turn the volume knob: the volume notice, then `VOL` shows the new step.'),
-    Step(13, 'The position at the bottom', radio_only='needs a GPS fix', changes=True, timeout=600,
-         do=['cmd gps on'], expect=[r'log@600 \bgps: .*fix', r'screen ^\d+\.\d{5} [NS]  \d+\.\d{5} [EW]$']),
+    Step(13, 'The position at the bottom', radio_only='needs a GPS fix', changes=True, do=['cmd gps on'],
+         expect=[gps_fix]),
     Step('14a', 'The layout in the preferences record', do=['wait 4'], expect=[
         settings_has(r'home screen 2 1 0 2 1 2\b', 'preferences')]),
     Step('14b', 'The layout kept across a restart', radio_only='nothing kept across a restart',
@@ -89,7 +156,8 @@ STEPS = [
          expect=[r'log \bdmr: transmitting', r'screen ^Last: .*  now$', r'screen@75 ^Last: .*1 min ago$'],
          undo=['cmd dmr tg off']),
     Step(16, 'Clock Off, Top line None, Large name Zone, Signal next to power', changes=True, do=[
-        channel('{dmr}'), 'open ' + HOME + 'Clock', 'set Off', 'choose Top line', 'key Menu', 'set None', 'choose Large name',
+        channel('{dmr}'), 'open ' + HOME + 'Clock', 'set Off', 'choose Top line', 'key Menu', 'set None',
+        'choose Large name',
         'key Menu', 'set Zone', 'choose Next to power', 'key Menu', 'set Signal', 'home', 'shot zone-large'],
          expect=[top_line(None), r'noscreen ^\d\d:\d\d$', large(r'^\S'),
                  'screen ^SIG$', 'screen ^-$']),

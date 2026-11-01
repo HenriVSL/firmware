@@ -21,7 +21,11 @@ import screen_picture  # noqa: E402
 BOOT = re.compile(r'\bsystem: DeltaMM (\S+) on (\S+)')
 READY = re.compile(r'\bradio: ready\b')
 ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
-DMRCONF = os.path.expanduser('~/Documents/AnytoneSoftware/qdmr/build-0.15.1/cli/dmrconf')
+# QDMR with the round-trip fixes; $DMRCONF names another build.
+DMRCONF = os.environ.get('DMRCONF') or os.path.expanduser(
+    '~/Documents/AnytoneSoftware/qdmr-release/build/cli/dmrconf')
+# The older build, whose write and read back change two more fields.
+OLD_QDMR = 'build-0.15.1'
 
 # Console commands that key the transmitter or change its power.
 TRANSMIT_COMMANDS = [
@@ -386,15 +390,31 @@ class Radio:
             return list(difflib.unified_diff(fa.read().splitlines(), fb.read().splitlines(), a, b, lineterm='', n=1))
 
     @staticmethod
-    def qdmr_quirks(diff):
-        """Splits the changed lines of @p diff into those a QDMR 0.15.1
-        write and read back always gives (maxSpeakerVolume one lower, an
-        APRS `period: <n> s` added) and the others."""
+    def qdmr_quirks(diff, old=None):
+        """Splits the changed lines of @p diff into those a QDMR write and
+        read back is known to give and the others: backlightDurationRX
+        from a number of seconds to infinite; with the older build (@p
+        old, by default when DMRCONF is it) also maxSpeakerVolume one lower
+        and an APRS `period: <n> s` added."""
+        if old is None:
+            old = OLD_QDMR in DMRCONF
         removed = [l[1:] for l in diff if l.startswith('-') and not l.startswith('---')]
         added = [l[1:] for l in diff if l.startswith('+') and not l.startswith('+++')]
         quirks, others = [], []
         volume = re.compile(r'^(\s*maxSpeakerVolume:\s*)(\d+)\s*$')
+        backlight = re.compile(r'^(\s*backlightDurationRX:\s*)(.*?)\s*$')
         for line in added:
+            b = backlight.match(line)
+            was = next((r for r in removed if b and backlight.match(r) and
+                        backlight.match(r).group(1) == b.group(1)), None)
+            if b and was is not None and b.group(2) == 'infinite' and re.fullmatch(r'\d+ s',
+                                                                                 backlight.match(was).group(2)):
+                removed.remove(was)
+                quirks.append('backlightDurationRX %s -> infinite' % backlight.match(was).group(2))
+                continue
+            if not old:
+                others.append('+' + line)
+                continue
             m = volume.match(line)
             before = next((r for r in removed if m and volume.match(r) and
                            volume.match(r).group(1) == m.group(1)), None)
