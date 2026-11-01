@@ -1361,11 +1361,13 @@ void uiMain(void *)
         s.roamSearching = roam.searching;
         s.roamHz = roam.receiveHz;
         s.roamColourCode = roam.colourCode;
+        // The repeater counted from 1, as the console counts, and its name.
         roamSiteText.clear();
-        if (roam.name[0] != '\0') {
-            roamSiteText << roam.name;
-        } else if (roam.site >= 0) {
-            roamSiteText << "repeater " << roam.site + 1;
+        if (roam.site >= 0) {
+            roamSiteText << (roam.name[0] == '\0' ? "repeater " : "") << roam.site + 1;
+            if (roam.name[0] != '\0') {
+                roamSiteText << ' ' << roam.name;
+            }
         }
         s.roamSite = roamSiteText.view();
         // The signal: a quiet roaming repeater's last level, else what the
