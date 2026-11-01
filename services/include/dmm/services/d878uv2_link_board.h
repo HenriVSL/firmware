@@ -37,7 +37,7 @@ public:
     enum class CommandResult : std::uint8_t
     {
         Ok,
-        Refused, // would enter the board's update or programming mode
+        Refused, // could reflash the board or cut off its Bluetooth module
         Invalid,
     };
 
@@ -45,7 +45,9 @@ public:
     /// added, or "hex <bytes>" (bytes in hex, separated by spaces) sent as
     /// they are. Anything holding "UPDATE" or "PROGRAM" in any case is
     /// refused: those words can make the board's boot loader erase its
-    /// program. @p length gets the byte count.
+    /// program. So are "UARTE", which can change the Bluetooth module's
+    /// baud rate away from the board's, and "ATEST", a module test mode.
+    /// @p length gets the byte count.
     static CommandResult command(std::string_view text, std::span<std::uint8_t, MaxCommand> out, std::size_t &length);
 
     enum class Result : std::uint8_t
