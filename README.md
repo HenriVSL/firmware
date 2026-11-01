@@ -97,6 +97,17 @@ a beacon (`aprs send here`: on the current channel, for tests), `aprs every
 lead-in and audio level, and `gps fake <lat> <lon>` (10^-4 degrees) makes
 up a position for tests (`docs/hw-tests/aprs.md`).
 
+**APRS mode.** Holds the radio's one receiver on the codeplug's APRS
+frequency until it is turned off, and decodes the packets on the MCU
+itself (`docs/dedicated-modes.md`). The home screen then shows the station
+heard last with its distance and bearing, the stations and packets heard,
+and the next beacon; PTT sends a beacon, never voice. The mode is kept
+over a restart, and turning it off tunes back to the channel as it was.
+The MCU decoder runs seven slicers for different tone balances on the
+received audio and hears far more than the BT+APRS board's decoder
+(in one overnight run the MCU decoded 33 of 35 beacons, the board none).
+Both feed the same heard list, so a packet either one decodes counts.
+
 **Programming.** Codeplug tools that speak the radio's own programming
 protocol read and write the codeplug over USB. Tested with QDMR.
 
@@ -229,6 +240,17 @@ logs every sentence the receiver sends; `gps query`, `gps restart` and
 `gps send` talk to the receiver itself; `gps need <s>` asks for a
 position every so many seconds (0: none). `time` logs the clock, and
 `time set YYYY-MM-DD HH:MM:SS` sets it (UTC).
+
+APRS mode is the first row of Menu > APRS. While it is on, Up, Down and the
+knob open the heard list, Menu opens Menu > APRS, P2 the activity pages,
+PTT sends a beacon, and P1, `#` and the digits are refused with the notice
+"In APRS mode". Menu > Settings > APRS > Hear packets opens the speaker for
+packets in the mode (quiet by default). On the console, `aprs mode on|off`
+turns it on and off, `aprs rx` reports both decoders, `aprs rx mcu
+on|off|any` sets where the MCU decodes (in the mode, never, or on any
+analog channel for a test) and `aprs rx repair on|off` lets it repair a
+frame with one wrong bit or tone (off by default). Checklists:
+`docs/hw-tests/aprs-mode.md` and `docs/hw-tests/aprs-rx.md`.
 
 The GPS mark in the status bar, shown while the GPS is on:
 
