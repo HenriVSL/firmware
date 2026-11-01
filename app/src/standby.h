@@ -122,6 +122,28 @@ struct TransmitInfo
     const char *power = "";
 };
 
+/// A dedicated receive mode's home screen: the working screen's rows with
+/// the mode's texts.
+struct ModeScreen
+{
+    /// The top line, left of the clock: the mode and its frequency.
+    std::string_view top;
+    std::string_view big;
+    /// On the panel: on the left, and right-aligned.
+    std::string_view panel;
+    std::string_view panelRight;
+    /// Under the panel, a label and a value on each half; the right value
+    /// in amber when @c rightWarn.
+    std::string_view leftLabel;
+    std::string_view left;
+    std::string_view rightLabel;
+    std::string_view right;
+    bool rightWarn = false;
+    std::string_view bottom;
+    /// The hint bar.
+    std::string_view keys;
+};
+
 /// The radio's main screen: a status strip, the talkgroup or channel large
 /// with the time, frequency and slot, power and voltage, details, and a bar
 /// naming the quick keys. Calls and transmissions take the whole screen.
@@ -132,6 +154,9 @@ public:
     static constexpr int HintH = 11;
 
     void draw(services::Display &d, const services::ChannelSelector &sel, const StandbyState &s);
+    /// A dedicated mode's home screen in place of the channel's, drawn over
+    /// what is there.
+    void drawMode(services::Display &d, const StandbyState &s, const ModeScreen &m);
     /// Only the status strip: lock, GPS still searching, APRS beacons; the
     /// caller draws the battery at its right end.
     void drawStatus(services::Display &d, const StandbyState &s);
