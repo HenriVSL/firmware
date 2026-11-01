@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include "dmm/services/aprs.h"
+#include "sim_aprs_stations.h"
+
 #include "dmm/services/ax25.h"
 
 #include <array>
@@ -17,8 +18,8 @@
 #include <string_view>
 
 /// A BT+APRS board that hears made-up stations near the simulated GPS
-/// position: it answers the start with "+READY", then sends one of them
-/// every 20 s as the board does.
+/// position (sim_aprs): it answers the start with "+READY", then sends
+/// what it hears as the board does, a second into each slot it hears.
 class SimAprsLink
 {
 public:
@@ -26,7 +27,7 @@ public:
     {
         std::lock_guard guard(m_lock);
         m_on = true;
-        m_last = std::chrono::steady_clock::now();
+        m_lastSlot = sim_aprs::slotAt(std::chrono::steady_clock::now() - std::chrono::seconds(1));
         put("\x06+READY\r\n");
     }
     void stop()
@@ -38,10 +39,12 @@ public:
     std::size_t read(std::span<std::uint8_t> data)
     {
         std::lock_guard guard(m_lock);
-        const auto now = std::chrono::steady_clock::now();
-        if (m_on && now - m_last >= std::chrono::seconds(20)) {
-            m_last = now;
-            hear(m_next++ % 3);
+        const std::int64_t slot = sim_aprs::slotAt(std::chrono::steady_clock::now() - std::chrono::seconds(1));
+        if (m_on && slot != m_lastSlot) {
+            m_lastSlot = slot;
+            if (sim_aprs::boardHears(slot)) {
+                hear(slot);
+            }
         }
         std::size_t n = 0;
         while (n < data.size() && !m_out.empty()) {
@@ -72,31 +75,10 @@ public:
 private:
     void put(std::string_view text) { m_out.insert(m_out.end(), text.begin(), text.end()); }
 
-    void hear(unsigned which)
+    void hear(std::int64_t slot)
     {
-        namespace ax25 = dmm::services::ax25;
-        ax25::Frame f;
-        constexpr const char *Calls[] = {"N0CALL-7", "N0CALL-9", "N0CALL-1"};
-        f.source = *ax25::parseAddress(Calls[which]);
-        f.destination = *ax25::parseAddress("APZSIM");
-        f.path.pushBack(*ax25::parseAddress("WIDE1-1*"));
-        if (which == 2) {
-            f.info << ">Made-up status text";
-        } else {
-            dmm::services::aprs::Position p;
-            p.latitudeE7 = 514780000 + static_cast<std::int32_t>(which) * 90000;
-            p.longitudeE7 = -15000 + static_cast<std::int32_t>(which) * 160000;
-            p.symbol = which == 0 ? '>' : '-';
-            p.hasCourse = which == 0;
-            p.courseDeg = 90;
-            p.speedKnots = 27;
-            p.hasAltitude = true;
-            p.altitudeM = 40;
-            p.comment << (which == 0 ? "Made-up car" : "Made-up home");
-            dmm::services::aprs::positionReport(p, false, f.info);
-        }
-        std::array<std::uint8_t, ax25::MaxFrameBytes> bytes{};
-        const std::size_t n = ax25::encode(f, bytes);
+        std::array<std::uint8_t, dmm::services::ax25::MaxFrameBytes> bytes{};
+        const std::size_t n = sim_aprs::frame(slot, bytes);
         put("+APRS:~");
         m_out.insert(m_out.end(), bytes.begin(), bytes.begin() + static_cast<std::ptrdiff_t>(n));
         m_out.push_back(0x7E);
@@ -106,6 +88,5 @@ private:
     std::deque<std::uint8_t> m_out;
     std::string m_typed;
     bool m_on = false;
-    std::chrono::steady_clock::time_point m_last;
-    unsigned m_next = 0;
+    std::int64_t m_lastSlot = 0;
 };
