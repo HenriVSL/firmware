@@ -69,14 +69,33 @@ TEST_CASE("without both positions the panel shows the station's text, cut to fit
     aprs::HomeInput in = heardOne();
     in.fix = false;
     in.text = "A rather long comment that goes on";
-    const aprs::HomeRows r = aprs::homeRows(in);
-    CHECK(r.panel.view() == "A rather long com");
-    CHECK(r.panel.view().size() == aprs::HomeRows::PanelChars);
+    aprs::HomeRows r = aprs::homeRows(in);
+    // "2 min" on the right leaves 19 characters; cut at the last space.
+    CHECK(r.panel.view() == "A rather long");
     CHECK(r.bottom.view() == "Next beacon 4:12  no GPS");
+    in.heardAgoS = 5;
+    CHECK(aprs::homeRows(in).panel.view() == "A rather long comment");
+    // No space in the second half: cut in the word.
+    in.text = "Abcdefghijklmnopqrstuvwxyz";
+    r = aprs::homeRows(in);
+    CHECK(r.panel.view() == "Abcdefghijklmnopqrstu");
+    CHECK(r.panel.size() + 1 + r.panelRight.size() == aprs::HomeRows::PanelChars);
     in.fix = true;
     in.hasPosition = false;
     in.text = "Status";
     CHECK(aprs::homeRows(in).panel.view() == "Status");
+}
+
+TEST_CASE("a station without a text says what is missing")
+{
+    aprs::HomeInput in = heardOne();
+    in.text = "";
+    in.fix = false;
+    CHECK(aprs::homeRows(in).panel.view() == "Our GPS: no fix");
+    in.hasPosition = false;
+    CHECK(aprs::homeRows(in).panel.view() == "No position");
+    in.fix = true;
+    CHECK(aprs::homeRows(in).panel.view() == "No position");
 }
 
 TEST_CASE("the APRS home screen tells our beacon's state")

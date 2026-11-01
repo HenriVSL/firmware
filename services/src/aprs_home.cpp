@@ -3,7 +3,6 @@
 
 #include "dmm/services/aprs_home.h"
 
-#include <algorithm>
 #include <cmath>
 
 namespace dmm::services::aprs {
@@ -18,6 +17,25 @@ lib::StaticString<12> minutesText(std::uint32_t seconds)
     lib::StaticString<12> t;
     t << seconds / 60 << ':' << lib::zeroPadded(seconds % 60, 2);
     return t;
+}
+
+// @p text in at most @p room characters: cut at the last space in its
+// second half, else in the middle of a word.
+std::string_view fitted(std::string_view text, std::size_t room)
+{
+    if (text.size() <= room) {
+        return text;
+    }
+    const bool wordEnds = text[room] == ' ';
+    text.remove_suffix(text.size() - room);
+    const std::size_t space = text.rfind(' ');
+    if (!wordEnds && space != std::string_view::npos && space >= room / 2) {
+        text.remove_suffix(text.size() - space);
+    }
+    while (!text.empty() && text.back() == ' ') {
+        text.remove_suffix(1);
+    }
+    return text;
 }
 
 } // namespace
@@ -85,13 +103,16 @@ HomeRows homeRows(const HomeInput &in)
         r.panel << "Nothing heard yet";
     } else {
         r.big << in.call;
+        r.panelRight << ageText(in.heardAgoS).view();
+        const std::size_t room = HomeRows::PanelChars - 1 - r.panelRight.size();
         if (in.hasPosition && in.fix) {
             const Path p = pathBetween(in.ourLatitudeE7, in.ourLongitudeE7, in.latitudeE7, in.longitudeE7);
             r.panel << distanceText(p.metres).view() << ' ' << compassPoint(p.bearingDeg);
+        } else if (!in.text.empty()) {
+            r.panel << fitted(in.text, room);
         } else {
-            r.panel << std::string_view(in.text.data(), std::min(in.text.size(), HomeRows::PanelChars));
+            r.panel << (in.hasPosition ? "Our GPS: no fix" : "No position");
         }
-        r.panelRight << ageText(in.heardAgoS).view();
     }
 
     r.stations << in.stations;

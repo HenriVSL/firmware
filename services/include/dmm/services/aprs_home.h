@@ -73,12 +73,13 @@ struct HomeInput
 /// The home screen's rows as text.
 struct HomeRows
 {
-    /// The panel's text is cut to this many characters.
-    static constexpr std::size_t PanelChars = 17;
+    /// Characters across the panel: its text, a space and the age on the
+    /// right. A longer text is cut, at a space where one is near the end.
+    static constexpr std::size_t PanelChars = 25;
 
     lib::StaticString<16> top;       // "APRS 144.800"
     lib::StaticString<12> big;       // the callsign, or "Listening"
-    lib::StaticString<24> panel;     // "12.3 km NE", or the station's text
+    lib::StaticString<28> panel;     // "12.3 km NE", or the station's text
     lib::StaticString<8> panelRight; // "2 min"
     lib::StaticString<8> stations;   // "5"
     lib::StaticString<12> packets;   // "23"
