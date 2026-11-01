@@ -452,6 +452,58 @@ TEST_CASE("preferences record: round trip, and none in an erased codeplug")
     CHECK(dmm::services::d878uv2::decodePreferences(e).has_value());
 }
 
+TEST_CASE("preferences record: the frequency offset round trip")
+{
+    for (const std::int16_t hz : {std::int16_t{0}, std::int16_t{1938}, std::int16_t{-1938}, std::int16_t{5000}, std::int16_t{-5000}}) {
+        RadioPreferences p;
+        p.frequencyOffsetHz = hz;
+        const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+        REQUIRE(q.has_value());
+        CHECK(q->frequencyOffsetHz == hz);
+    }
+}
+
+TEST_CASE("preferences record: the frequency offset's place, after the microphone gains")
+{
+    RadioPreferences p;
+    p.frequencyOffsetHz = -2000;
+    p.fmMicGainDb = 12;
+    p.home.big = dmm::services::HomeLayout::Big::Zone;
+    Record r = encoded(p);
+    CHECK(r[5] == 10);
+    CHECK(r[12] == 0xFF);
+    CHECK(r[13] == 12);
+    CHECK(r[14] == 0x30);
+    CHECK(r[15] == 0xF8);
+
+    // A record from before the offset keeps the fields before it.
+    r[5] = 8;
+    seal(r);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(12));
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
+
+    // Only the offset's first byte.
+    p.frequencyOffsetHz = 1000;
+    r = encoded(p);
+    r[5] = 9;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+
+    // An offset past 5 kHz.
+    r = encoded(p);
+    r[14] = 0x89;
+    r[15] = 0x13;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+}
+
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")
 {
     const RadioPreferences p{};

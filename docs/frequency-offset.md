@@ -32,10 +32,16 @@ most; a radio used on both bands alike takes a value between the two.
 
 ## Setting it
 
-The console's `fm offset <Hz>` sets the offset: `fm offset -1500`,
-`fm offset +62`, `fm offset 0`. The radio tunes again at once when it is
-receiving. `fm status` shows the offset applied. The offset lasts until
-the radio restarts.
+Menu > Settings > Radio > Freq offset opens the offset large, with its
+place on a scale. The knob moves it one step (62.5 Hz), Up and Down
+500 Hz; it stops at either end. Menu sets it, Exit leaves it as it was.
+
+The console's `fm offset <Hz>` sets it too: `fm offset -1500`,
+`fm offset +62`, `fm offset 0`. `fm status` shows the offset applied.
+
+The radio tunes again at once when it is receiving. The offset is kept
+in the preferences record (`docs/settings-storage.md`), so the radio
+starts with it.
 
 ## Finding the right value
 

@@ -4,6 +4,7 @@
 #include "dmm/services/d878uv2_preferences.h"
 
 #include "dmm/lib/crc32.h"
+#include "dmm/services/frequency_offset.h"
 #include "dmm/services/microphone_gain.h"
 
 #include <algorithm>
@@ -35,7 +36,9 @@ constexpr std::size_t HomeBottomAt = FieldsAt + 5;
 // Microphone gain on DMR and on FM, in dB; 0xFF follows the codeplug.
 constexpr std::size_t DmrMicGainAt = FieldsAt + 6;
 constexpr std::size_t FmMicGainAt = FieldsAt + 7;
-constexpr std::size_t FieldsEnd = FieldsAt + 8;
+// The frequency offset in hertz, little-endian, signed.
+constexpr std::size_t FrequencyOffsetAt = FieldsAt + 8;
+constexpr std::size_t FieldsEnd = FieldsAt + 10;
 static_assert(FieldsEnd <= CrcAt);
 
 // The field bytes a record holds; a field past them reads as its default.
@@ -70,6 +73,18 @@ public:
         const auto b = byte(at);
         return b && *b <= max ? b : std::nullopt;
     }
+    /// Two bytes, little-endian and signed; from -@p limit to @p limit, else
+    /// @p fallback.
+    std::int16_t signed16(std::size_t at, std::int16_t limit, std::int16_t fallback) const
+    {
+        const auto low = byte(at);
+        const auto high = byte(at + 1);
+        if (!low || !high) {
+            return fallback;
+        }
+        const auto v = static_cast<std::int16_t>(static_cast<std::uint16_t>(*low | *high << 8));
+        return v >= -limit && v <= limit ? v : fallback;
+    }
 
 private:
     std::span<const std::uint8_t, PreferencesRecordBytes> m_record;
@@ -101,6 +116,7 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.home.bottom = f.choice(HomeBottomAt, d.home.bottom);
     p.dmrMicGainDb = f.upTo(DmrMicGainAt, microphone_gain::MaxDigitalDb);
     p.fmMicGainDb = f.upTo(FmMicGainAt, microphone_gain::MaxFmDb);
+    p.frequencyOffsetHz = f.signed16(FrequencyOffsetAt, static_cast<std::int16_t>(FrequencyOffset::MaxHz), d.frequencyOffsetHz);
     return p;
 }
 
@@ -118,6 +134,9 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[HomeBottomAt] = static_cast<std::uint8_t>(p.home.bottom);
     record[DmrMicGainAt] = p.dmrMicGainDb.value_or(0xFF);
     record[FmMicGainAt] = p.fmMicGainDb.value_or(0xFF);
+    const auto offset = static_cast<std::uint16_t>(p.frequencyOffsetHz);
+    record[FrequencyOffsetAt] = static_cast<std::uint8_t>(offset);
+    record[FrequencyOffsetAt + 1] = static_cast<std::uint8_t>(offset >> 8);
     const std::uint32_t crc = lib::crc32(record.data(), CrcAt);
     for (std::size_t i = 0; i < 4; ++i) {
         record[CrcAt + i] = static_cast<std::uint8_t>(crc >> (8 * i));

@@ -3,14 +3,17 @@
 
 #pragma once
 
+#include "dmm/board/parts.h"
 #include "dmm/lib/format.h"
 #include "dmm/services/codeplug.h"
+#include "dmm/services/frequency_offset.h"
 #include "dmm/services/home_screen.h"
 #include "dmm/services/input.h"
 #include "dmm/services/key_lock.h"
 #include "dmm/services/microphone_gain.h"
 #include "dmm/services/power_level.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -42,6 +45,7 @@ enum class Item : std::uint8_t
     BacklightTime,
     DmrMicGain,
     FmMicGain,
+    FrequencyOffset,
     KeyLock,
     AutoLock,
     BatterySave,
@@ -73,6 +77,7 @@ enum class Group : std::uint8_t
     Tools,
     Home,
     Audio,
+    Radio,
     Keys,
     Clock,
     GpsSettings,
@@ -173,6 +178,7 @@ struct Settings
     std::optional<std::uint8_t> fmMicGainDb;
     std::uint8_t plugDmrMicGainDb = services::microphone_gain::StandardDb;
     std::uint8_t plugFmMicGainDb = services::microphone_gain::StandardDb;
+    std::int16_t frequencyOffsetHz = 0; // a whole step of OffsetSteps
 };
 
 /// A microphone gain choice of FromCodeplug + N follows the codeplug's
@@ -199,15 +205,23 @@ using ValueText = lib::StaticString<16>;
 /// @p value of @p item as a row shows it.
 ValueText valueText(Item item, std::int32_t value);
 
+/// The frequency offset's steps, as the board's transceiver tunes.
+inline constexpr services::FrequencyOffset OffsetSteps{board::Fm::TuningStepMilliHz};
+
 /// The values one item can take, each with its text and an optional note.
 class Choices
 {
 public:
-    static constexpr std::size_t MaxChoices = services::CodeplugSource::MaxRoamingZones;
+    static constexpr std::size_t MaxChoices = std::max<std::size_t>(services::CodeplugSource::MaxRoamingZones,
+        2 * static_cast<std::size_t>(OffsetSteps.maxSteps()) + 1);
     static constexpr std::size_t TextBytes = 17;
     static constexpr std::size_t NoteBytes = 9;
 
-    void clear() { m_count = 0; }
+    void clear()
+    {
+        m_count = 0;
+        m_coarse = 0;
+    }
     /// Cut to fit: keep @p text to 16 characters and @p note to 8.
     void add(std::int32_t value, std::string_view text, std::string_view note = {});
     std::size_t size() const { return m_count; }
@@ -217,12 +231,18 @@ public:
     bool hasNotes() const;
     /// The place of @p value, or size() when it is not one of them.
     std::size_t find(std::int32_t value) const;
+    /// The choices are a fine scale: the knob moves one, Up and Down
+    /// @p coarse, and neither goes round from one end to the other.
+    void setScale(std::size_t coarse) { m_coarse = coarse; }
+    /// What Up and Down move on a scale; 0 for other choices.
+    std::size_t coarse() const { return m_coarse; }
 
 private:
     std::int32_t m_value[MaxChoices] = {};
     char m_text[MaxChoices][TextBytes] = {};
     char m_note[MaxChoices][NoteBytes] = {};
     std::size_t m_count = 0;
+    std::size_t m_coarse = 0;
 };
 
 /// Lists @p item's choices into @p out, those that depend on the settings

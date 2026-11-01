@@ -121,6 +121,9 @@ struct RadioPreferences
     /// none follows the codeplug's level.
     std::optional<std::uint8_t> dmrMicGainDb;
     std::optional<std::uint8_t> fmMicGainDb;
+    /// Added to every receive and transmit frequency, for a radio whose
+    /// frequency reference has drifted (FrequencyOffset); 0 = none.
+    std::int16_t frequencyOffsetHz = 0;
 };
 
 /// One repeater of a roaming zone.

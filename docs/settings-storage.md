@@ -26,6 +26,7 @@ The code: `services/settings_store.h` (the interface the app uses),
 | A channel's power and squelch mode | The channel's record | `ChannelBanks` |
 | Home screen layout (Menu > Settings > Home screen) | Preferences record | `Preferences` |
 | Microphone gain on DMR and FM (Menu > Settings > Audio) | Preferences record | `Preferences` |
+| Frequency offset (Menu > Settings > Radio, console `fm offset`) | Preferences record | `Preferences` |
 
 The auto lock time shares its field with the menu exit time, in 5 s
 steps up to 60 s.
