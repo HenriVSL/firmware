@@ -16,6 +16,7 @@
 #include "dmm/services/ax25.h"
 #include "dmm/services/log.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -35,6 +36,9 @@ using services::GpsSchedule;
 // the MCU down to the heard list and the log (about 1.7 KB with the
 // kernel's calls and an interrupt), and a margin.
 os::Task<640> aprsTask;
+// Above the ui, gps and console tasks: a long screen redraw or codeplug
+// write must not keep the task from the sampler's ring.
+constexpr unsigned AprsPriority = 5;
 os::Queue<Message, 4> inbox;
 
 // The destination names the software (an experimental APZ tocall).
@@ -97,6 +101,12 @@ bool listenSeen = false;
 os::Ticks listenSince = 0;
 std::uint32_t lostSeen = 0;
 std::uint32_t lostTotal = 0;
+// The longest time between two reads of the sampler and when it ended,
+// and the longest one pass of decoding took.
+os::Ticks lastReadAt = 0;
+os::Ticks longestGapMs = 0;
+os::Ticks longestGapAt = 0;
+os::Ticks longestPassMs = 0;
 constexpr os::Ticks DecodeSettleMs = 1000;
 using services::AfskDemodulator;
 // The sampler is lent to the audio probe; the decoder holds it.
@@ -457,8 +467,14 @@ void updateDecoding()
     }
     demodulator.reset();
     lostSeen = sampler->lostSamples();
+    lastReadAt = now;
     decoding = true;
     log::info("aprs") << "MCU decoding on at " << frequencyText(radio::analogListeningHz()).view() << " MHz";
+}
+
+[[gnu::noinline, gnu::cold]] void logLost(std::uint32_t samples, os::Ticks gapMs)
+{
+    log::info("aprs") << samples << " samples lost: no read for " << gapMs << " ms";
 }
 
 // Decodes the samples taken since the last poll. Kept apart from the
@@ -466,11 +482,19 @@ void updateDecoding()
 [[gnu::noinline]] void pollSampler()
 {
     static std::uint16_t chunk[256];
+    const os::Ticks start = os::nowMs();
+    const os::Ticks gap = start - lastReadAt;
+    lastReadAt = start;
+    if (gap > longestGapMs) {
+        longestGapMs = gap;
+        longestGapAt = start;
+    }
     for (;;) {
         const std::size_t n = sampler->read(chunk);
         const std::uint32_t lost = sampler->lostSamples();
         if (lost != lostSeen) {
             // A gap breaks the frame in progress.
+            logLost(lost - lostSeen, gap);
             lostTotal += lost - lostSeen;
             lostSeen = lost;
             demodulator.reset();
@@ -480,6 +504,7 @@ void updateDecoding()
         }
         demodulator.process(std::span<const std::uint16_t>(chunk, n), mcuFrame);
     }
+    longestPassMs = std::max(longestPassMs, os::nowMs() - start);
 }
 
 void receiveReport()
@@ -493,6 +518,8 @@ void receiveReport()
     log::info("aprs") << "MCU: " << st.passed << " frames, " << st.repaired << " repaired, " << st.duplicates
                       << " copies between slicers, " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, "
                       << lostTotal << " samples lost";
+    log::info("aprs") << "reads: longest gap " << longestGapMs << " ms (at " << longestGapAt / 1000
+                      << " s), longest decoding pass " << longestPassMs << " ms";
     auto line = log::info("aprs");
     line << "slicers (dB right/failed):";
     for (std::size_t i = 0; i < AfskDemodulator::Slicers; ++i) {
@@ -690,7 +717,7 @@ void start(board::AprsLink *l, board::AudioSampler *s)
 {
     link = l;
     sampler = s;
-    aprsTask.start("aprs", 2, aprsMain, nullptr);
+    aprsTask.start("aprs", AprsPriority, aprsMain, nullptr);
 }
 
 void setStation(const AprsSettings &settings)
