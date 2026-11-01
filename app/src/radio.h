@@ -167,6 +167,13 @@ struct UseChannel
 struct RoamNow
 {
 };
+/// Added to every receive and transmit frequency, for a radio whose
+/// frequency reference has drifted: the nearest step the transceiver
+/// tunes, within 5 kHz either way; 0 = none.
+struct FmOffset
+{
+    std::int32_t hz;
+};
 /// When roaming looks for a better repeater by itself.
 struct RoamingSetup
 {
@@ -201,7 +208,7 @@ struct GpsPower
     bool on;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingSetup, RoamStatus, RoamUse, RoamForget, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, FmOffset, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingSetup, RoamStatus, RoamUse, RoamForget, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower>;
 
 /// Starts the radio task, which owns @p fm and @p baseband (nullptr on a
 /// board without one) and brings them up.
