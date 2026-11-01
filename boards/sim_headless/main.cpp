@@ -141,6 +141,9 @@ int main(int argc, char *argv[])
     parser.addOption(holdOption);
     parser.addOption(pressOption);
     parser.addOption(batteryOption);
+    const QCommandLineOption rttyOption(QStringLiteral("rtty"), QStringLiteral("Received audio: <text> as RTTY, repeated, instead of APRS packets."),
+        QStringLiteral("text"));
+    parser.addOption(rttyOption);
     parser.process(app);
 
     static ConsoleLeds leds(parser.isSet(ledsOption));
@@ -176,6 +179,9 @@ int main(int argc, char *argv[])
     static SimModem modem;
     static SimAprsLink aprsLink;
     static SimAudioSampler audioSampler;
+    if (parser.isSet(rttyOption)) {
+        audioSampler.setRtty(parser.value(rttyOption).replace(QStringLiteral("\\n"), QStringLiteral("\r\n")).toStdString());
+    }
     static dmm::app::Platform platform{
         .leds = leds,
         .logSink = logSink,

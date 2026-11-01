@@ -12,7 +12,7 @@ a right check from any of them is passed on once.
 Frames from the board and from the MCU go to the same heard list; the
 second copy of a frame within 3 s is dropped. Log lines:
 
-- `aprs: MCU decoding on at 144.800 MHz` / `aprs: MCU decoding off`, and
+- `aprs: MCU decoding APRS on at 144.800 MHz` / `aprs: MCU decoding off`, and
   at each stop `audio: ADC channel 10: <n> samples, counts <min>..<max>`.
 - `aprs: heard (MCU) <packet>`, or `(MCU, repaired)`: decoded by the MCU
   first. `aprs: heard <packet>` without the mark: by the board first.
@@ -58,7 +58,7 @@ the repository; report counts only.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | `aprs mode on` | `radio: receiver held at ...`, after about a second `aprs: MCU decoding on at ...` |
+| 1 | `aprs mode on` | `radio: receiver held at ...`, after about a second `aprs: MCU decoding APRS on at ...` |
 | 2 | `aprs rx` | `APRS mode on; board receive on; MCU decoding in APRS mode, running, repair off`; seconds of audio growing between two calls; lost samples 0 |
 | 3 | The second radio sends a beacon, strong | `aprs: heard (MCU) ...` or `aprs: heard ...` followed by `same frame from the ...`; the station once in Menu, APRS, Heard |
 | 4 | `aprs send` (beacon from this radio, on the APRS frequency) | `aprs: MCU decoding off` before the transmission, `MCU decoding on` again about a second after it |

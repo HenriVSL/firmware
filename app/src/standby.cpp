@@ -496,10 +496,18 @@ void StandbyScreen::drawMode(Display &d, const StandbyState &s, const ModeScreen
     band(d, NameY, nameH, {{4, NameY + (Large.height - bf.height) / 2 + 1, m.big, &bf, p::Text}});
     d.fillRect(0, PanelY - 1, w, 1, p::Rule);
 
-    band(d, PanelY, SettingsY - PanelY,
-        {{4, PanelY + 5, m.panel, &Body, p::Text},
-            {w - 4 - textWidth(Body, m.panelRight), PanelY + 5, m.panelRight, &Body, p::Dim}},
-        palette::Panel);
+    if (m.twoLines) {
+        const int chars = (w - 4) / Small.width;
+        constexpr int Half = (SettingsY - PanelY) / 2;
+        band(d, PanelY, Half, {{4, PanelY + 2, cut(m.panel, chars), &Small, p::Text}}, palette::Panel);
+        band(d, PanelY + Half, SettingsY - PanelY - Half, {{4, PanelY + Half + 1, cut(m.panel2, chars), &Small, p::Text}},
+            palette::Panel);
+    } else {
+        band(d, PanelY, SettingsY - PanelY,
+            {{4, PanelY + 5, m.panel, &Body, p::Text},
+                {w - 4 - textWidth(Body, m.panelRight), PanelY + 5, m.panelRight, &Body, p::Dim}},
+            palette::Panel);
+    }
 
     band(d, SettingsY, InfoY - SettingsY - 1,
         {{4, SettingsY + 5, m.leftLabel, &Small, p::Dim}, {26, SettingsY + 3, m.left, &Body, p::Text}}, p::Ground, 0,
@@ -629,6 +637,12 @@ void drawLogRow(Display &d, int row, std::string_view time, std::string_view tex
     band(d, y, LogRowH,
         {{4, y + 1, time, &Small, selected ? p::Dim : p::Rule}, {34, y + 1, cut(text, 25), &Small, ink}},
         selected ? p::Rule : p::Ground);
+}
+
+void drawTextRow(Display &d, int row, std::string_view text, Color ink)
+{
+    const int y = LogTop + row * LogRowH;
+    band(d, y, LogRowH, {{4, y + 1, cut(text, (d.width() - 4) / Small.width), &Small, ink}}, p::Ground);
 }
 
 void drawGpsScreen(Display &d, const GpsState &gps, bool full)

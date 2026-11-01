@@ -9,6 +9,7 @@
 #include "radio.h"
 #include "standby.h"
 #include "system.h"
+#include "text_mode.h"
 
 #include "dmm/lib/variant.h"
 #include "dmm/os/os.h"
@@ -394,21 +395,23 @@ enum class View : std::uint8_t
 {
     Start, // name and version while the radio starts
     TestPattern,
-    Standby,    // the radio's main screen
-    ZonePicker, // choosing a zone
-    RoamStatus, // what roaming knows, refreshed each second
-    Menu,       // the settings list
-    MenuValue,  // choosing one setting's value
-    Gps,        // the GPS receiver's state and fix, from the menu
-    Heard,      // APRS stations heard, from the menu
-    Station,    // one heard station
-    Activity,   // what happened lately, from P2
-    PlugList,   // a codeplug book's records, or a record to link to
-    PlugEdit,   // one record's fields
-    PlugValue,  // one field's value, chosen
-    PlugDigits, // a frequency or a number, typed
-    PlugText,   // a name or a text, typed
-    PlugSave,   // what changed, before saving
+    Standby,       // the radio's main screen
+    ZonePicker,    // choosing a zone
+    RoamStatus,    // what roaming knows, refreshed each second
+    Menu,          // the settings list
+    MenuValue,     // choosing one setting's value
+    Gps,           // the GPS receiver's state and fix, from the menu
+    Heard,         // APRS stations heard, from the menu
+    Station,       // one heard station
+    Received,      // the text mode's received text
+    ModeFrequency, // the text mode's frequency, typed
+    Activity,      // what happened lately, from P2
+    PlugList,      // a codeplug book's records, or a record to link to
+    PlugEdit,      // one record's fields
+    PlugValue,     // one field's value, chosen
+    PlugDigits,    // a frequency or a number, typed
+    PlugText,      // a name or a text, typed
+    PlugSave,      // what changed, before saving
     Log,
     KeyTest,
     Message,
@@ -472,8 +475,16 @@ enum class MenuItem : std::uint8_t
     AprsBeacon,
     AprsPower,
     AprsReceive,
-    AprsMode,     // the APRS mode on or off
-    AprsAudible,  // packets heard on the speaker in APRS mode
+    AprsMode,      // the APRS mode on or off
+    AprsAudible,   // packets heard on the speaker in APRS mode
+    TextMode,      // the text mode on or off
+    TextFrequency, // opens the frequency entry
+    TextReceived,  // opens the received text
+    TextTones,
+    TextBaud,
+    TextReverse,
+    TextUnshift,
+    TextAudible,
     PlugChannels, // the codeplug's books, each opens its list
     PlugZones,
     PlugContacts,
@@ -510,6 +521,7 @@ enum class MenuGroup : std::uint8_t
     Roaming,
     Gps,
     Aprs,
+    Text,
     Settings,
     Tools,
     Home,
@@ -545,6 +557,10 @@ constexpr GroupInfo Groups[] = {
     {"GPS", "The position and", "the GPS receiver", {MenuItem::GpsStatus, MenuItem::Gps}, 2},
     {"APRS", "APRS mode, sending the", "position, stations heard",
         {MenuItem::AprsMode, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard}, 4},
+    {"Text", "RTTY: text received on", "a frequency you enter",
+        {MenuItem::TextMode, MenuItem::TextFrequency, MenuItem::TextReceived, MenuItem::TextTones, MenuItem::TextBaud,
+            MenuItem::TextReverse, MenuItem::TextUnshift, MenuItem::TextAudible},
+        8},
     {"Settings", "How the radio is set up:", "screen, keys, clock, GPS",
         {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenKeys, MenuItem::OpenClock, MenuItem::OpenGpsSettings,
             MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
@@ -668,6 +684,22 @@ ItemAbout itemAbout(MenuItem item)
         return {"One receiver: APRS mode", "listens only on APRS"};
     case MenuItem::AprsAudible:
         return {"In APRS mode: packets", "heard on the speaker"};
+    case MenuItem::TextMode:
+        return {"One receiver: text mode", "listens only on its own"};
+    case MenuItem::TextFrequency:
+        return {"Where the text mode", "listens; set while off"};
+    case MenuItem::TextReceived:
+        return {"The text received,", "newest at the bottom"};
+    case MenuItem::TextTones:
+        return {"The audio tones, mark", "below space, 170 Hz apart"};
+    case MenuItem::TextBaud:
+        return {"Speed in baud;", "45.45 is the usual"};
+    case MenuItem::TextReverse:
+        return {"Mark and space", "swapped"};
+    case MenuItem::TextUnshift:
+        return {"A space after figures", "goes back to letters"};
+    case MenuItem::TextAudible:
+        return {"In the text mode: the", "signal on the speaker"};
     case MenuItem::PlugChannels:
         return {"Every channel: names,", "frequencies, DMR, tones"};
     case MenuItem::PlugZones:
@@ -794,6 +826,17 @@ services::DedicatedMode modeAtStart = services::DedicatedMode::Off;
 // The mode's home screen texts, and its hint bar.
 services::aprs::HomeRows modeRows;
 lib::StaticString<40> modeKeys;
+// The text mode's settings, its home screen texts and hint bar; how far
+// the received text is scrolled back, and whether it opened from the menu.
+services::TextModeSettings textSettings;
+services::text_mode::HomeRows textRows;
+lib::StaticString<40> textKeys;
+std::size_t receivedBack = 0;
+bool receivedFromMenu = false;
+// The text mode's frequency being typed: the digits typed over the value.
+std::uint32_t modeEntryHz = 0;
+char modeTyped[8] = {};
+std::size_t modeTypedLength = 0;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -1236,6 +1279,8 @@ void uiMain(void *)
     quickKeys << keyText(Key::Menu) << "  " << keyText(Key::Front1) << " Zone  " << keyText(Key::Front2) << " Log  "
               << keyText(Key::Hash) << " VFO";
     modeKeys << keyText(Key::Menu) << "  " << keyText(Key::Front2) << " Log  " << keyText(Key::Ptt) << " Beacon";
+    textKeys << keyText(Key::Menu) << "  " << keyText(Key::Up) << '/' << keyText(Key::Down) << " Text  "
+             << keyText(Key::Front2) << " Log";
 
     // The codeplug: settings, and the channel the radio starts on.
     if (codeplug != nullptr) {
@@ -1259,6 +1304,7 @@ void uiMain(void *)
                 aprsReceive = p->aprsReceive;
                 aprsAudible = p->aprsAudible;
                 modeAtStart = p->mode;
+                textSettings = p->text;
                 offsetKhz = p->frequencyOffsetHz / 1000;
                 radio::post(radio::FrequencyOffset{p->frequencyOffsetHz});
                 if (!aprsReceive) {
@@ -1290,6 +1336,8 @@ void uiMain(void *)
             log::warning("ui") << "codeplug: no channel to start on";
         }
     }
+
+    text_mode::configure(textSettings);
 
     View view = View::Start;
     const os::Ticks startUntil = os::nowMs() + StartScreenMs;
@@ -1323,6 +1371,10 @@ void uiMain(void *)
     os::Ticks lastClockMinute = 0;
     os::Ticks lastHeardRefresh = 0;
     constexpr os::Ticks HeardRefreshMs = 10'000;
+    // The received text last drawn, and when.
+    std::uint32_t textShown = 0;
+    os::Ticks textDrawnAt = 0;
+    constexpr os::Ticks TextRedrawMs = 250;
     bool gpsScreenNeed = false;
     // Battery save also decides whether the GPS receiver sleeps between fixes.
     auto setBatterySave = [&](std::uint8_t mode) {
@@ -1753,6 +1805,41 @@ void uiMain(void *)
             label = "Hear packets";
             value << (aprsAudible ? "On" : "Off");
             break;
+        case MenuItem::TextMode:
+            label = "Text mode";
+            value << (modeState.mode() == services::DedicatedMode::Text ? "On" : "Off");
+            break;
+        case MenuItem::TextFrequency:
+            label = "Frequency";
+            if (textSettings.frequencyHz == 0) {
+                value << "Not set";
+            } else {
+                value << services::text_mode::frequencyText(textSettings.frequencyHz).view();
+            }
+            break;
+        case MenuItem::TextReceived:
+            label = "Received text";
+            break;
+        case MenuItem::TextTones:
+            label = "Tones";
+            value << services::rtty::tonesText(textSettings.tones);
+            break;
+        case MenuItem::TextBaud:
+            label = "Baud";
+            value << services::rtty::baudText(textSettings.baud);
+            break;
+        case MenuItem::TextReverse:
+            label = "Reverse";
+            value << (textSettings.reverse ? "On" : "Off");
+            break;
+        case MenuItem::TextUnshift:
+            label = "Unshift";
+            value << (textSettings.unshiftOnSpace ? "On" : "Off");
+            break;
+        case MenuItem::TextAudible:
+            label = "Hear audio";
+            value << (textSettings.audible ? "On" : "Off");
+            break;
         case MenuItem::PlugChannels:
         case MenuItem::PlugZones:
         case MenuItem::PlugContacts:
@@ -1795,7 +1882,8 @@ void uiMain(void *)
     // Whether Menu on @p item opens a screen of its own rather than values.
     auto itemOpens = [](MenuItem item) {
         return item == MenuItem::RoamStatus || item == MenuItem::GpsStatus || item == MenuItem::ToolLog ||
-            item == MenuItem::ToolKeys || item == MenuItem::AprsHeard || groupOpenedBy(item) != MenuGroup::Count ||
+            item == MenuItem::ToolKeys || item == MenuItem::AprsHeard || item == MenuItem::TextFrequency ||
+            item == MenuItem::TextReceived || groupOpenedBy(item) != MenuGroup::Count ||
             (item >= MenuItem::PlugChannels && item <= MenuItem::PlugAprsText);
     };
     // The menu as it stands: the groups, or one group's items with their
@@ -1840,6 +1928,15 @@ void uiMain(void *)
                 uptime << "needs an APRS frequency";
             }
             about1 = itemAbout(MenuItem::AprsMode).line1;
+            about2 = uptime.view();
+        } else if (g.items[menuRow] == MenuItem::TextMode) {
+            uptime.clear();
+            if (textSettings.frequencyHz != 0) {
+                uptime << "listens only on " << services::text_mode::frequencyText(textSettings.frequencyHz).view();
+            } else {
+                uptime << "needs a frequency (below)";
+            }
+            about1 = itemAbout(MenuItem::TextMode).line1;
             about2 = uptime.view();
         } else if (g.items[menuRow] == MenuItem::Version) {
             uptime.clear();
@@ -2138,9 +2235,9 @@ void uiMain(void *)
         drawMenuScreen(d, title.view(), plugSaveRow, count, rows, n, static_cast<int>(plugSaveRow - first), was.view(),
             changes.view(), "Menu: save Exit: edit #: drop");
     };
-    // The dedicated mode's home screen, from the heard list, the GPS and
-    // the aprs task.
-    auto modeScreen = [&] {
+    // The APRS mode's home screen, from the heard list, the GPS and the
+    // aprs task.
+    auto aprsScreen = [&] {
         static aprs::HeardStation last;
         services::aprs::HomeInput in;
         in.frequencyHz = modeState.lock().hz;
@@ -2175,12 +2272,110 @@ void uiMain(void *)
         m.keys = modeKeys.view();
         return m;
     };
+    // The text mode's home screen: the last callsign, the two newest lines
+    // of text, the tones and the signal.
+    auto textScreen = [&] {
+        static char older[services::text_mode::TextLines::Width];
+        static char newest[services::text_mode::TextLines::Width];
+        static char call[services::rtty::CallSpotter::MaxCall];
+        const text_mode::Status st = text_mode::status();
+        services::text_mode::HomeInput in;
+        in.frequencyHz = modeState.lock().hz;
+        in.call = text_mode::call(call);
+        // Just after a new line, the two lines before it.
+        const std::size_t back = text_mode::line(0, newest).empty() && text_mode::lineCount() > 1 ? 1 : 0;
+        in.newest = text_mode::line(back, newest);
+        in.older = text_mode::line(back + 1, older);
+        in.decoding = st.decoding;
+        in.signal = st.signal;
+        in.quality = st.quality;
+        in.tones = services::rtty::tonesText(textSettings.tones);
+        in.baud = services::rtty::baudText(textSettings.baud);
+        in.reverse = textSettings.reverse;
+        in.characters = st.characters;
+        in.errors = st.errors;
+        textRows = services::text_mode::homeRows(in);
+        ModeScreen m;
+        m.top = textRows.top.view();
+        m.big = textRows.big.view();
+        m.panel = textRows.older.view();
+        m.panel2 = textRows.newest.view();
+        m.twoLines = true;
+        m.leftLabel = "TON";
+        m.left = textRows.tones.view();
+        m.rightLabel = "SIG";
+        m.right = textRows.quality.view();
+        m.rightWarn = textRows.qualityWarn;
+        m.bottom = textRows.bottom.view();
+        m.keys = textKeys.view();
+        return m;
+    };
+    auto modeScreen = [&] {
+        return modeState.mode() == services::DedicatedMode::Text ? textScreen() : aprsScreen();
+    };
+    // The received text, newest at the bottom, scrolled back receivedBack
+    // lines.
+    auto drawReceived = [&] {
+        standby.drawStatus(d, standbyState());
+        drawBattery(d);
+        const std::size_t count = text_mode::lineCount();
+        receivedBack = std::min(receivedBack, count > static_cast<std::size_t>(LogRows) ? count - LogRows : 0);
+        lib::StaticString<16> title;
+        title << "RTTY " << services::text_mode::frequencyText(textSettings.frequencyHz).view();
+        const text_mode::Status st = text_mode::status();
+        lib::StaticString<16> note;
+        if (receivedBack > 0) {
+            note << '-' << receivedBack;
+        } else if (st.decoding) {
+            note << "SIG " << static_cast<int>(st.quality * 100.0F + 0.5F) << '%';
+        } else {
+            note << "not decoding";
+        }
+        drawLogFrame(d, title.view(), note.view(), "Knob: scroll   Exit: back");
+        static char text[services::text_mode::TextLines::Width];
+        for (int row = 0; row < LogRows; ++row) {
+            const std::size_t back = receivedBack + static_cast<std::size_t>(LogRows - 1 - row);
+            drawTextRow(d, row, text_mode::line(back, text), palette::Text);
+        }
+    };
+    // The text mode's frequency as typed: MHz with five decimals, the
+    // digits typed over the value.
+    auto modeDigitsText = [&](lib::StaticString<16> &out) {
+        lib::StaticString<12> digits;
+        digits << lib::zeroPadded(modeEntryHz / 10, 8);
+        for (std::size_t k = 0; k < 8; ++k) {
+            if (k == 3) {
+                out << '.';
+            }
+            out << (k < modeTypedLength ? modeTyped[k] : digits.view()[k]);
+        }
+        return modeTypedLength + (modeTypedLength > 3 ? 1 : 0);
+    };
+    auto modeDigitsHz = [&] {
+        lib::StaticString<16> text;
+        modeDigitsText(text);
+        std::uint32_t v = 0;
+        for (const char c : text.view()) {
+            if (c >= '0' && c <= '9') {
+                v = v * 10 + static_cast<std::uint32_t>(c - '0');
+            }
+        }
+        return v * 10;
+    };
+    auto drawModeDigits = [&] {
+        standby.drawStatus(d, standbyState());
+        drawBattery(d);
+        lib::StaticString<16> text;
+        const std::size_t typed = modeDigitsText(text);
+        drawDigitsEntry(d, "Text > Frequency", text.view(), typed, "MHz", "Knob: 12.5 kHz steps", "144-146, 430-440 MHz",
+            "0-9  *: delete  Menu: set");
+    };
     auto redrawView = [&] {
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
         volumeNoticeUp = false;
         const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Heard ||
-            view == View::Station || view == View::Activity;
+            view == View::Station || view == View::Activity || view == View::Received || view == View::ModeFrequency;
         barHeader(radioScreen);
         if (view == View::Standby && modeState.on()) {
             standby.drawMode(d, standbyState(), modeScreen());
@@ -2213,6 +2408,10 @@ void uiMain(void *)
             standby.drawStatus(d, standbyState());
             drawBattery(d);
             drawHeard();
+        } else if (view == View::Received) {
+            drawReceived();
+        } else if (view == View::ModeFrequency) {
+            drawModeDigits();
         } else if (view == View::Menu) {
             drawMenu();
         } else if (view == View::MenuValue) {
@@ -2325,8 +2524,19 @@ void uiMain(void *)
             show(View::Activity);
         }
     };
-    // The dedicated mode's own list: the stations heard, newest first.
+    // The received text, newest at the bottom.
+    auto openReceived = [&](bool fromMenu) {
+        receivedBack = 0;
+        receivedFromMenu = fromMenu;
+        show(View::Received);
+    };
+    // The dedicated mode's own list: the stations heard, newest first, or
+    // the text received.
     auto openModeList = [&] {
+        if (modeState.mode() == services::DedicatedMode::Text) {
+            openReceived(false);
+            return;
+        }
         logPage = 2;
         heardFromMenu = false;
         openHeard({});
@@ -2966,8 +3176,54 @@ void uiMain(void *)
             menuValue.open("APRS mode");
             menuValue.add(0, "Off");
             menuValue.add(1, "On");
-            menuValue.select(modeState.on() ? 1 : 0);
+            menuValue.select(modeState.mode() == services::DedicatedMode::Aprs ? 1 : 0);
             break;
+        case MenuItem::TextMode:
+            menuValue.open("Text mode");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(modeState.mode() == services::DedicatedMode::Text ? 1 : 0);
+            break;
+        case MenuItem::TextFrequency:
+            // The receiver is held there: changed only while the mode is off.
+            if (modeState.mode() == services::DedicatedMode::Text) {
+                notice("Turn the mode off");
+                return;
+            }
+            modeEntryHz = textSettings.frequencyHz;
+            modeTypedLength = 0;
+            show(View::ModeFrequency);
+            return;
+        case MenuItem::TextReceived:
+            openReceived(true);
+            return;
+        case MenuItem::TextTones:
+            menuValue.open("Tones");
+            for (std::uint8_t i = 0; i < static_cast<std::uint8_t>(services::rtty::Tones::Count); ++i) {
+                menuValue.add(i, services::rtty::tonesText(static_cast<services::rtty::Tones>(i)));
+            }
+            menuValue.select(static_cast<std::uint8_t>(textSettings.tones));
+            break;
+        case MenuItem::TextBaud:
+            menuValue.open("Baud");
+            for (std::uint8_t i = 0; i < static_cast<std::uint8_t>(services::rtty::Baud::Count); ++i) {
+                menuValue.add(i, services::rtty::baudText(static_cast<services::rtty::Baud>(i)));
+            }
+            menuValue.select(static_cast<std::uint8_t>(textSettings.baud));
+            break;
+        case MenuItem::TextReverse:
+        case MenuItem::TextUnshift:
+        case MenuItem::TextAudible: {
+            const bool on = item == MenuItem::TextReverse ? textSettings.reverse
+                : item == MenuItem::TextUnshift           ? textSettings.unshiftOnSpace
+                                                          : textSettings.audible;
+            menuValue.open(item == MenuItem::TextReverse ? "Reverse" : item == MenuItem::TextUnshift ? "Unshift"
+                                                                                                     : "Hear audio");
+            menuValue.add(0, "Off");
+            menuValue.add(1, "On");
+            menuValue.select(on ? 1 : 0);
+            break;
+        }
         case MenuItem::AprsAudible:
             menuValue.open("Hear packets");
             menuValue.add(0, "Off");
@@ -3047,6 +3303,7 @@ void uiMain(void *)
             p.aprsReceive = aprsReceive;
             p.mode = modeState.mode();
             p.aprsAudible = aprsAudible;
+            p.text = textSettings;
             settingsStore->keepPreferences(p, os::nowMs());
         }
     };
@@ -3062,9 +3319,15 @@ void uiMain(void *)
     // task decodes or stops. False if the mode has no frequency.
     auto setMode = [&](services::DedicatedMode mode, bool keep) {
         using Change = services::DedicatedModeState::Change;
-        switch (modeState.turnOn(mode, services::ReceiverLock{aprsFrequencyHz, aprsWide})) {
+        const bool text = mode == services::DedicatedMode::Text;
+        // The text mode listens narrow on the user's frequency, APRS as the
+        // codeplug says.
+        const services::ReceiverLock lock =
+            text ? services::ReceiverLock{textSettings.frequencyHz, false} : services::ReceiverLock{aprsFrequencyHz, aprsWide};
+        switch (modeState.turnOn(mode, lock)) {
         case Change::NoFrequency:
-            log::warning("ui") << "APRS mode refused: the codeplug has no APRS frequency";
+            log::warning("ui") << services::modeName(mode) << " mode refused: "
+                               << (text ? "no frequency set" : "the codeplug has no APRS frequency");
             return false;
         case Change::Unchanged:
             return true;
@@ -3073,14 +3336,14 @@ void uiMain(void *)
             const services::ReceiverLock &l = modeState.lock();
             entryLength = 0;
             heard.shown = false;
-            radio::post(radio::LockReceiver{true, l.hz, l.wide, aprsAudible});
-            aprs::post(aprs::ModeOn{true, l.hz});
+            radio::post(radio::LockReceiver{true, l.hz, l.wide, text ? textSettings.audible : aprsAudible});
+            aprs::post(aprs::ModeOn{true, l.hz, mode});
             log::info("ui") << services::modeName(modeState.mode()) << " mode on";
             break;
         }
         case Change::TurnedOff:
             radio::post(radio::LockReceiver{false, 0, true, false});
-            aprs::post(aprs::ModeOn{false, 0});
+            aprs::post(aprs::ModeOn{false, 0, services::DedicatedMode::Off});
             log::info("ui") << "dedicated mode off";
             break;
         }
@@ -3097,6 +3360,54 @@ void uiMain(void *)
             return true;
         }
         return false;
+    };
+    // One of the text mode's options from the menu or the console: the
+    // decoder takes it at once, the speaker too if the mode is on.
+    auto setTextOption = [&](MenuItem item, std::uint32_t v) {
+        switch (item) {
+        case MenuItem::TextTones:
+            textSettings.tones = v == 1 ? services::rtty::Tones::Low : services::rtty::Tones::High;
+            break;
+        case MenuItem::TextBaud:
+            textSettings.baud =
+                v < static_cast<std::uint32_t>(services::rtty::Baud::Count) ? static_cast<services::rtty::Baud>(v) : services::rtty::Baud::Baud45;
+            break;
+        case MenuItem::TextReverse:
+            textSettings.reverse = v == 1;
+            break;
+        case MenuItem::TextUnshift:
+            textSettings.unshiftOnSpace = v == 1;
+            break;
+        case MenuItem::TextAudible:
+            textSettings.audible = v == 1;
+            if (modeState.mode() == services::DedicatedMode::Text) {
+                const services::ReceiverLock &l = modeState.lock();
+                radio::post(radio::LockReceiver{true, l.hz, l.wide, textSettings.audible});
+            }
+            break;
+        default:
+            return;
+        }
+        text_mode::configure(textSettings);
+        keepPreferences();
+    };
+    // The text mode's frequency: inside the transmit bands, and only while
+    // the mode is off. False with the reason told if refused.
+    auto setTextFrequency = [&](std::uint32_t hz) {
+        if (modeState.mode() == services::DedicatedMode::Text) {
+            notice("Turn the mode off");
+            return false;
+        }
+        if (!radio::inTransmitBand(hz)) {
+            log::info("ui") << "text mode frequency refused: outside 144-146 and 430-440 MHz";
+            notice("144-146, 430-440 only");
+            return false;
+        }
+        textSettings.frequencyHz = hz;
+        log::info("ui") << "text mode frequency " << services::text_mode::frequencyText(hz).view() << " MHz";
+        text_mode::configure(textSettings);
+        keepPreferences();
+        return true;
     };
     // The value chosen in the menu takes effect at once and is kept in the
     // codeplug; roaming off lasts only until restart.
@@ -3259,11 +3570,24 @@ void uiMain(void *)
             return;
         case MenuItem::AprsAudible:
             aprsAudible = v == 1;
-            if (modeState.on()) {
+            if (modeState.mode() == services::DedicatedMode::Aprs) {
                 const services::ReceiverLock &l = modeState.lock();
                 radio::post(radio::LockReceiver{true, l.hz, l.wide, aprsAudible});
             }
             keepPreferences();
+            break;
+        case MenuItem::TextMode:
+            if (!chooseMode(v == 1 ? services::DedicatedMode::Text : services::DedicatedMode::Off)) {
+                openGroup(menuGroup, false);
+                notice("Set a frequency first");
+            }
+            return;
+        case MenuItem::TextTones:
+        case MenuItem::TextBaud:
+        case MenuItem::TextReverse:
+        case MenuItem::TextUnshift:
+        case MenuItem::TextAudible:
+            setTextOption(menuItem, v);
             break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
@@ -3282,6 +3606,8 @@ void uiMain(void *)
         case MenuItem::ToolKeys:
         case MenuItem::Version:
         case MenuItem::AprsHeard:
+        case MenuItem::TextFrequency:
+        case MenuItem::TextReceived:
         case MenuItem::OpenHome:
         case MenuItem::OpenDisplay:
         case MenuItem::OpenKeys:
@@ -3391,15 +3717,16 @@ void uiMain(void *)
                 openModeList();
                 return;
             }
+            const bool text = modeState.mode() == services::DedicatedMode::Text;
             if (use == Use::Refused) {
                 if (press) {
-                    notice("In APRS mode");
+                    notice(text ? "In text mode" : "In APRS mode");
                 }
                 return;
             }
             if (press && key == Key::Menu) {
-                menuItem = MenuItem::AprsMode;
-                openGroup(MenuGroup::Aprs, false);
+                menuItem = text ? MenuItem::TextMode : MenuItem::AprsMode;
+                openGroup(text ? MenuGroup::Text : MenuGroup::Aprs, false);
                 return;
             }
             if (use != Use::Usual) {
@@ -3525,6 +3852,17 @@ void uiMain(void *)
             stationShown = static_cast<std::size_t>(
                 std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
             drawHeard();
+        } else if (view == View::Received) {
+            // Clockwise towards the newest line.
+            const int back = static_cast<int>(receivedBack) - static_cast<int>(moved);
+            receivedBack = static_cast<std::size_t>(std::max(back, 0));
+            drawReceived();
+        } else if (view == View::ModeFrequency) {
+            modeEntryHz = modeDigitsHz();
+            modeTypedLength = 0;
+            const std::int64_t hz = static_cast<std::int64_t>(modeEntryHz) + static_cast<std::int64_t>(moved) * VfoStepHz;
+            modeEntryHz = static_cast<std::uint32_t>(std::clamp<std::int64_t>(hz, 0, 999'999'990));
+            drawModeDigits();
         } else if (view == View::Standby && modeState.on()) {
             openModeList();
         } else if (view == View::Standby) {
@@ -3607,7 +3945,8 @@ void uiMain(void *)
                                            }
                                        } else if (v == Verdict::Pass && use == Use::Refused) {
                                            if (down) {
-                                               notice("Mode is on");
+                                               log::info("ui") << "PTT refused: the text mode only receives";
+                                               notice("Receive only");
                                            }
                                        } else if (v == Verdict::Pass) {
                                            radio::post(radio::Ptt{down});
@@ -3654,6 +3993,42 @@ void uiMain(void *)
                                    } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Front2)) {
                                        heardFromMenu = false;
                                        show(View::Standby);
+                                   }
+                                   return;
+                               }
+                               if (view == View::Received) {
+                                   if (step && (e.key == Key::Up || e.key == Key::Down)) {
+                                       receivedBack = e.key == Key::Up ? receivedBack + 1 : receivedBack > 0 ? receivedBack - 1
+                                                                                                             : 0;
+                                       drawReceived();
+                                   } else if (e.type == Type::Press && e.key == Key::Exit && receivedFromMenu) {
+                                       menuItem = MenuItem::TextReceived;
+                                       openGroup(MenuGroup::Text, false);
+                                   } else if (e.type == Type::Press &&
+                                       (e.key == Key::Exit || e.key == Key::Menu || e.key == Key::Front2)) {
+                                       show(View::Standby);
+                                   }
+                                   return;
+                               }
+                               if (view == View::ModeFrequency) {
+                                   const bool digit = e.key >= Key::Digit0 && e.key <= Key::Digit9;
+                                   if (e.type == Type::Press && digit && modeTypedLength < sizeof modeTyped) {
+                                       modeTyped[modeTypedLength++] =
+                                           static_cast<char>('0' + static_cast<int>(e.key) - static_cast<int>(Key::Digit0));
+                                       drawModeDigits();
+                                   } else if (e.type == Type::Press && e.key == Key::Star && modeTypedLength > 0) {
+                                       --modeTypedLength;
+                                       drawModeDigits();
+                                   } else if (step && (e.key == Key::Up || e.key == Key::Down)) {
+                                       turnKnob(e.key == Key::Up ? 1 : -1);
+                                   } else if (e.type == Type::Press && e.key == Key::Menu) {
+                                       if (setTextFrequency(modeDigitsHz())) {
+                                           menuItem = MenuItem::TextFrequency;
+                                           openGroup(MenuGroup::Text, false);
+                                       }
+                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
+                                       menuItem = MenuItem::TextFrequency;
+                                       openGroup(MenuGroup::Text, false);
                                    }
                                    return;
                                }
@@ -3944,7 +4319,22 @@ void uiMain(void *)
                                if (!hardwareUp() || channels == nullptr) {
                                    log::info("ui") << "mode refused: the radio is not ready";
                                } else if (!chooseMode(s.mode)) {
-                                   notice("No APRS frequency");
+                                   notice(s.mode == services::DedicatedMode::Text ? "Set a frequency first" : "No APRS frequency");
+                               }
+                           },
+                           [&](const TextSetting &t) {
+                               using Field = TextSetting::Field;
+                               constexpr MenuItem Items[] = {MenuItem::TextFrequency, MenuItem::TextTones, MenuItem::TextBaud,
+                                   MenuItem::TextReverse, MenuItem::TextUnshift, MenuItem::TextAudible};
+                               if (t.field == Field::Frequency) {
+                                   setTextFrequency(t.value);
+                               } else {
+                                   setTextOption(Items[static_cast<int>(t.field)], t.value);
+                               }
+                               if (view == View::Menu && menuGroup == MenuGroup::Text && !menuAtGroups && !noticeShown) {
+                                   drawMenu();
+                               } else if (view == View::Standby && modeState.on() && !noticeShown) {
+                                   redrawView();
                                }
                            },
                            [&](const AprsProblem &p) {
@@ -4048,12 +4438,25 @@ void uiMain(void *)
             }
         }
         // A dedicated mode's home screen: ages and the beacon countdown each
-        // second.
+        // second, received text as it comes (a few times a second at most).
         if (view == View::Standby && modeState.on() && !noticeShown) {
-            const os::Ticks second = os::nowMs() / 1000;
-            if (second != lastSecond) {
+            const os::Ticks now = os::nowMs();
+            const os::Ticks second = now / 1000;
+            const bool textCame = modeState.mode() == services::DedicatedMode::Text && text_mode::version() != textShown &&
+                now - textDrawnAt >= TextRedrawMs;
+            if (second != lastSecond || textCame) {
                 lastSecond = second;
+                textShown = text_mode::version();
+                textDrawnAt = now;
                 standby.drawMode(d, standbyState(), modeScreen());
+            }
+        }
+        if (view == View::Received && !noticeShown) {
+            const os::Ticks now = os::nowMs();
+            if (text_mode::version() != textShown && now - textDrawnAt >= TextRedrawMs) {
+                textShown = text_mode::version();
+                textDrawnAt = now;
+                drawReceived();
             }
         }
         // The home screen's live rows: the signal twice a second, the last

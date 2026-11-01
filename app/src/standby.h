@@ -129,9 +129,12 @@ struct ModeScreen
     /// The top line, left of the clock: the mode and its frequency.
     std::string_view top;
     std::string_view big;
-    /// On the panel: on the left, and right-aligned.
+    /// On the panel: on the left, and right-aligned; or two lines of small
+    /// text (@c twoLines), @c panel above @c panel2.
     std::string_view panel;
     std::string_view panelRight;
+    std::string_view panel2;
+    bool twoLines = false;
     /// Under the panel, a label and a value on each half; the right value
     /// in amber when @c rightWarn.
     std::string_view leftLabel;
@@ -205,6 +208,8 @@ void drawLogFrame(services::Display &d, std::string_view title, std::string_view
 /// row stands out.
 void drawLogRow(services::Display &d, int row, std::string_view time, std::string_view text, services::Color ink,
     bool selected = false);
+/// One row of the same list holding only text, across the whole width.
+void drawTextRow(services::Display &d, int row, std::string_view text, services::Color ink);
 
 /// The GPS screen: the receiver's state, position, altitude, satellites,
 /// speed and UTC time, between the status bar and a hint bar. @p full

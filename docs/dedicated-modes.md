@@ -38,7 +38,29 @@ APRS mode is its first user.
   again the next time.
 - A mode stays on until the user turns it off in the menu. Nothing else
   turns it off: not a channel key, not a call, not a timeout.
-- The console can do the same for tests (`aprs mode on|off`).
+- The console can do the same for tests (`aprs mode on|off`,
+  `text mode on|off`, `text freq <MHz>`).
+
+### The text mode
+
+Menu, Text holds the text mode (RTTY receive for now; PSK31 and others
+later as kinds of the same mode):
+
+| Row | Does |
+| --- | --- |
+| Text mode | On/Off. The panel: "One receiver: text mode" / "listens only on 144.6125", or "needs a frequency (below)" |
+| Frequency | Opens the digit entry: digits typed over the value, the knob or Up/Down in 12.5 kHz steps, `*` deletes a digit, Menu sets. Only inside 144-146 and 430-440 MHz; only while the mode is off ("Turn the mode off") |
+| Received text | Opens the received text (below) |
+| Tones | 2125/2295 or 1275/1445 Hz: mark the lower tone, 170 Hz shift |
+| Baud | 45.45, 50 or 75 |
+| Reverse | Mark and space swapped |
+| Unshift | A space after figures goes back to letters (unshift on space, on by default) |
+| Hear audio | The speaker opens with the squelch, as "Hear packets" does for APRS |
+
+The options take effect at once, the mode on or off. The receiver listens
+narrow (12.5 kHz) on the frequency. While the text mode is on the APRS
+task's automatic beacons wait (they would take the receiver away), and
+"Send now" still sends one.
 
 ### Kept over a restart
 
@@ -101,7 +123,8 @@ as to every packet: only inside the 2 m and 70 cm amateur bands, only once
 the channel has been free for a slot (it waits up to 30 s, then gives up
 with "Beacon not sent"), and only with a GPS position no older than
 2 minutes (it waits up to 3 minutes for one). A mode that must not
-transmit (RTTY or PSK31 receive) refuses PTT with a notice.
+transmit refuses PTT with a notice: the text mode answers "Receive only"
+until it can send.
 
 Automatic beacons go on as set (Menu, APRS, Auto send). In the mode they
 go out on the locked frequency without retuning.
@@ -137,6 +160,22 @@ APRS:
 It is redrawn when a station is heard and each second (ages, the beacon
 countdown), in place.
 
+Text mode:
+
+| Row | Shows |
+| --- | --- |
+| Top | "RTTY 144.6125": the kind and frequency; the clock on the right |
+| Big | The callsign last given after "DE" in the text; "Receiving" while a signal is detected before one is; "Listening" otherwise |
+| Panel | The two newest lines of received text, small, 31 characters each |
+| Under the panel | TON: the tone pair (mark first, swapped when reversed); SIG: the share of the audio's power in the two tones, in amber while the decoder is not running |
+| Bottom | The speed, characters received and framing errors: "45.45 Bd  123 chr  4 err" |
+| Hint bar | "Menu  Up/Down Text  P2 Log" |
+
+It is redrawn each second and as text comes in (at most four times a
+second). The mode's own list (knob, Up, Down) is the received text: the
+last 32 lines of 31 characters, newest at the bottom, the knob or Up/Down
+scrolling back; new text keeps the view where it is. Exit goes back.
+
 ## 4. The decoder
 
 Sampling the audio and decoding run only while the mode is on and the
@@ -156,6 +195,13 @@ The audio sampler fills a ring by DMA. The decoding task reads it every
 redraw or codeplug write cannot hold it up; the ring covers 0.4 s.
 `aprs rx` reports samples lost and the longest gap between reads.
 
+One task decodes for every mode: the aprs task holds the sampler and runs
+the APRS decoder in APRS mode or the text mode's RTTY decoder in the text
+mode (`text_mode::decode`). Only one mode is on at a time, so the two never
+run together, and a second task's stack is saved. `text` reports the RTTY
+decoder: signal, quality, characters, framing errors, the longest pass;
+`text log on` copies each received line to the log (`text: rx "..."`).
+
 ## 5. Adding a mode
 
 A new mode brings:
@@ -171,11 +217,11 @@ A new mode brings:
    (`DedicatedModeState::turnOn` answers `NoFrequency`).
 3. Its settings: on/off and the mode's own options in the preferences
    record (`RadioPreferences`), statistics in RAM only.
-4. A task that owns its decoder, told by a message when the mode starts
-   and stops; it samples only while the radio listens on the mode's
-   frequency (`radio::analogListeningHz()`). The audio sampler has one
-   user at a time: the mode's task holds it and lends it out as the APRS
-   task does for the audio probe.
+4. A decoder hosted by the aprs task, told by a message when the mode
+   starts and stops (`aprs::ModeOn` names the mode); it samples only while
+   the radio listens on the mode's frequency
+   (`radio::analogListeningHz()`). The audio sampler has one user at a
+   time: the aprs task holds it and lends it out for the audio probe.
 5. A home screen builder: a pure function in services that turns the
    mode's state into the rows of section 3, with host tests. The ui only
    draws what it returns.

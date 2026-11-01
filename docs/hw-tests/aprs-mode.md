@@ -26,7 +26,7 @@ PC, out of the repository; report counts only.
 | # | Do | Expect |
 | --- | --- | --- |
 | 1 | `key menu`, `key down` three times, `key menu` | Menu > APRS open on "APRS mode  Off"; the panel says `One receiver: APRS mode` / `listens only on 144.800` (`screen shot`) |
-| 2 | `key menu`, `key down`, `key menu` | `ui: APRS mode on`, `radio: receiver held at 144.800 MHz, 25 kHz, speaker quiet`, `aprs: APRS mode on at 144.800 MHz`, after about a second `aprs: MCU decoding on at 144.800 MHz`; the home screen comes up at once |
+| 2 | `key menu`, `key down`, `key menu` | `ui: APRS mode on`, `radio: receiver held at 144.800 MHz, 25 kHz, speaker quiet`, `aprs: APRS mode on at 144.800 MHz`, after about a second `aprs: MCU decoding APRS on at 144.800 MHz`; the home screen comes up at once |
 | 3 | `screen shot` | Top line `APRS 144.800` in blue with the clock; large `Listening` (or the last station's callsign); the panel `Nothing heard yet` or the last station; `STN` and `PKT` counts; bottom `Beacons off`; hint bar `Menu  P2 Log  PTT Beacon` |
 | 4 | `fm status` | `144.800 MHz`, the speaker closed unless a signal is on |
 | 5 | Wait for traffic (or a person sends a beacon from a second radio) | `aprs: heard (MCU) ...` lines; within a second the home screen's large name is that callsign, the panel its distance and bearing with GPS (else its comment) and `0 s`; `STN`/`PKT` count up (`screen shot`) |

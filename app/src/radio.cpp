@@ -2199,6 +2199,11 @@ std::uint32_t analogListeningHz()
     return listeningHz.load();
 }
 
+bool inTransmitBand(std::uint32_t hz)
+{
+    return transmitAllowed(hz);
+}
+
 bool ready()
 {
     return chipsReady.load();

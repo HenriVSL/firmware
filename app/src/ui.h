@@ -187,6 +187,23 @@ struct SetMode
 {
     services::DedicatedMode mode;
 };
+/// Changes one of the text mode's settings as its menu row does (console):
+/// the frequency in Hz, the tone pair and speed as their index, the others
+/// 0 or 1.
+struct TextSetting
+{
+    enum class Field : std::uint8_t
+    {
+        Frequency,
+        Tones,
+        Baud,
+        Reverse,
+        Unshift,
+        Audible,
+    };
+    Field field;
+    std::uint32_t value;
+};
 /// The APRS heard list changed.
 struct AprsHeard
 {
@@ -205,7 +222,7 @@ struct AprsProblem
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, SetMode, Notice, PlugCommand, ScreenCommand, KnobTurn>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, SetMode, TextSetting, Notice, PlugCommand, ScreenCommand, KnobTurn>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.

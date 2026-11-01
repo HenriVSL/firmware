@@ -42,12 +42,14 @@ struct Receive
     bool on;
 };
 
-/// APRS mode is on (or off) and holds the receiver at @c hz: the MCU
-/// decodes the audio while the radio listens there.
+/// A dedicated mode is on (or off) and holds the receiver at @c hz: the
+/// MCU decodes the audio while the radio listens there, as APRS or, in the
+/// text mode, as RTTY (text_mode); automatic beacons wait in the text mode.
 struct ModeOn
 {
     bool on;
     std::uint32_t hz;
+    services::DedicatedMode mode;
 };
 
 /// Decoding the received audio on the MCU: in APRS mode (On, the default),

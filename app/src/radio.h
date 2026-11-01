@@ -265,6 +265,9 @@ Activity activity();
 /// channel or does not receive. Any task may ask.
 std::uint32_t analogListeningHz();
 
+/// Inside the bands the radio transmits in (2 m and 70 cm). Any task.
+bool inTransmitBand(std::uint32_t hz);
+
 /// True once the radio's chips are up and it takes commands that reach the
 /// air; false while they start or restart. Any task may ask.
 bool ready();
