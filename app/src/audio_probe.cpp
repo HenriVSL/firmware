@@ -3,6 +3,8 @@
 
 #include "audio_probe.h"
 
+#include "aprs.h"
+
 #include "dmm/lib/format.h"
 #include "dmm/lib/strings.h"
 #include "dmm/os/os.h"
@@ -122,7 +124,14 @@ void run(const Request &request, Platform &platform)
 {
     board::AudioSampler &sampler = *platform.audioSampler;
     const std::uint32_t wanted = request.ms * RateHz / 1000;
+    // APRS decoding on the MCU pauses meanwhile.
+    if (!aprs::lendSampler(true)) {
+        aprs::lendSampler(false);
+        log::info("audio") << "the sampler is busy";
+        return;
+    }
     if (!sampler.start(RateHz)) {
+        aprs::lendSampler(false);
         log::info("audio") << "cannot sample at " << RateHz << " Hz";
         return;
     }
@@ -159,6 +168,7 @@ void run(const Request &request, Platform &platform)
         }
     }
     sampler.stop();
+    aprs::lendSampler(false);
     dumper.flush();
 
     const services::AudioMeter::Result r = meter.result();
