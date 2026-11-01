@@ -54,6 +54,16 @@ struct McuReceive
 {
     McuMode mode;
 };
+/// The MCU decoder repairs frames with one wrong bit or tone (off at
+/// start).
+struct RepairFrames
+{
+    bool on;
+};
+/// Logs the receive state and counts.
+struct ReceiveReport
+{
+};
 
 /// Bytes for the board, from the console; it must be receiving.
 struct BoardCommand
@@ -62,7 +72,7 @@ struct BoardCommand
     std::uint8_t length;
 };
 
-using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, McuReceive>;
+using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, McuReceive, RepairFrames, ReceiveReport>;
 
 /// A station heard, as the Heard list shows it.
 struct HeardStation
