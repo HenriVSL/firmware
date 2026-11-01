@@ -218,7 +218,11 @@ writes the drawing of the whole screen to the log, and
 together. `screen watch <s>` streams the drawing for that many seconds
 (`screen on` and `screen off` without a time limit); `--passes <dir>` then
 writes a picture after each redraw, and `--flicker` counts the pixels
-painted twice in one redraw, which show as a flash.
+painted twice in one redraw, which show as a flash. `screen text` writes
+each run of text on the screen with its place and colours.
+`tools/radio_test` runs hardware checklists through these commands on a
+radio or on the headless simulator (`sim --stdin` takes console commands
+from standard input) and writes a report.
 
 ## Project layout
 

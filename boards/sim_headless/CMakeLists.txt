@@ -17,3 +17,8 @@ add_test(NAME sim-screen-text COMMAND sim --seconds 4 --command "screen text" --
 set_tests_properties(sim-screen-text PROPERTIES
     PASS_REGULAR_EXPRESSION "scr: text.*scr: t [0-9]+ [0-9]+ [0-9]+ [0-9a-f]+ [0-9a-f]+ [^ ].*scr: text end")
 
+find_program(DMM_PYTHON3 python3)
+if(DMM_PYTHON3)
+    add_test(NAME sim-radio-test COMMAND ${DMM_PYTHON3} ${PROJECT_SOURCE_DIR}/tools/radio_test/radio_test.py run test-tools
+        --sim $<TARGET_FILE:sim> --no-human --out ${CMAKE_CURRENT_BINARY_DIR}/radio-test)
+endif()

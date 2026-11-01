@@ -12,6 +12,8 @@ the end of the log) and writes the screen as it stood at the end. With
 numbered PNG each. With --flicker, counts the pixels painted in one colour
 and then in another within one pass (a blank before a redraw), and fails
 when there are any. A log of "-" is read from standard input.
+
+Importable: streams() and decode() put pictures together from log lines.
 """
 import argparse
 import os
@@ -105,6 +107,52 @@ class Screen:
             f.write(chunk(b'IEND', b''))
 
 
+class Result:
+    """A stream put together: the screen at its end and what was counted."""
+
+    def __init__(self, screen, passes, lost):
+        self.screen = screen
+        self.passes = passes
+        self.lost = lost
+
+    @property
+    def flickered(self):
+        return len(self.screen.flickered)
+
+
+def decode(stream, passes_dir=None, scale=3):
+    """Draws one stream's lines (as streams() gives them) onto a Screen;
+    with @p passes_dir, writes a picture after each pass there."""
+    screen = Screen(int(stream[0][1]), int(stream[0][2]))
+    expected = 0
+    passes = 0
+    lost = 0
+    if passes_dir:
+        os.makedirs(passes_dir, exist_ok=True)
+    for words in stream[1:]:
+        kind = words[0]
+        if kind == 'stop':
+            break
+        if kind not in ('f', 'b', 'e'):
+            continue
+        number = int(words[1])
+        if number != expected:
+            lost += 1
+        expected = number + 1
+        if kind == 'f':
+            x, y, w, h = (int(v) for v in words[2:6])
+            screen.fill(x, y, w, h, int(words[6], 16))
+        elif kind == 'b':
+            x, y, w, h = (int(v) for v in words[2:6])
+            screen.bitmap(x, y, w, h, int(words[6], 16), int(words[7], 16), bytes.fromhex(words[8]))
+        elif kind == 'e':
+            passes += 1
+            screen.pass_done()
+            if passes_dir:
+                screen.png(os.path.join(passes_dir, '%04d.png' % passes), scale)
+    return Result(screen, passes, lost)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('log')
@@ -119,40 +167,15 @@ def main():
         found = list(streams(source))
     if not found:
         sys.exit('no streamed screen in the log')
-    stream = found[-1]
-    screen = Screen(int(stream[0][1]), int(stream[0][2]))
-    expected = 0
-    passes = 0
-    lost = 0
-    if args.passes:
-        os.makedirs(args.passes, exist_ok=True)
-    for words in stream[1:]:
-        kind = words[0]
-        if kind == 'stop':
-            break
-        number = int(words[1])
-        if number != expected:
-            lost += 1
-        expected = number + 1
-        if kind == 'f':
-            x, y, w, h = (int(v) for v in words[2:6])
-            screen.fill(x, y, w, h, int(words[6], 16))
-        elif kind == 'b':
-            x, y, w, h = (int(v) for v in words[2:6])
-            screen.bitmap(x, y, w, h, int(words[6], 16), int(words[7], 16), bytes.fromhex(words[8]))
-        elif kind == 'e':
-            passes += 1
-            screen.pass_done()
-            if args.passes:
-                screen.png(os.path.join(args.passes, '%04d.png' % passes), args.scale)
-    screen.png(args.out, args.scale)
-    report = '%s: %d passes' % (args.out, passes)
-    if lost:
-        report += ', lines lost in %d places' % lost
+    result = decode(found[-1], args.passes, args.scale)
+    result.screen.png(args.out, args.scale)
+    report = '%s: %d passes' % (args.out, result.passes)
+    if result.lost:
+        report += ', lines lost in %d places' % result.lost
     if args.flicker:
-        report += ', %d pixels painted twice in one pass' % len(screen.flickered)
+        report += ', %d pixels painted twice in one pass' % result.flickered
     print(report)
-    if lost or (args.flicker and screen.flickered):
+    if result.lost or (args.flicker and result.flickered):
         sys.exit(1)
 
 
