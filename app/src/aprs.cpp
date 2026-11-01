@@ -481,6 +481,25 @@ void updateDecoding()
     }
 }
 
+void receiveReport()
+{
+    log::info("aprs") << "receive " << (receiveWanted ? "on" : "off") << "; MCU decoding " << mcuModeText()
+                      << (decoding ? ", running" : ", not running") << ", repair " << (demodulator.repair() ? "on" : "off")
+                      << (samplerLent.load() ? ", sampler lent to the probe" : "");
+    log::info("aprs") << "frames: board " << framesFrom[0] << ", MCU " << framesFrom[1] << ", heard by both " << heardByBoth
+                      << "; board frames failing the check " << reader.badFrames();
+    const AfskDemodulator::Stats &st = demodulator.stats();
+    log::info("aprs") << "MCU: " << st.passed << " frames, " << st.repaired << " repaired, " << st.duplicates
+                      << " copies between slicers, " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, "
+                      << lostTotal << " samples lost";
+    auto line = log::info("aprs");
+    line << "slicers (dB right/failed):";
+    for (std::size_t i = 0; i < AfskDemodulator::Slicers; ++i) {
+        const int db = AfskDemodulator::MarkGainDb[i];
+        line << ' ' << (db < 0 ? "-" : "+") << (db < 0 ? -db : db) << ' ' << st.frames[i] << '/' << st.failed[i];
+    }
+}
+
 void startReceiving()
 {
     if (link == nullptr || receiving) {
@@ -603,6 +622,11 @@ void logBadFrame()
                        mcuMode = m.mode;
                        log::info("aprs") << "MCU decoding " << mcuModeText();
                    },
+                   [](const RepairFrames &r) {
+                       demodulator.setRepair(r.on);
+                       log::info("aprs") << "MCU repair " << (r.on ? "on" : "off");
+                   },
+                   [](const ReceiveReport &) { receiveReport(); },
                },
         message);
 }
@@ -726,7 +750,8 @@ bool lendSampler(bool lent)
 
 const char *consoleHelp()
 {
-    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, aprs board <text>|hex <bytes>";
+    return "aprs, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, aprs board <text>|hex <bytes>, "
+           "aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
 }
 
 bool runCommand(std::string_view command)
@@ -757,6 +782,25 @@ bool runCommand(std::string_view command)
         case CommandResult::Invalid:
             log::info("console") << "aprs board <text> (sent with CR LF), aprs board hex <bytes>";
             break;
+        }
+        return true;
+    }
+    if (word == "rx") {
+        const std::string_view what = lib::takeWord(rest);
+        const std::string_view value = lib::takeWord(rest);
+        bool posted = true;
+        if (what.empty()) {
+            posted = post(ReceiveReport{});
+        } else if (what == "mcu" && rest.empty() && (value == "on" || value == "off" || value == "any")) {
+            posted = post(McuReceive{value == "on" ? McuMode::On : value == "off" ? McuMode::Off
+                                                                                  : McuMode::AnyChannel});
+        } else if (what == "repair" && rest.empty() && (value == "on" || value == "off")) {
+            posted = post(RepairFrames{value == "on"});
+        } else {
+            log::info("console") << "aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
+        }
+        if (!posted) {
+            log::info("console") << "busy";
         }
         return true;
     }
