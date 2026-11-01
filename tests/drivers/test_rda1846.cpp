@@ -80,6 +80,11 @@ TEST_CASE("frequency and squelch words follow the programming guide's examples")
 {
     CHECK(Rda1846::frequencyWord(409'750'000) == 0x640960);
     CHECK(Rda1846::frequencyWord(145'500'000) == 145'500u * 16);
+    // Between steps, the nearest one, either way.
+    CHECK(Rda1846::frequencyWord(145'500'031) == 145'500u * 16);
+    CHECK(Rda1846::frequencyWord(145'500'032) == 145'500u * 16 + 1);
+    CHECK(Rda1846::frequencyWord(145'499'969) == 145'500u * 16);
+    CHECK(Rda1846::frequencyWord(145'499'968) == 145'500u * 16 - 1);
     CHECK(Rda1846::squelchWord(-120, -122) == 0x088F);
     // Levels past the field's range are clamped.
     CHECK(Rda1846::squelchWord(-140, 0) == 0x007F);
