@@ -29,6 +29,10 @@ public:
     static constexpr std::uint16_t DcsMatch = 1u << 7;
     static constexpr std::uint16_t CtcssMatch = 1u << 9;
 
+    /// The frequency registers count in 1/16 kHz: the chip tunes in
+    /// 62.5 Hz steps.
+    static constexpr std::uint32_t FrequencyStepMilliHz = 62'500;
+
     /// A sub-audible tone: CTCSS in 0.01 Hz units, or a DCS code (the nine
     /// bits of its three octal digits), normal or inverted.
     struct SubTone
@@ -141,7 +145,7 @@ public:
     /// answer.
     bool start(void (*sleepMs)(unsigned), std::uint16_t gpio);
 
-    /// Tunes to @p hz. Change it only while idle.
+    /// Tunes to the step nearest @p hz. Change it only while idle.
     void setFrequency(std::uint32_t hz);
     /// Filters and gains for the channel width, and those for the
     /// frequency, so after setFrequency(). Change it only while idle.
@@ -187,7 +191,7 @@ public:
     std::uint16_t readRegister(std::uint8_t address) { return m_bus.read(address); }
     void writeRegister(std::uint8_t address, std::uint16_t value) { m_bus.write(address, value); }
 
-    /// The frequency in the chip's 1/16 kHz units.
+    /// The frequency in the chip's 1/16 kHz units, rounded to the nearest.
     static std::uint32_t frequencyWord(std::uint32_t hz);
     /// The squelch register for open and close levels in dBm.
     static std::uint16_t squelchWord(int openDbm, int closeDbm);

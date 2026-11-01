@@ -228,7 +228,7 @@ bool Rda1846::start(void (*sleepMs)(unsigned), std::uint16_t gpio)
 
 std::uint32_t Rda1846::frequencyWord(std::uint32_t hz)
 {
-    return static_cast<std::uint32_t>(static_cast<std::uint64_t>(hz) * 16 / 1000);
+    return static_cast<std::uint32_t>((static_cast<std::uint64_t>(hz) * 1000 + FrequencyStepMilliHz / 2) / FrequencyStepMilliHz);
 }
 
 void Rda1846::setFrequency(std::uint32_t hz)
