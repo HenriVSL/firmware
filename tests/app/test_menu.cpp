@@ -138,7 +138,7 @@ TEST_CASE("Menu opens a group and Exit goes back one level onto the row that ope
     CHECK(nav.press(Key::Menu) == Step::Opened);
     CHECK(nav.group() == Group::Settings);
     CHECK(nav.current().group == Group::Home);
-    moveTo(nav, 2);
+    moveTo(nav, 3);
     CHECK(nav.press(Key::Menu) == Step::Opened);
     CHECK(nav.group() == Group::Keys);
     CHECK(nav.press(Key::Down) == Step::Moved);
@@ -397,4 +397,58 @@ TEST_CASE("Settings opens Audio with the two microphone gains")
     CHECK(nav.current().item == Item::DmrMicGain);
     CHECK(nav.press(Key::Down) == Step::Moved);
     CHECK(nav.current().item == Item::FmMicGain);
+}
+
+TEST_CASE("the frequency offset moves a step on the knob, 500 Hz on Up and Down, and stops at its ends")
+{
+    Settings s;
+    s.frequencyOffsetHz = 1938;
+    Navigator nav;
+    nav.open(Group::Radio);
+    REQUIRE(nav.current().item == Item::FrequencyOffset);
+    CHECK(keptIn(Item::FrequencyOffset) == Kept::Preferences);
+    chooseHere(nav, s);
+    CHECK(nav.style() == Style::Spinner);
+    CHECK(nav.choices().size() == 161);
+    CHECK(nav.chosen() == 1938);
+    CHECK(nav.choices().text(nav.cursor()) == "+1937.5 Hz");
+    nav.turn(1);
+    CHECK(nav.chosen() == 2000);
+    nav.turn(-2);
+    CHECK(nav.chosen() == 1875);
+    nav.press(Key::Up);
+    CHECK(nav.chosen() == 2375);
+    nav.press(Key::Down);
+    nav.press(Key::Down);
+    CHECK(nav.chosen() == 1375);
+    CHECK(nav.inUse() == nav.choices().find(1938));
+
+    // No way round from one end to the other.
+    for (int i = 0; i < 20; ++i) {
+        nav.press(Key::Up);
+    }
+    CHECK(nav.chosen() == 5000);
+    CHECK(nav.turn(1) == Step::None);
+    CHECK(nav.chosen() == 5000);
+    for (int i = 0; i < 30; ++i) {
+        nav.press(Key::Down);
+    }
+    CHECK(nav.chosen() == -5000);
+    CHECK(nav.choices().text(nav.cursor()) == "-5000 Hz");
+
+    CHECK(valueText(Item::FrequencyOffset, 0).view() == "0 Hz");
+    CHECK(valueText(Item::FrequencyOffset, -63).view() == "-62.5 Hz");
+}
+
+TEST_CASE("other large values still go round their ends")
+{
+    Settings s;
+    s.timeZoneMinutes = 14 * 60;
+    Navigator nav;
+    nav.open(Group::Clock);
+    chooseHere(nav, s);
+    nav.turn(1);
+    CHECK(nav.chosen() == -12 * 60);
+    nav.press(Key::Down);
+    CHECK(nav.chosen() == 14 * 60);
 }

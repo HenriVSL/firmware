@@ -11,7 +11,8 @@
 class SimFm
 {
 public:
-    static constexpr std::uint32_t TuningStepMilliHz = 1'000;
+    // As the radio's transceiver tunes, so the menu offers the same steps.
+    static constexpr std::uint32_t TuningStepMilliHz = 62'500;
 
     bool present() { return true; }
     bool start()

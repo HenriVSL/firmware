@@ -27,6 +27,7 @@ The code: `services/settings_store.h` (the interface the app uses),
 | Roaming on or off (Menu > Roaming > Roaming) | Preferences record | `Preferences` |
 | Home screen layout (Menu > Settings > Home screen) | Preferences record | `Preferences` |
 | Microphone gain on DMR and FM (Menu > Settings > Audio) | Preferences record | `Preferences` |
+| Frequency offset (Menu > Settings > Radio, console `fm offset`) | Preferences record | `Preferences` |
 
 The auto lock time shares its field with the menu exit time, in 5 s
 steps up to 60 s.
@@ -135,9 +136,9 @@ meaning, which a new field never needs.
 1. Add the member, with its default, to `RadioPreferences` in
    `services/codeplug.h`.
 2. In `services/src/d878uv2_preferences.cpp`, give it the place right
-   after the last field and move `FieldsEnd` past it: the microphone
-   gains are at `FieldsAt + 7` and `FieldsAt + 8`, so the next field is
-   `FieldsAt + 9`. Never move or reuse a place.
+   after the last field and move `FieldsEnd` past it: the frequency
+   offset takes `FieldsAt + 9` and `FieldsAt + 10`, so the next field is
+   `FieldsAt + 11`. Never move or reuse a place.
 3. Encode it in `encodePreferences`; decode it in `decodePreferences`
    through `Fields`, which gives nothing for a byte the record does not
    hold, and fall back to the default for that and for values out of

@@ -451,6 +451,37 @@ TEST_CASE("preferences record: round trip, and none in an erased codeplug")
         REQUIRE(q.has_value());
         CHECK(q->roaming == roaming);
     }
+    for (const std::int16_t hz : {std::int16_t{0}, std::int16_t{1938}, std::int16_t{-1938}, std::int16_t{5000}, std::int16_t{-5000}}) {
+        RadioPreferences p;
+        p.frequencyOffsetHz = hz;
+        const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+        REQUIRE(q.has_value());
+        CHECK(q->frequencyOffsetHz == hz);
+        CHECK(q->roaming == p.roaming);
+    }
+}
+
+TEST_CASE("preferences record: the frequency offset's place, after the microphone gains")
+{
+    RadioPreferences p;
+    p.frequencyOffsetHz = -2000;
+    p.fmMicGainDb = 12;
+    p.home.big = dmm::services::HomeLayout::Big::Zone;
+    Record r = encoded(p);
+    CHECK(r[5] == 11);
+    CHECK(r[13] == 0xFF);
+    CHECK(r[14] == 12);
+    CHECK(r[15] == 0x30);
+    CHECK(r[16] == 0xF8);
+
+    // A record from before the offset keeps the fields before it.
+    r[5] = 9;
+    seal(r);
+    const auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(12));
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")
@@ -488,6 +519,25 @@ TEST_CASE("preferences record: fields a shorter record lacks, or out of range, r
     auto q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
     CHECK(q->roaming == RadioPreferences{}.roaming);
+    CHECK(q->frequencyOffsetHz == 0);
+
+    // Only the offset's first byte.
+    p.frequencyOffsetHz = 1000;
+    r = encoded(p);
+    r[5] = 10;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+
+    // An offset past 5 kHz.
+    r = encoded(p);
+    r[15] = 0x89;
+    r[16] = 0x13;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
 
     r = encoded(p);
     r[6] = 7;
