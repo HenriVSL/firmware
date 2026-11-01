@@ -4,7 +4,12 @@ APRS mode holds the radio's one receiver on the codeplug's APRS frequency
 and decodes the audio on the MCU until it is turned off
 (`docs/dedicated-modes.md`). Everything below runs from the console
 (`key <name> [long]`, `knob <steps>`, `screen shot`, `aprs ...`, `fm ...`)
-except where a step says a person is needed.
+except the steps listed under "Human steps" at the end.
+
+Key names for `key` are the log's: `menu`, `exit`, `up`, `down`, `*`, `#`,
+`0`-`9`, `front1` (the front panel's P1 key), `front2` (P2), `side1`-`side3`
+(PF1-PF3), `ptt`. A notice stays up 1.5 s, and a `screen shot` taken
+meanwhile shows it.
 
 Logs and screen shots hold other stations' callsigns: keep them on the
 PC, out of the repository; report counts only.
@@ -29,19 +34,19 @@ PC, out of the repository; report counts only.
 | 2 | `key menu`, `key down`, `key menu` | `ui: APRS mode on`, `radio: receiver held at 144.800 MHz, 25 kHz, speaker quiet`, `aprs: APRS mode on at 144.800 MHz`, after about a second `aprs: MCU decoding on at 144.800 MHz`; the home screen comes up at once |
 | 3 | `screen shot` | Top line `APRS 144.800` in blue with the clock; large `Listening` (or the last station's callsign); the panel `Nothing heard yet` or the last station; `STN` and `PKT` counts; bottom `Beacons off`; hint bar `Menu  P2 Log  PTT Beacon` |
 | 4 | `fm status` | `144.800 MHz`, the speaker closed unless a signal is on |
-| 5 | Wait for traffic (or a person sends a beacon from a second radio) | `aprs: heard (MCU) ...` lines; within a second the home screen's large name is that callsign, the panel its distance and bearing with GPS (else its comment) and `0 s`; `STN`/`PKT` count up (`screen shot`) |
+| 5 | Wait for traffic (or a person sends a beacon from a second radio) | `aprs: heard (MCU) ...` lines; within a second the home screen's large name is that callsign, the panel its distance and bearing with GPS (else its comment or status, cut at a word; `Our GPS: no fix` or `No position` without one) and `0 s`; `STN`/`PKT` count up (`screen shot`) |
 | 6 | `screen shot` twice, 10 s apart, with no new packet | The age on the panel and the beacon countdown (once beacons are on) moved on; nothing else changed |
 | 7 | `save` | `battery save ...; awake` and no `receiver asleep` while the mode is on, however long the radio is idle |
-| 8 | `aprs rx` | `APRS mode on; board receive ...; MCU decoding in APRS mode, running, repair off`; `0 samples lost`; `reads: longest gap` well under 400 ms |
+| 8 | `aprs rx` | `APRS mode on; board receive ...; MCU decoding in APRS mode, running, repair off`; `MCU: <n> s of audio, 0 samples lost, ...`; `reads: longest gap` well under 400 ms |
 
 ## Keys and PTT
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 9 | `key p1`, `key #`, `key 1` | Each: notice `In APRS mode`; `fm status` still 144.800 MHz |
+| 9 | `key front1` (P1), `screen shot`; then the same with `key #` and `key 1` | Each: `ui: key <name> refused in APRS mode` (`Front1`, `#`, `1`), and the picture shows the notice `In APRS mode` over the home screen; `fm status` still 144.800 MHz |
 | 10 | `knob 1` | The heard list (`APRS heard`); `knob 1` again moves the choice; `key menu` opens the station; `key exit` twice back to the APRS home screen |
 | 11 | `key up` | The heard list again; `key exit` back home |
-| 12 | `key p2` | The activity pages as usual; `key p2` back home |
+| 12 | `key front2` (P2) | The activity pages as usual; `key front2` again back home |
 | 13 | `fm rx 145500` (console tune) | `radio: refused: a dedicated mode holds the receiver`; still 144.800 MHz |
 | 14 | `key ptt` (needs a GPS fix) | `ui: PTT: beacon`, notice `Beacon queued`, then `aprs: beacon ...`, `fm: transmitting 144.800 MHz, power ..., packet`, no `packet: listening on` (no retune), `aprs: MCU decoding off` during it and `on` a second after; no voice transmission |
 | 15 | `ptt 500` (the radio's own console PTT) | `PTT: a dedicated mode holds the receiver`, notice `Mode is on`; nothing transmitted |
@@ -74,3 +79,16 @@ Leave the radio in APRS mode overnight beside a second APRS radio
 packets decoded, `samples lost` 0 (or each loss line's time stamp
 matched to what the log shows at that moment), the longest gap between
 reads, and the per-slicer counts. Report the counts, not the calls.
+
+## Human steps
+
+Everything else runs from the console. These need a person:
+
+- A second APRS radio or live traffic: steps 5, 6 (a station on the
+  panel), 17 and 20, and the overnight run (a person compares the two
+  heard lists).
+- Transmitting on the APRS frequency, with a GPS fix: steps 14 and 16.
+  Only with a person at the radio who has said transmitting is fine now.
+- Listening to the speaker: steps 17 and 18.
+- A DMR roaming channel with repeaters in range: step 23.
+- A power cycle instead of `restart`, if wanted: step 24.

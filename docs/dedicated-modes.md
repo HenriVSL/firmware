@@ -85,7 +85,7 @@ changed), the mode stays off and the radio works on its channel.
 | Menu | The menu, opened in the mode's group on its On/Off row |
 | Exit, P2, Exit held | As usual: back, the activity pages, the next screen |
 | Knob, Up, Down | The mode's own list (APRS: the heard list; the knob then picks a station, Menu opens it, Exit comes back) |
-| P1 (zones), #, digits | Refused with a notice ("In APRS mode"): each would change the channel or the frequency |
+| P1 (zones), #, digits | Refused with a notice ("In APRS mode", 1.5 s as every notice) and a log line: each would change the channel or the frequency |
 | Side keys | Their functions as usual; Roam answers "Not roaming" |
 | PTT | The mode's own action (below); never voice |
 
@@ -129,7 +129,7 @@ APRS:
 | --- | --- |
 | Top | "APRS 144.800": the mode and its frequency; the clock on the right |
 | Big | The callsign of the station heard last; "Listening" until one is |
-| Panel | Its distance and bearing from our GPS position ("12.3 km NE"), or its comment or status without positions, and how long ago it was heard ("2 min") on the right |
+| Panel | Its distance and bearing from our GPS position ("12.3 km NE"), or its comment or status without positions (cut at a word to leave room for the age; "Our GPS: no fix" or "No position" when it sent no text), and how long ago it was heard ("2 min") on the right |
 | Under the panel | STN: stations in the heard list; PKT: packets heard, in amber while the decoder is not running |
 | Bottom | Our beacon: "Next beacon 4:12", "Beacons off", "Beacon waits for GPS", "Beacon queued", "No APRS callsign"; "no GPS" added while beacons are on without a fix |
 | Hint bar | "Menu  P2 Log  PTT Beacon" |
