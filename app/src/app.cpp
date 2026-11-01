@@ -765,7 +765,7 @@ void start(Platform &p)
         audio::start(*p.audio);
     }
     radio::start(p.fm, p.baseband, p.modem);
-    aprs::start(p.aprsLink);
+    aprs::start(p.aprsLink, p.audioSampler);
     if (p.gps != nullptr) {
         gps::start(*p.gps);
     }
