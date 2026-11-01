@@ -864,8 +864,12 @@ void uiMain(void *)
         c.nowMs = os::nowMs();
         return c;
     };
+    // The notice up, drawn again over a whole screen streamed for a test.
+    lib::StaticString<24> noticeText;
     auto notice = [&](std::string_view text) {
         volumeNoticeUp = false;
+        noticeText.clear();
+        noticeText << text;
         drawNotice(d, text);
         noticeShown = true;
         noticeUntil = os::nowMs() + NoticeMs;
@@ -1523,8 +1527,18 @@ void uiMain(void *)
         Message m;
         // Whatever the last pass drew is one picture; a whole screen when
         // one was asked for.
+        // A notice up is drawn again and keeps its time.
         if (stream.passDone()) {
+            const bool noticeUp = noticeShown;
+            const bool volumeUp = volumeNoticeUp;
             redrawView();
+            if (noticeUp && volumeUp) {
+                drawVolumeNotice(d, volumeLevel, true);
+            } else if (noticeUp) {
+                drawNotice(d, noticeText.view());
+            }
+            noticeShown = noticeUp;
+            volumeNoticeUp = volumeUp;
             stream.passDone();
         }
         if (inbox.receive(m, RedrawStepMs)) {
