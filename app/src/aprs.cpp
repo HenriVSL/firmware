@@ -777,7 +777,7 @@ bool runCommand(std::string_view command)
             }
             break;
         case CommandResult::Refused:
-            log::info("console") << "refused: that could start the board's update or programming mode";
+            log::info("console") << "refused: that could reflash the board or cut off its Bluetooth module";
             break;
         case CommandResult::Invalid:
             log::info("console") << "aprs board <text> (sent with CR LF), aprs board hex <bytes>";
