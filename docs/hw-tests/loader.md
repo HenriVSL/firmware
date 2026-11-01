@@ -59,9 +59,9 @@ transmits.
 | 16 | `dmm-radio update <good B> --test-refusals` | `Bad chunk: refused (good)`, `Wrong CRC: commit refused (good)`, `Restarted without a commit`; the running version unchanged |
 | 17 | `dmm-radio update <good B>`; kill dmm-radio by its PID while the percentage runs; run the same command again | The first run stops; the radio stays in loader mode, then restarts the old image by itself after 60 s. The second run says `... chunks, N already there; committed` and B runs |
 | 18 | `dmm-radio update <good A> --swap-cut 20` | `Test: the loader restarts after 20 swap steps`; the swap resumes after the restart and A runs on trial |
-| 19 | During the swap of an update (red LED on, after `Swapping`), turn the knob off | The red LED stays on until the swap ends; then the radio goes off. Switched on: the new image runs on trial |
+| 19 | During the swap of an update (red LED on, after `Swapping`), turn the knob off | The red LED stays on until the swap ends (10–15 s); then the radio goes off. Switched on: red while the loader checks the new image, then red and blue blinking while it waits briefly for a PC still asking; then the new image runs on trial |
 | 20 | 20 updates in a row, alternating two good images, each without `--try` and 70 s apart (a shell loop) | All 20 succeed; `dmm-radio info` at the end shows the right version, confirmed; no `crash:` in the log |
-| 21 | Radio off; hold PTT and PF2, switch on | Loader mode (blue LED blinks), `dmm-radio info` shows `Waiting: force key held at power-on`; after 60 s without the PC the app starts |
+| 21 | Radio off; hold PTT and PF1 (the upper side key), switch on | Loader mode (blue LED blinks), `dmm-radio info` shows `Waiting: force key held at power-on`; after 60 s without the PC the app starts |
 | 22 | Read the latest uptime line | Every task above 50 unused stack words |
 
 Needs the owner, optionally: during the swap of step 19 or 20, pull the

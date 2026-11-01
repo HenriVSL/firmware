@@ -56,7 +56,7 @@ constexpr std::uint32_t ReplyDrainMs = 100;
 constexpr std::uint32_t ResetClockHz = 8'000'000;
 
 // Held at power-on: stay in loader mode.
-constexpr Pin ForceKeys[] = {board::Ptt, board::Pf2};
+constexpr Pin ForceKeys[] = {board::Ptt, board::Pf1};
 
 DMM_HANDOVER_BLOCK(handover);
 
@@ -128,10 +128,6 @@ private:
 
 bool forceKeysHeld()
 {
-#ifdef DMM_KEEP_SWD
-    return false; // PF2 is the debug clock
-#else
-    hal::releaseDebugPins();
     for (Pin key : ForceKeys) {
         hal::configure(key, PinMode::InputPullUp);
     }
@@ -146,7 +142,6 @@ bool forceKeysHeld()
         }
     }
     return true;
-#endif
 }
 
 bool somethingToStart()

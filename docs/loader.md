@@ -56,7 +56,7 @@ only append to the boot record. Option bytes are never touched.
 2. The **loader** reads the reset cause (and leaves the flags for the
    app), the hand-over block an image may have left in RAM (trusted only
    after a software or watchdog restart, and cleared once read), and at
-   power-on the force key: **PTT and PF2 held** keep it in loader mode.
+   power-on the force key: **PTT and PF1 held** (PF1: the upper side key, below PTT) keep it in loader mode.
 3. It reads the boot record, finishes a swap in progress, and decides:
 
 | Condition | Action |
