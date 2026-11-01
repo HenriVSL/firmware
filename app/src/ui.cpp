@@ -794,6 +794,8 @@ services::DedicatedMode modeAtStart = services::DedicatedMode::Off;
 // The mode's home screen texts, and its hint bar.
 services::aprs::HomeRows modeRows;
 lib::StaticString<40> modeKeys;
+// The notice up, drawn again over a screen shot.
+lib::StaticString<24> noticeText;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -1312,6 +1314,8 @@ void uiMain(void *)
     };
     auto notice = [&](std::string_view text) {
         volumeNoticeUp = false;
+        noticeText.clear();
+        noticeText << text;
         drawNotice(d, text);
         noticeShown = true;
         noticeUntil = os::nowMs() + NoticeMs;
@@ -3395,7 +3399,11 @@ void uiMain(void *)
             }
             if (use == Use::Refused) {
                 if (press) {
-                    notice("In APRS mode");
+                    const char *name = services::modeName(modeState.mode());
+                    log::info("ui") << "key " << services::keyName(key) << " refused in " << name << " mode";
+                    lib::StaticString<20> text;
+                    text << "In " << name << " mode";
+                    notice(text.view());
                 }
                 return;
             }
@@ -3894,10 +3902,20 @@ void uiMain(void *)
                            [&](const ClockRate &) { refreshCalibration(); },
                            [&](const ScreenCommand &) {
                                // One whole screen, streamed: a picture for tests.
+                               // A notice up is drawn again and keeps its time.
                                if (screenCommandText.view() == "shot") {
+                                   const bool noticeUp = noticeShown;
+                                   const bool volumeUp = volumeNoticeUp;
                                    d.frameDone();
                                    d.debugCommand("stream on");
                                    redrawView();
+                                   if (noticeUp && volumeUp) {
+                                       drawVolumeNotice(d, volumeLevel, true);
+                                   } else if (noticeUp) {
+                                       drawNotice(d, noticeText.view());
+                                   }
+                                   noticeShown = noticeUp;
+                                   volumeNoticeUp = volumeUp;
                                    d.frameDone();
                                    d.debugCommand("stream off");
                                } else if (!d.debugCommand(screenCommandText.view())) {
