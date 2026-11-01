@@ -180,7 +180,7 @@ TEST_CASE("a preferences record from before the dedicated modes has none on")
     dmm::services::d878uv2::encodePreferences(p, rec);
     // Bytes past the home screen were 0xFF then, the flags without the
     // audible bit; the check is made again over them.
-    rec[16] = 0xFF;
+    rec[18] = 0xFF;
     rec[9] = static_cast<std::uint8_t>(rec[9] & ~0x10);
     const std::uint32_t crc = dmm::lib::crc32(rec.data(), rec.size() - 4);
     for (int i = 0; i < 4; ++i) {

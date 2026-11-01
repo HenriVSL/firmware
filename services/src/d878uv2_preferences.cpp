@@ -23,7 +23,8 @@ constexpr std::uint8_t AprsAudible = 0x10;
 // bottom; a byte out of range (as in a record before them) is the default.
 constexpr std::size_t HomeAt = 10;
 // The dedicated receive mode; a byte out of range is none.
-constexpr std::size_t ModeAt = 16;
+// Bytes 16 and 17 hold the microphone gain (feat/mic-gain).
+constexpr std::size_t ModeAt = 18;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
 
 template <typename E>
