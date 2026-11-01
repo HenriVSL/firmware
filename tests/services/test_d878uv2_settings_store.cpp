@@ -155,6 +155,8 @@ TEST_CASE("preferences are kept in their own record")
     p.home.clock = false;
     p.clockUtc = true;
     p.aprsReceive = false;
+    p.mode = dmm::services::DedicatedMode::Aprs;
+    p.aprsAudible = true;
     r.store.keepPreferences(p, 0);
     CHECK(r.store.flush(D878Uv2SettingsStore::QuietMs) == SaveResult::Saved);
     const auto q = r.codeplug.preferences();
@@ -166,6 +168,28 @@ TEST_CASE("preferences are kept in their own record")
     CHECK_FALSE(q->home.clock);
     CHECK(q->clockUtc);
     CHECK_FALSE(q->aprsReceive);
+    CHECK(q->mode == dmm::services::DedicatedMode::Aprs);
+    CHECK(q->aprsAudible);
+}
+
+TEST_CASE("a preferences record from before the dedicated modes has none on")
+{
+    std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
+    RadioPreferences p;
+    p.mode = dmm::services::DedicatedMode::Aprs;
+    dmm::services::d878uv2::encodePreferences(p, rec);
+    // Bytes past the home screen were 0xFF then, the flags without the
+    // audible bit; the check is made again over them.
+    rec[16] = 0xFF;
+    rec[9] = static_cast<std::uint8_t>(rec[9] & ~0x10);
+    const std::uint32_t crc = dmm::lib::crc32(rec.data(), rec.size() - 4);
+    for (int i = 0; i < 4; ++i) {
+        rec[rec.size() - 4 + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(crc >> (8 * i));
+    }
+    const auto q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK(q->mode == dmm::services::DedicatedMode::Off);
+    CHECK_FALSE(q->aprsAudible);
 }
 
 TEST_CASE("a damaged preferences record counts as none")

@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "dmm/services/dedicated_mode.h"
 #include "dmm/services/dmr.h"
 #include "dmm/services/key_lock.h"
 #include "dmm/services/power_level.h"
@@ -186,6 +187,10 @@ struct RadioPreferences
     bool clockUtc = false;   // the clock shows UTC rather than local time
     bool aprsReceive = true; // stations heard through the APRS receiver
     HomeLayout home;
+    /// The dedicated receive mode on at the last change; it comes back on
+    /// after a restart.
+    DedicatedMode mode = DedicatedMode::Off;
+    bool aprsAudible = false; // the speaker opens for packets in APRS mode
 };
 
 /// One repeater of a roaming zone.
