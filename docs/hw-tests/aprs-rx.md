@@ -33,7 +33,9 @@ Console:
   now and then).
 - `aprs` shows `aprs: MCU decoding ...: <n> frames` too.
 
-The `audio probe` pauses MCU decoding while it runs.
+The `audio probe` pauses MCU decoding while it runs. With the squelch open the
+noise clips at 0 mV on the ADC; that gives failed frames in `aprs rx`
+(tens per slicer in ten minutes) but no false ones.
 
 ## Before you start
 
@@ -61,7 +63,7 @@ the repository; report counts only.
 | 7 | `audio probe 2000` while decoding | The probe runs as before (`lost 0`); decoding goes on after it (seconds of audio keep growing) |
 | 8 | An hour side by side on real traffic, then `aprs rx` | Count the distinct stations each decoded: the second radio's list, `heard (MCU)` lines (MCU only or first), `heard` lines without the mark plus `same frame from the board` lines (board), `same frame from the MCU` lines (board first, MCU too). Note the counts, the per-slicer counts and the board's failed frames. Pass: the MCU decodes at least the stations the board does, and close to the second radio |
 | 9 | Optionally `aprs rx repair on` for a second hour | Note `repaired` counts and check the repaired packets read sensibly |
-| 10 | The uptime line (`system: uptime ...`) after the hour | The aprs task's unused stack words above 50 |
+| 10 | The uptime line (`system: uptime ...`) after the hour | The aprs task's unused stack words about 200, at least 100 |
 
 ## A missed packet, offline
 
