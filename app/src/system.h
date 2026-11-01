@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace dmm::app::system {
 
@@ -54,6 +55,8 @@ std::int32_t clockRate();
 lib::StaticString<12> ppmText(std::int32_t ppb);
 /// The same rate as seconds gained or lost in a day: "-2.7 s".
 lib::StaticString<12> perDayText(std::int32_t ppb);
+/// Logs how the loader sees the running image, under @p module.
+void logLoaderStatus(std::string_view module);
 
 /// The radio's calibration once it has been read and looks valid, else
 /// nullptr. Read-only after that, from any task.
