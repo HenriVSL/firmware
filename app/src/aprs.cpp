@@ -527,12 +527,11 @@ void receiveReport()
                       << "; MCU decoding " << mcuModeText()
                       << (decoding ? ", running" : ", not running") << ", repair " << (demodulator.repair() ? "on" : "off")
                       << (samplerLent.load() ? ", sampler lent to the probe" : "");
-    log::info("aprs") << "frames: board " << framesFrom[0] << ", MCU " << framesFrom[1] << ", heard by both " << heardByBoth
-                      << "; board frames failing the check " << reader.badFrames();
     const AfskDemodulator::Stats &st = demodulator.stats();
-    log::info("aprs") << "MCU: " << st.passed << " frames, " << st.repaired << " repaired, " << st.duplicates
-                      << " copies between slicers, " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, "
-                      << lostTotal << " samples lost";
+    log::info("aprs") << "frames: board " << framesFrom[0] << " (" << reader.badFrames() << " failed the check), MCU "
+                      << framesFrom[1] << " (" << st.repaired << " repaired), heard by both " << heardByBoth;
+    log::info("aprs") << "MCU: " << st.samples / AfskDemodulator::SampleRateHz << " s of audio, " << lostTotal
+                      << " samples lost, " << st.duplicates << " copies between slicers";
     log::info("aprs") << "reads: longest gap " << longestGapMs << " ms (at " << longestGapAt / 1000
                       << " s), longest decoding pass " << longestPassMs << " ms";
     auto line = log::info("aprs");
