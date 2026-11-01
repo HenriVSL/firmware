@@ -19,6 +19,23 @@ APRS mode is its first user.
   notice.
 - Choosing On or Off goes straight to the home screen, so the change is
   seen at once.
+
+### The mode's frequency
+
+- APRS uses the codeplug's APRS frequency and its wide/narrow setting; it
+  is changed in the codeplug (or the codeplug editor), not in the mode.
+- A mode without a codeplug field for its frequency (RTTY, PSK31 and
+  later ones) has a Frequency row in its menu group, under the On/Off
+  row. The user enters the frequency there before turning the mode on; it
+  can be changed only while the mode is off. On is refused with a notice
+  until a frequency is set.
+- The user is a licensed amateur and takes responsibility for the choice.
+  DeltaMM offers no built-in default frequencies and no list of
+  "allowed" ones; the only limits are the transmit band limits that apply
+  everywhere (144-146 MHz and 430-440 MHz), for a mode that transmits at
+  all.
+- The last frequency entered is kept in the preferences record and shown
+  again the next time.
 - A mode stays on until the user turns it off in the menu. Nothing else
   turns it off: not a channel key, not a call, not a timeout.
 - The console can do the same for tests (`aprs mode on|off`).
@@ -65,7 +82,7 @@ changed), the mode stays off and the radio works on its channel.
 
 | Key | In the mode |
 | --- | --- |
-| Menu | The menu, opened on the mode's group (the On/Off row is one press away) |
+| Menu | The menu, opened in the mode's group on its On/Off row |
 | Exit, P2, Exit held | As usual: back, the activity pages, the next screen |
 | Knob, Up, Down | The mode's own list (APRS: the heard list; the knob then picks a station, Menu opens it, Exit comes back) |
 | P1 (zones), #, digits | Refused with a notice ("In APRS mode"): each would change the channel or the frequency |
@@ -146,9 +163,12 @@ A new mode brings:
 1. A value in `services::DedicatedMode`, and its key and PTT rules in
    `services::DedicatedModeState` (knob and Up/Down: the mode's list or
    refused; PTT: its action or refused).
-2. Its frequency and bandwidth as a `services::ReceiverLock`, from the
-   codeplug where the codeplug has a field for it, else from the
-   preferences record. No frequency, no mode.
+2. Its frequency and bandwidth as a `services::ReceiverLock`, from one of
+   two sources: the codeplug's field where the codeplug has one (APRS),
+   else a Frequency row in the mode's menu group that the user enters
+   while the mode is off, kept in the preferences record (section 1). No
+   default frequencies, no allowed list; no frequency, no mode
+   (`DedicatedModeState::turnOn` answers `NoFrequency`).
 3. Its settings: on/off and the mode's own options in the preferences
    record (`RadioPreferences`), statistics in RAM only.
 4. A task that owns its decoder, told by a message when the mode starts
@@ -160,7 +180,8 @@ A new mode brings:
    mode's state into the rows of section 3, with host tests. The ui only
    draws what it returns.
 6. A menu group with the On/Off row first, its panel naming the
-   frequency, and the mode's other rows under it.
+   frequency, the Frequency row next where the codeplug has none, and the
+   mode's other rows under it.
 7. A `docs/hw-tests/` checklist runnable from the console.
 
 The radio side is shared: `radio::LockReceiver` locks and unlocks the
