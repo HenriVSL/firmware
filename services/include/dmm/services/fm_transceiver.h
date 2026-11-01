@@ -39,6 +39,8 @@ struct FmReceiveStatus
 /// the board names the type (dmm/board/parts.h). Used by the radio task
 /// only. Calibrated values come from the board, not through the caller.
 ///
+/// - TuningStepMilliHz: the step the transceiver tunes in; a frequency
+///   between steps is tuned to the nearest one.
 /// - present(): the chip answers.
 /// - start(): resets and sets the chip up: idle, microphone muted, every RF
 ///   switch off. False when the chip does not answer.
@@ -72,6 +74,7 @@ struct FmReceiveStatus
 template <class T>
 concept FmTransceiver = requires(T &fm, const T &state, const FmChannel &channel, int squelchLevel, PowerLevel level,
     bool on, std::string_view text, int db) {
+    { T::TuningStepMilliHz } -> std::convertible_to<std::uint32_t>;
     { fm.present() } -> std::same_as<bool>;
     { fm.start() } -> std::same_as<bool>;
     { fm.receive(channel, squelchLevel) } -> std::same_as<const char *>;
