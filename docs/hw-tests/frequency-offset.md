@@ -24,7 +24,7 @@ step starts where the one before ended.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Type `fm offset 0`, restart the radio, type `fm status` | The line ends `offset 0 Hz` |
+| 1 | Type `fm offset 0`, wait 5 s, restart the radio, type `fm status` | The line shows `offset 0 Hz` |
 | 2 | Hold PTT for about 3 s; read the counter | Note the difference from the channel's frequency (measured minus nominal): the radio's own error, `E` |
 
 ## 2. The menu
@@ -49,7 +49,7 @@ step starts where the one before ended.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Restart the radio; type `fm status` | During start `fm: frequency offset +2000 Hz`; the line ends `offset +2000 Hz` |
+| 1 | Restart the radio; type `fm status` | During start `fm: frequency offset +2000 Hz`; the line shows `offset +2000 Hz` |
 | 2 | Type `settings` | The `preferences record:` line ends `frequency offset +2000 Hz` |
 | 3 | Open Menu > Settings > Radio as in 2.1 to 2.3 | The row shows `+2000 Hz` |
 | 4 | Press Exit until the standby screen is back; hold PTT for about 3 s | The counter reads as in 2.10 |
@@ -61,7 +61,7 @@ step starts where the one before ended.
 | 1 | Type `fm offset -2000`; hold PTT for about 3 s | `fm: frequency offset -2000 Hz`; the counter reads 2000 Hz below the reading of 1.2 |
 | 2 | Type `fm offset 1950` | `fm: frequency offset +1937.5 Hz`, the nearest 62.5 Hz step |
 | 3 | Type `fm offset 62`, then `fm offset -31`, then `fm offset -32` | `+62.5 Hz`, `0 Hz` and `-62.5 Hz` |
-| 4 | Type `fm offset 6000`, then `fm offset 12x` | Both `unknown command, try help`; `fm status` still ends `offset -62.5 Hz` |
+| 4 | Type `fm offset 6000`, then `fm offset 12x` | Both `unknown command, try help`; `fm status` still shows `offset -62.5 Hz` |
 | 5 | Open Menu > Settings > Radio as in 2.1 to 2.3 | The row shows `-62.5 Hz`: the console's value, kept as the menu's is |
 
 ## 5. Correcting the radio
