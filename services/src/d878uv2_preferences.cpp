@@ -4,6 +4,7 @@
 #include "dmm/services/d878uv2_preferences.h"
 
 #include "dmm/lib/crc32.h"
+#include "dmm/services/microphone_gain.h"
 
 #include <algorithm>
 
@@ -21,7 +22,15 @@ constexpr std::uint8_t AprsReceive = 0x08;
 // The home screen: top, clock, big name, middle, beside the power,
 // bottom; a byte out of range (as in a record before them) is the default.
 constexpr std::size_t HomeAt = 10;
+// The microphone gain in dB on digital and on FM channels; a byte out of
+// range (0xFF as erased) leaves the codeplug's level.
+constexpr std::size_t MicGainAt = 16;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
+
+std::optional<std::uint8_t> gainDb(std::uint8_t stored)
+{
+    return stored <= microphone_gain::MaxDb ? std::optional<std::uint8_t>(stored) : std::nullopt;
+}
 
 template <typename E>
 E choice(std::uint8_t stored, E fallback)
@@ -62,6 +71,8 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.home.middle = choice(record[HomeAt + 3], d.middle);
     p.home.beside = choice(record[HomeAt + 4], d.beside);
     p.home.bottom = choice(record[HomeAt + 5], d.bottom);
+    p.micGainDb = gainDb(record[MicGainAt]);
+    p.fmMicGainDb = gainDb(record[MicGainAt + 1]);
     return p;
 }
 
@@ -78,6 +89,8 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[HomeAt + 3] = static_cast<std::uint8_t>(p.home.middle);
     record[HomeAt + 4] = static_cast<std::uint8_t>(p.home.beside);
     record[HomeAt + 5] = static_cast<std::uint8_t>(p.home.bottom);
+    record[MicGainAt] = p.micGainDb.value_or(0xFF);
+    record[MicGainAt + 1] = p.fmMicGainDb.value_or(0xFF);
     putLe32(&record[CrcAt], lib::crc32(record.data(), CrcAt));
 }
 

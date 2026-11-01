@@ -155,6 +155,7 @@ TEST_CASE("preferences are kept in their own record")
     p.home.clock = false;
     p.clockUtc = true;
     p.aprsReceive = false;
+    p.fmMicGainDb = 22;
     r.store.keepPreferences(p, 0);
     CHECK(r.store.flush(D878Uv2SettingsStore::QuietMs) == SaveResult::Saved);
     const auto q = r.codeplug.preferences();
@@ -166,6 +167,9 @@ TEST_CASE("preferences are kept in their own record")
     CHECK_FALSE(q->home.clock);
     CHECK(q->clockUtc);
     CHECK_FALSE(q->aprsReceive);
+    CHECK_FALSE(q->micGainDb.has_value());
+    REQUIRE(q->fmMicGainDb.has_value());
+    CHECK(*q->fmMicGainDb == 22);
 }
 
 TEST_CASE("a damaged preferences record counts as none")
@@ -233,4 +237,28 @@ TEST_CASE("a preferences record without the home screen bytes gives the default 
     CHECK(q->home.big == dmm::services::HomeLayout::Big::Channel);
     CHECK(q->home.clock);
     CHECK(q->home.top == dmm::services::HomeLayout::Top::Talkgroup);
+}
+
+TEST_CASE("a preferences record without the microphone gain bytes leaves the codeplug's levels")
+{
+    std::array<std::uint8_t, dmm::services::d878uv2::PreferencesRecordBytes> rec{};
+    RadioPreferences p;
+    p.micGainDb = 0;
+    p.fmMicGainDb = 30;
+    dmm::services::d878uv2::encodePreferences(p, rec);
+    auto q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK(q->micGainDb == std::optional<std::uint8_t>(0));
+    CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(30));
+    // As a record from before them: the bytes erased, the checksum redone.
+    std::fill(rec.begin() + 16, rec.begin() + 18, std::uint8_t{0xFF});
+    const std::uint32_t crc = dmm::lib::crc32(rec.data(), rec.size() - 4);
+    for (int i = 0; i < 4; ++i) {
+        rec[rec.size() - 4 + i] = static_cast<std::uint8_t>(crc >> (8 * i));
+    }
+    q = dmm::services::d878uv2::decodePreferences(rec);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->micGainDb.has_value());
+    CHECK_FALSE(q->fmMicGainDb.has_value());
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Channel);
 }

@@ -178,6 +178,8 @@ CodeplugSettings decodeSettings(std::span<const std::uint8_t> b)
     // The time zone in half hours from UTC-12:00 (0) through UTC (24).
     s.timeZoneMinutes = b[0x30] <= 52 ? static_cast<std::int16_t>((b[0x30] - 24) * 30) : 0;
     s.voiceEnhancement = b[0x57] == 1;
+    // Microphone gain level 1..5, stored one less.
+    s.micGainDb = static_cast<std::uint8_t>(microphone_gain::fromLevel(b[0x0F] + 1));
     // Side keys PF1..PF3: short presses, then long presses.
     for (std::size_t k = 0; k < CodeplugSettings::SideKeys; ++k) {
         s.sideShort[k] = b[0x10 + k] == KeyRoam ? KeyFunction::Roam : KeyFunction::None;
@@ -342,6 +344,10 @@ void decodeSettingsExtension(std::span<const std::uint8_t> b, CodeplugSettings &
 {
     // The GPS mode 0..6 is one less than the systems' bits.
     s.gpsSystems = b[0x35] <= 6 ? static_cast<std::uint8_t>(b[0x35] + 1) : 3;
+    // FM microphone gain level 1..5, stored one less.
+    if (b.size() > 0x43) {
+        s.fmMicGainDb = static_cast<std::uint8_t>(microphone_gain::fromLevel(b[0x43] + 1));
+    }
 }
 
 std::optional<CodeplugSettings> D878Uv2Codeplug::settings()

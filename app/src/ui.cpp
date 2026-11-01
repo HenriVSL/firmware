@@ -18,6 +18,7 @@
 #include "dmm/services/event_log.h"
 #include "dmm/services/input.h"
 #include "dmm/services/log.h"
+#include "dmm/services/microphone_gain.h"
 #include "dmm/services/power.h"
 #include "dmm/version.h"
 
@@ -472,6 +473,8 @@ enum class MenuItem : std::uint8_t
     AprsBeacon,
     AprsPower,
     AprsReceive,
+    MicGain,      // on DMR channels
+    FmMicGain,    // on FM channels
     PlugChannels, // the codeplug's books, each opens its list
     PlugZones,
     PlugContacts,
@@ -490,6 +493,7 @@ enum class MenuItem : std::uint8_t
     // Each opens a group under Settings or Tools.
     OpenHome,
     OpenDisplay,
+    OpenAudio,
     OpenKeys,
     OpenClock,
     OpenGpsSettings,
@@ -512,6 +516,7 @@ enum class MenuGroup : std::uint8_t
     Tools,
     Home,
     Display,
+    Audio,
     Keys,
     Clock,
     GpsSettings,
@@ -544,9 +549,9 @@ constexpr GroupInfo Groups[] = {
     {"APRS", "Sending the position", "and stations heard", {MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard},
         3},
     {"Settings", "How the radio is set up:", "screen, keys, clock, GPS",
-        {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenKeys, MenuItem::OpenClock, MenuItem::OpenGpsSettings,
-            MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
-        7},
+        {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenAudio, MenuItem::OpenKeys, MenuItem::OpenClock,
+            MenuItem::OpenGpsSettings, MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
+        8},
     {"Tools", "The codeplug editor, log,", "key test and version",
         {MenuItem::OpenCodeplug, MenuItem::ToolLog, MenuItem::ToolKeys, MenuItem::Version}, 4},
     {"Home screen", "What the main screen", "shows, row by row",
@@ -555,6 +560,8 @@ constexpr GroupInfo Groups[] = {
         7, MenuGroup::Settings, MenuItem::OpenHome},
     {"Display", "Brightness and how long", "the light stays on", {MenuItem::Backlight, MenuItem::BacklightTime}, 2,
         MenuGroup::Settings, MenuItem::OpenDisplay},
+    {"Audio", "Microphone gain on", "DMR and FM", {MenuItem::MicGain, MenuItem::FmMicGain}, 2, MenuGroup::Settings,
+        MenuItem::OpenAudio},
     {"Keys & battery", "The key lock and", "battery save",
         {MenuItem::KeyLock, MenuItem::AutoLock, MenuItem::BatterySave}, 3, MenuGroup::Settings, MenuItem::OpenKeys},
     {"Clock", "Time zone, the time", "shown and calibration",
@@ -661,6 +668,10 @@ ItemAbout itemAbout(MenuItem item)
         return {"Transmit power for", "sending the position"};
     case MenuItem::AprsReceive:
         return {"Listen for APRS stations", "(heard list under P2)"};
+    case MenuItem::MicGain:
+        return {"Transmit voice level on", "DMR; Codeplug: its level"};
+    case MenuItem::FmMicGain:
+        return {"Transmit voice level on", "FM; Codeplug: its level"};
     case MenuItem::PlugChannels:
         return {"Every channel: names,", "frequencies, DMR, tones"};
     case MenuItem::PlugZones:
@@ -691,6 +702,7 @@ ItemAbout itemAbout(MenuItem item)
         return {"APRS stations heard,", "newest first (also P2)"};
     case MenuItem::OpenHome:
     case MenuItem::OpenDisplay:
+    case MenuItem::OpenAudio:
     case MenuItem::OpenKeys:
     case MenuItem::OpenClock:
     case MenuItem::OpenGpsSettings:
@@ -776,6 +788,28 @@ bool aprsStation = false;
 // Receiving through the board, on from the start.
 bool aprsReceive = true;
 PowerLevel beaconPower = PowerLevel::Low;
+// Microphone gain on DMR and FM: the codeplug's level as dB, and the dB
+// set on the radio, which wins.
+std::uint8_t plugMicGainDb = services::microphone_gain::StandardDb;
+std::uint8_t plugFmMicGainDb = services::microphone_gain::StandardDb;
+std::optional<std::uint8_t> micGainDb;
+std::optional<std::uint8_t> fmMicGainDb;
+// The value list's entry for the codeplug's level.
+constexpr std::uint8_t PlugGain = 0xFF;
+
+void postMicrophoneGain()
+{
+    radio::post(radio::MicrophoneGain{static_cast<std::int8_t>(micGainDb.value_or(plugMicGainDb)),
+        static_cast<std::int8_t>(fmMicGainDb.value_or(plugFmMicGainDb))});
+}
+
+// "+16 dB".
+lib::StaticString<8> gainText(int db)
+{
+    lib::StaticString<8> s;
+    s << '+' << db << " dB";
+    return s;
+}
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -1238,6 +1272,8 @@ void uiMain(void *)
                 homeLayout = p->home;
                 clockUtc = p->clockUtc;
                 aprsReceive = p->aprsReceive;
+                micGainDb = p->micGainDb;
+                fmMicGainDb = p->fmMicGainDb;
                 offsetKhz = p->frequencyOffsetHz / 1000;
                 radio::post(radio::FrequencyOffset{p->frequencyOffsetHz});
                 if (!aprsReceive) {
@@ -1254,6 +1290,9 @@ void uiMain(void *)
             if (selector.settings().voiceEnhancement) {
                 radio::post(radio::VoiceEnhancement{true});
             }
+            plugMicGainDb = selector.settings().micGainDb;
+            plugFmMicGainDb = selector.settings().fmMicGainDb;
+            postMicrophoneGain();
             const services::RoamingSettings &roaming = selector.settings().roaming;
             roamingZone = roaming.zone;
             loadRoamingSites();
@@ -1721,6 +1760,17 @@ void uiMain(void *)
             label = "Receive";
             value << (aprsReceive ? "On" : "Off");
             break;
+        case MenuItem::MicGain:
+        case MenuItem::FmMicGain: {
+            const bool dmr = item == MenuItem::MicGain;
+            const std::optional<std::uint8_t> &set = dmr ? micGainDb : fmMicGainDb;
+            label = dmr ? "DMR mic gain" : "FM mic gain";
+            if (!set) {
+                value << "Plug ";
+            }
+            value << gainText(set.value_or(dmr ? plugMicGainDb : plugFmMicGainDb)).view();
+            break;
+        }
         case MenuItem::PlugChannels:
         case MenuItem::PlugZones:
         case MenuItem::PlugContacts:
@@ -1748,6 +1798,7 @@ void uiMain(void *)
             break;
         case MenuItem::OpenHome:
         case MenuItem::OpenDisplay:
+        case MenuItem::OpenAudio:
         case MenuItem::OpenKeys:
         case MenuItem::OpenClock:
         case MenuItem::OpenGpsSettings:
@@ -2836,6 +2887,7 @@ void uiMain(void *)
             return;
         case MenuItem::OpenHome:
         case MenuItem::OpenDisplay:
+        case MenuItem::OpenAudio:
         case MenuItem::OpenKeys:
         case MenuItem::OpenClock:
         case MenuItem::OpenGpsSettings:
@@ -2871,6 +2923,18 @@ void uiMain(void *)
             menuValue.add(1, "On");
             menuValue.select(aprsReceive ? 1 : 0);
             break;
+        case MenuItem::MicGain:
+        case MenuItem::FmMicGain: {
+            const bool dmr = menuItem == MenuItem::MicGain;
+            const std::optional<std::uint8_t> &set = dmr ? micGainDb : fmMicGainDb;
+            menuValue.open(dmr ? "DMR mic gain" : "FM mic gain");
+            menuValue.add(PlugGain, "Codeplug", gainText(dmr ? plugMicGainDb : plugFmMicGainDb).view());
+            for (int db = services::microphone_gain::MinDb; db <= services::microphone_gain::MaxDb; ++db) {
+                menuValue.add(static_cast<std::uint8_t>(db), gainText(db).view());
+            }
+            menuValue.select(set.value_or(PlugGain));
+            break;
+        }
         case MenuItem::Count:
             return;
         }
@@ -2942,6 +3006,8 @@ void uiMain(void *)
             p.home = homeLayout;
             p.clockUtc = clockUtc;
             p.aprsReceive = aprsReceive;
+            p.micGainDb = micGainDb;
+            p.fmMicGainDb = fmMicGainDb;
             settingsStore->keepPreferences(p, os::nowMs());
         }
     };
@@ -3105,6 +3171,13 @@ void uiMain(void *)
             aprs::post(aprs::Receive{aprsReceive});
             keepPreferences();
             break;
+        case MenuItem::MicGain:
+        case MenuItem::FmMicGain:
+            (menuItem == MenuItem::MicGain ? micGainDb : fmMicGainDb) =
+                v == PlugGain ? std::nullopt : std::optional<std::uint8_t>(v);
+            postMicrophoneGain();
+            keepPreferences();
+            break;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
         case MenuItem::PlugChannels:
@@ -3124,6 +3197,7 @@ void uiMain(void *)
         case MenuItem::AprsHeard:
         case MenuItem::OpenHome:
         case MenuItem::OpenDisplay:
+        case MenuItem::OpenAudio:
         case MenuItem::OpenKeys:
         case MenuItem::OpenClock:
         case MenuItem::OpenGpsSettings:

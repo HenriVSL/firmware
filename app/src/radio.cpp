@@ -13,6 +13,7 @@
 #include "dmm/services/ax25.h"
 #include "dmm/services/battery_saver.h"
 #include "dmm/services/log.h"
+#include "dmm/services/microphone_gain.h"
 #include "dmm/services/power.h"
 #include "dmm/services/roaming.h"
 #include "dmm/services/squelch_gate.h"
@@ -186,6 +187,8 @@ bool transmitting = false;
 // FM transmit audio takes the transceiver's own microphone input; adding
 // the route through the baseband gives a delayed second copy.
 FmTransmitAudio::Route transmitAudio = FmTransmitAudio::Route::Direct;
+int dmrMicGainDb = services::microphone_gain::StandardDb;
+int fmMicGainDb = services::microphone_gain::StandardDb;
 os::Ticks transmitStarted = 0;
 
 // Packet radio: one frame waits at a time. sendPacket() fills the buffer
@@ -1984,6 +1987,14 @@ void handle(Message &message)
                    [](const Microphone &m) {
                        fm->setMicrophoneMuted(!m.on);
                        log::info("fm") << "microphone " << (m.on ? "on" : "muted");
+                   },
+                   [](const MicrophoneGain &g) {
+                       using services::microphone_gain::clamp;
+                       dmrMicGainDb = g.dmrDb >= 0 ? clamp(g.dmrDb) : dmrMicGainDb;
+                       fmMicGainDb = g.fmDb >= 0 ? clamp(g.fmDb) : fmMicGainDb;
+                       fm->setMicrophoneGain(fmMicGainDb);
+                       withBaseband([](auto &b) { b.setMicrophoneGain(dmrMicGainDb, fmMicGainDb); });
+                       log::info("radio") << "microphone gain: DMR +" << dmrMicGainDb << " dB, FM +" << fmMicGainDb << " dB";
                    },
                    [](const ChipCommand &c) {
                        bool known = false;

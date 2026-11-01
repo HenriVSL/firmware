@@ -38,6 +38,12 @@ path = ["docs/hw-tests/aprs.md", "docs/hw-tests/audio-probe.md", "docs/hw-tests/
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
 
+# Docs added with the microphone gain.
+[[annotations]]
+path = ["docs/hw-tests/mic-gain.md"]
+SPDX-FileCopyrightText = "2026 Henri Lavikainen"
+SPDX-License-Identifier = "MIT"
+
 # The Spleen bitmap font by Frederic Cambus, as released (2.1.0).
 [[annotations]]
 path = ["third_party/spleen/**"]
