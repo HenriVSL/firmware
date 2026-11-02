@@ -32,7 +32,7 @@ board::Fm *fm = nullptr;
 board::Baseband *baseband = nullptr;
 // Room for the deepest path, a channel change down to a baseband packet,
 // with an interrupt on top and a margin.
-os::Task<768> radioTask;
+os::Task<736> radioTask;
 os::Queue<Message, 8> inbox;
 // What the radio does on the air, kept for other tasks.
 std::atomic<Activity> airActivity{Activity::Idle};

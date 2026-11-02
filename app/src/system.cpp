@@ -25,7 +25,9 @@ using services::Leds;
 namespace log = services::log;
 
 Platform *platform = nullptr;
-os::Task<384> systemTask;
+// Room for the deepest path, logging the clock, with an interrupt on top
+// and a margin.
+os::Task<352> systemTask;
 
 constexpr os::Ticks StepMs = 10;
 constexpr os::Ticks StartFlashMs = 300;

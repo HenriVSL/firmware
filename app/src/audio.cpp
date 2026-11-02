@@ -17,7 +17,9 @@ namespace log = services::log;
 using services::ToneStep;
 
 services::AudioHardware *hardware = nullptr;
-os::Task<320> audioTask;
+// Room for the deepest path, a log line from a message, with an interrupt
+// on top and a margin.
+os::Task<304> audioTask;
 os::Queue<Message, 8> inbox;
 
 constexpr ToneStep KeyBeep[] = {{800, 80}};

@@ -27,7 +27,9 @@ using services::NmeaParser;
 
 board::Gps *port = nullptr;
 board::GpsReceiver receiver;
-os::Task<640> gpsTask;
+// Room for the deepest path, logging a fix from a receiver report, with
+// an interrupt on top and a margin.
+os::Task<512> gpsTask;
 os::Queue<Message, 4> inbox;
 
 constexpr os::Ticks PollMs = 50;

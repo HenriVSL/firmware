@@ -29,7 +29,9 @@ namespace log = services::log;
 
 Platform *platform = nullptr;
 
-os::Task<512> linkTask;
+// Room for the deepest path, handing log lines to the USB port, with an
+// interrupt on top and a margin.
+os::Task<384> linkTask;
 
 constexpr os::Ticks LinkStepMs = 20;
 constexpr os::Ticks ProgrammingStepMs = 1;
