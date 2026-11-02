@@ -27,10 +27,19 @@ SECTIONS
         KEEP(*(.vectors))
     } > FLASH
 
+    /* Constant data before code, so fonts and tables stay in the first
+       256 KB of flash, which the CPU reads without wait states (GD32F30x
+       User Manual, flash memory controller chapter): past it a constant
+       read takes several times longer, an instruction fetch little
+       longer. */
     .text :
     {
-        *(.text .text.*)
+        __rodata_start = .;
         *(.rodata .rodata.*)
+        . = ALIGN(4);
+        __rodata_end = .;
+        *(.text .text.*)
+        __code_end = .;
         . = ALIGN(4);
     } > FLASH
 
