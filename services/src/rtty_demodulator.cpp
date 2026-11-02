@@ -44,6 +44,13 @@ constexpr float KernelScale = 1.0F / static_cast<float>(D * D * D);
 constexpr float SignalOn = 0.65F;
 constexpr float SignalOff = 0.5F;
 constexpr float SignalBits = 10.0F;
+// The tones' level over FastBits falling this far under its peak (which
+// sinks over PeakSeconds) ends a signal: the sender stopped.
+constexpr float FastBits = 2.0F;
+constexpr float PeakSeconds = 4.0F;
+constexpr float LevelDrop = 0.03F;
+// The power between the tones must stay under this share of a tone's.
+constexpr float CentreShare = 0.3F;
 // The noise references sit this far beyond the tones, at most this close
 // to half the 600 Hz rate.
 constexpr float ReferenceBeyondHz = 170.0F;
@@ -161,10 +168,14 @@ void RttyDemodulator::configure(const Config &config)
     const auto above = turn(beyond, static_cast<float>(BasebandHz));
     m_below.step = {below.i, below.q};
     m_above.step = {above.i, above.q};
+    m_centre.step = {1.0F, 0.0F};
     m_referenceGain = noiseGain(half) / noiseGain(beyond);
+    m_centreGain = noiseGain(half) / noiseGain(0.0F);
     m_attack = TrackAttack;
     m_decay = 1.0F / (TrackBits * m_bitSamples);
     m_toneSmoothing = 1.0F / (SignalBits * m_bitSamples);
+    m_fastSmoothing = 1.0F / (FastBits * m_bitSamples);
+    m_peakDecay = 1.0F / (PeakSeconds * static_cast<float>(BasebandHz));
     reset();
 }
 
@@ -181,14 +192,19 @@ void RttyDemodulator::reset()
     m_mixer = {1.0F, 0.0F};
     m_sums = {};
     m_phase = D - 1;
-    for (Tone *t : {&m_mark, &m_space, &m_below, &m_above}) {
+    for (Tone *t : {&m_mark, &m_space, &m_below, &m_above, &m_centre}) {
         t->rotor = {1.0F, 0.0F};
         t->history = {};
         t->peak = t->floor = 0.0F;
     }
     m_historyAt = 0;
     m_tonePower = 0.0F;
+    m_toneFast = 0.0F;
+    m_tonePeak = 0.0F;
+    m_centrePower = 0.0F;
     m_referencePower = 0.0F;
+    m_proven = false;
+    m_heldCount = 0;
     m_lastZ = {};
     m_nearPower = 0.0F;
     m_besidePower = 0.0F;
@@ -205,7 +221,7 @@ float RttyDemodulator::quality() const
     if (m_tonePower <= 0.0F) {
         return 0.0F;
     }
-    const float q = 1.0F - m_referencePower * m_referenceGain / m_tonePower;
+    const float q = 1.0F - m_referencePower / m_tonePower;
     return q > 0.0F ? q : 0.0F;
 }
 
@@ -268,8 +284,15 @@ void RttyDemodulator::baseband(Complex z, Sink &onChar)
     const float space = m_space.level(z, m_historyAt, m_bitLength);
     const float below = m_below.level(z, m_historyAt, m_bitLength);
     const float above = m_above.level(z, m_historyAt, m_bitLength);
+    const float centre = m_centre.level(z, m_historyAt, m_bitLength);
     m_tonePower += (mark * mark + space * space - m_tonePower) * m_toneSmoothing;
-    m_referencePower += (below * below + above * above - m_referencePower) * m_toneSmoothing;
+    m_toneFast += (mark * mark + space * space - m_toneFast) * m_fastSmoothing;
+    m_tonePeak = std::fmax(m_toneFast, m_tonePeak - m_tonePeak * m_peakDecay);
+    // Three references weighed as the two tone filters for noise.
+    const float reference =
+        ((below * below + above * above) * m_referenceGain + centre * centre * m_centreGain) * (2.0F / 3.0F);
+    m_referencePower += (reference - m_referencePower) * m_toneSmoothing;
+    m_centrePower += (centre * centre - m_centrePower) * m_toneSmoothing;
     const float afcSmoothing = 1.0F / (AfcBits * m_bitSamples);
     m_nearPower += (z.i * z.i + z.q * z.q - m_nearPower) * afcSmoothing;
     m_besidePower += ((below * below + above * above) * m_referenceGain - m_besidePower) * afcSmoothing;
@@ -312,9 +335,20 @@ void RttyDemodulator::updateSignal()
 {
     const float q = quality();
     const bool was = m_signal;
-    m_signal = m_signal ? q >= SignalOff : q > SignalOn;
+    // The tones gone quiet end a signal at once, whatever the slower ratio
+    // says.
+    const bool present = m_toneFast > LevelDrop * m_tonePeak;
+    // Between the tones an RTTY signal has little; packet audio or a single
+    // tone there has much.
+    const bool apart = m_centrePower * m_centreGain < CentreShare * 0.5F * m_tonePower;
+    m_signal = present && apart && (m_signal ? q >= SignalOff : q > SignalOn);
     if (m_signal && !was) {
         m_ita2.reset();
+    }
+    if (!m_signal && was) {
+        m_proven = false;
+        m_stats.unsignalled += static_cast<std::uint32_t>(m_heldCount);
+        m_heldCount = 0;
     }
     if (m_signal) {
         m_stats.signalSamples += D;
@@ -357,6 +391,12 @@ void RttyDemodulator::decide(float v, Sink &onChar)
                 character(m_code, onChar);
             } else {
                 ++m_stats.framingErrors;
+                // Before the signal has proved itself, the characters held
+                // back were noise too.
+                if (!m_proven) {
+                    m_stats.unsignalled += static_cast<std::uint32_t>(m_heldCount);
+                    m_heldCount = 0;
+                }
             }
             m_frame = Frame::Hunting;
         }
@@ -372,6 +412,24 @@ void RttyDemodulator::character(std::uint8_t code, Sink &onChar)
         ++m_stats.unsignalled;
         return;
     }
+    // The first characters wait until ProvingFrames framed well in a row.
+    if (!m_proven) {
+        m_held[m_heldCount++] = code;
+        if (m_heldCount < m_held.size()) {
+            return;
+        }
+        m_proven = true;
+        for (const std::uint8_t held : m_held) {
+            emit(held, onChar);
+        }
+        m_heldCount = 0;
+        return;
+    }
+    emit(code, onChar);
+}
+
+void RttyDemodulator::emit(std::uint8_t code, Sink &onChar)
+{
     ++m_stats.characters;
     const char c = m_ita2.decode(code);
     if (c != 0) {

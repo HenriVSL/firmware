@@ -367,6 +367,20 @@ TEST_CASE("rtty demodulator: joining in the middle of a transmission")
 
 TEST_CASE("rtty demodulator: noise alone passes nothing on")
 {
+    // Packets alone, a minute: bursts of 1200 baud audio with pauses, and a
+    // steady tone between mark and space.
+    {
+        RttySignal s;
+        for (int i = 0; i < 30; ++i) {
+            s.afsk(1.0, 1.0, 50 + static_cast<std::uint32_t>(i));
+            s.silence(1.0);
+        }
+        s.markHz = 2210.0;
+        s.idle(5.0);
+        s.addNoise(20.0, 79);
+        RttyDemodulator d;
+        CHECK(decodeAudio(d, s.millivolts(400.0)).empty());
+    }
     // Speech alone, a minute.
     {
         RttySignal s;

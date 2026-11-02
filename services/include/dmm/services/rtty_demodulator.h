@@ -28,7 +28,9 @@ namespace dmm::services {
 /// serial port: a mark-to-space change, placed between samples, starts
 /// one; the bits are read at their middles from there, the start bit must
 /// still be space and the stop bit mark, else the character is dropped as
-/// a framing error.
+/// a framing error. After a signal starts, characters are held back until
+/// three in a row have framed well, so a burst of other audio that briefly
+/// looks like a signal gives nothing.
 ///
 /// The tones are followed (AFC): the frequency of the mixed-down audio,
 /// taken from its phase step, is compared with the nearer of the two tones
@@ -38,12 +40,13 @@ namespace dmm::services {
 /// without.
 ///
 /// A signal detector compares the power in the two tone filters with the
-/// power in two filters as wide just below and above the pair, where an
-/// RTTY signal has little: text is passed on only while the tones stand
-/// clearly above that noise, so noise, clicks and the receiver's hiss
-/// (with the squelch open or not) give none.
+/// power in three filters as wide just below the pair, between the tones
+/// and just above it, where an RTTY signal has little: text is passed on
+/// only while the tones stand clearly above that, so noise, clicks, the
+/// receiver's hiss (with the squelch open or not) and a single tone near
+/// the pair, such as packet audio, give none.
 ///
-/// Heap-free; about 0.6 KB of state.
+/// Heap-free; about 0.8 KB of state.
 class RttyDemodulator
 {
 public:
@@ -139,6 +142,7 @@ private:
     void setMixer();
     void decide(float v, Sink &onChar);
     void character(std::uint8_t code, Sink &onChar);
+    void emit(std::uint8_t code, Sink &onChar);
     void updateSignal();
 
     Config m_config;
@@ -165,9 +169,11 @@ private:
     std::uint32_t m_phase = 0;
     Tone m_mark;
     Tone m_space;
-    // The noise references just below and above the pair.
+    // The noise references just below and above the pair, and between
+    // the two tones, where a single tone would stand out.
     Tone m_below;
     Tone m_above;
+    Tone m_centre;
     std::size_t m_historyAt = 0;
     std::size_t m_bitLength = 13;
     float m_bitSamples = 13.2F;
@@ -177,8 +183,15 @@ private:
     // slowly; the references' gain to the tones' for white noise.
     float m_tonePower = 0.0F;
     float m_referencePower = 0.0F;
+    // The tones' power followed fast, and its recent peak.
+    float m_toneFast = 0.0F;
+    float m_tonePeak = 0.0F;
+    float m_centrePower = 0.0F;
+    float m_fastSmoothing = 0.1F;
+    float m_peakDecay = 0.001F;
     float m_toneSmoothing = 0.01F;
     float m_referenceGain = 1.0F;
+    float m_centreGain = 1.0F;
     bool m_signal = false;
     // Character framing at 600 samples a second.
     Frame m_frame = Frame::Hunting;
@@ -188,6 +201,12 @@ private:
     std::uint8_t m_bit = 0;
     std::uint8_t m_code = 0;
     bool m_startSignalled = false;
+    // A signal passes characters on once ProvingFrames framed well in a
+    // row; until then they are held.
+    static constexpr std::size_t ProvingFrames = 3;
+    std::array<std::uint8_t, ProvingFrames> m_held{};
+    std::size_t m_heldCount = 0;
+    bool m_proven = false;
     Stats m_stats;
 };
 
