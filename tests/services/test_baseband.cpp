@@ -442,7 +442,7 @@ TEST_CASE("voice enhancement sends the board's bands as transmit equalizer filte
     FakeBoard board;
     Sct3258 sct(chip, noDelay);
     Sct3258Baseband::Audio audio = TestAudio;
-    audio.transmitEqualizer = {{Sct3258Baseband::peakingBand(1000.0F, 6.0F, 1.0F, 0.0F), {}, {}}};
+    audio.transmitEqualizer = {{{1000.0F, 6.0F, 1.0F, 0.0F}, {}, {}}};
     Sct3258Baseband baseband(sct, board, Blob, audio, testTrims);
     REQUIRE(baseband.start());
     chip.packets.clear();
@@ -466,35 +466,6 @@ TEST_CASE("voice enhancement sends the board's bands as transmit equalizer filte
     chip.packets.clear();
     REQUIRE(baseband.setVoiceEnhancement(false));
     CHECK(chip.packets[0][2] == 0x21); // off again
-}
-
-TEST_CASE("peaking bands come out as the float cookbook formula rounds them")
-{
-    struct Band
-    {
-        float hz, gainDb, q, levelDb;
-    };
-    for (const Band b : {Band{184.0F, -3.3F, 0.95F, 0.0F}, Band{2450.0F, 4.1F, 1.25F, -1.7F}, Band{1990.0F, -3.1F, 4.5F, 0.0F},
-             Band{1000.0F, 6.0F, 1.0F, 0.0F}, Band{300.0F, -12.0F, 0.7F, 3.0F}}) {
-        const float a = std::pow(10.0F, b.gainDb / 40.0F);
-        const float level = std::pow(10.0F, b.levelDb / 20.0F);
-        const float w = 2.0F * 3.14159265F * b.hz / 24000.0F;
-        const float alpha = std::sin(w) / (2.0F * b.q);
-        const float a0 = 1.0F + alpha / a;
-        const float c[5] = {-2.0F * std::cos(w) / a0, (1.0F - alpha / a) / a0, level * (1.0F + alpha * a) / a0,
-            level * -2.0F * std::cos(w) / a0, level * (1.0F - alpha * a) / a0};
-        const Sct3258Baseband::Audio::EqualizerBand band = Sct3258Baseband::peakingBand(b.hz, b.gainDb, b.q, b.levelDb);
-        CHECK(band.used);
-        for (std::size_t k = 0; k < 5; ++k) {
-            const long q14 = std::lround(c[k] * 16384.0F);
-            CHECK(band.coefficients[k] == (q14 > 32767 ? 32767 : q14 < -32768 ? -32768
-                                                                              : q14));
-        }
-    }
-    constexpr Sct3258Baseband::Audio::EqualizerBand unused{};
-    CHECK_FALSE(unused.used);
-    CHECK(unused.coefficients == std::array<std::int16_t, 5>{0, 0, 16384, 0, 0});
-    static_assert(Sct3258Baseband::peakingBand(1000.0F, 6.0F, 1.0F, 0.0F).used);
 }
 
 TEST_CASE("the slot line leads by the calibrated time at High, 20 steps less at Low")

@@ -5,8 +5,8 @@
 
 #include "pins.h"
 
-#include <array>
 #include <atomic>
+#include <cmath>
 
 #include "dmm/hal/cortex_m/core.h"
 #include "dmm/hal/gd32f30x/clock.h"
@@ -16,7 +16,6 @@
 #include "dmm/hal/gd32f30x/irq.h"
 #include "dmm/hal/gd32f30x/pwm.h"
 #include "dmm/hal/gd32f30x/step_timer.h"
-#include "dmm/lib/constexpr_math.h"
 #include "dmm/services/log.h"
 
 namespace board {
@@ -52,15 +51,7 @@ constexpr std::uint32_t FallUs = 1000;
 // before they drop.
 constexpr unsigned EnableSettleUs = 4;
 constexpr unsigned RampScaleBits = 12;
-constexpr std::array<std::uint16_t, RampSteps> rampCurve = [] { // 0..1 << RampScaleBits
-    std::array<std::uint16_t, RampSteps> curve{};
-    for (unsigned i = 0; i < RampSteps; ++i) {
-        const double x = static_cast<double>(i) / (RampSteps - 1);
-        curve[i] = static_cast<std::uint16_t>((1.0 - dmm::lib::cosine(dmm::lib::Pi * x)) / 2.0 * (1u << RampScaleBits) + 0.5);
-    }
-    return curve;
-}();
-static_assert(rampCurve[0] == 0 && rampCurve[RampSteps - 1] == 1u << RampScaleBits);
+std::uint16_t rampCurve[RampSteps]; // 0..1 << RampScaleBits
 
 hal::StepTimer rampTimer;
 
@@ -170,6 +161,11 @@ void BoardRf::configure()
     hal::dac::start(PowerControlChannel, 0);
     hal::configure(ReceiveTune, hal::PinMode::Alternate, hal::PinSpeed::Medium);
     tunePwm.start(0, ReceiveTunePeriod);
+    for (unsigned i = 0; i < RampSteps; ++i) {
+        const float x = static_cast<float>(i) / static_cast<float>(RampSteps - 1);
+        rampCurve[i] = static_cast<std::uint16_t>(
+            std::lround((1.0F - std::cos(3.14159265F * x)) / 2.0F * static_cast<float>(1u << RampScaleBits)));
+    }
     rampTimer.configure(TransmitSlotIrqPriority);
     hal::configure(TransmitSlot, hal::PinMode::InputPullDown);
     hal::enableExti(TransmitSlot, hal::Edge::Both);

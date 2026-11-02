@@ -4,7 +4,6 @@
 #pragma once
 
 #include "dmm/drivers/baseband/sct3258.h"
-#include "dmm/lib/constexpr_math.h"
 #include "dmm/services/baseband.h"
 
 #include <array>
@@ -65,40 +64,17 @@ public:
         /// The board's FM demodulator output reaches the chip with its
         /// polarity reversed; digital receive tells the chip so.
         bool demodulatorInverted;
-        /// Voice enhancement: up to three bands on the transmitted voice,
-        /// each a biquad as the chip takes it (a1, a2, b0, b1, b2 as
-        /// Q2.14), from peakingBand(). A default band is unused and passes
-        /// the voice unchanged.
+        /// Voice enhancement: up to three peaking bands on the transmitted
+        /// voice, each with a broadband level. A band at 0 Hz is unused.
         struct EqualizerBand
         {
-            bool used = false;
-            std::array<std::int16_t, 5> coefficients{0, 0, 1 << 14, 0, 0};
+            float hz;
+            float gainDb;
+            float q;
+            float levelDb;
         };
         std::array<EqualizerBand, 3> transmitEqualizer{};
     };
-
-    /// A peaking band (the audio EQ cookbook's form) at @p hz with
-    /// @p gainDb at its centre and quality @p q, scaled by @p levelDb as a
-    /// whole, at the chip's equalizer sample rate. Meant for compile time.
-    static constexpr Audio::EqualizerBand peakingBand(float hz, float gainDb, float q, float levelDb)
-    {
-        const double a = lib::power10(gainDb / 40.0);
-        const double level = lib::power10(levelDb / 20.0);
-        const double w = 2.0 * lib::Pi * hz / drivers::baseband::Sct3258::EqualizerSampleHz;
-        const double alpha = lib::sine(w) / (2.0 * q);
-        const double a0 = 1.0 + alpha / a;
-        const double c[5] = {-2.0 * lib::cosine(w) / a0, (1.0 - alpha / a) / a0, level * (1.0 + alpha * a) / a0,
-            level * -2.0 * lib::cosine(w) / a0, level * (1.0 - alpha * a) / a0};
-        Audio::EqualizerBand band;
-        band.used = true;
-        for (int k = 0; k < 5; ++k) {
-            const double scaled = c[k] * (1 << 14);
-            const double rounded = scaled < 0.0 ? scaled - 0.5 : scaled + 0.5;
-            band.coefficients[static_cast<std::size_t>(k)] = static_cast<std::int16_t>(rounded > 32767.0 ? 32767.0 : rounded < -32768.0 ? -32768.0
-                                                                                                                                        : rounded);
-        }
-        return band;
-    }
 
     /// The radio's calibrated values for the chip and codec.
     struct Trims
