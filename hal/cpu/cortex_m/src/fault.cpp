@@ -153,7 +153,7 @@ extern "C" {
 
 // Every fault and unexpected interrupt: pick the stack the frame is on,
 // read the exception number, and record.
-[[noreturn, gnu::naked]] void dmmFaultEntry()
+[[noreturn, gnu::naked, gnu::used]] void dmmFaultEntry()
 {
     asm volatile("cpsid i\n\t"
                  "tst lr, #4\n\t"

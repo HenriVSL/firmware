@@ -33,7 +33,7 @@ extern "C" {
     asm volatile("b dmmFaultEntry");
 }
 
-[[noreturn]] void startImage()
+[[noreturn, gnu::used]] void startImage()
 {
     cm::enableFpu();
     extern const void *const vectorTable[];

@@ -11,9 +11,10 @@ set(banned "^(malloc|calloc|realloc|free|_Znw.*|_Zna.*|abort|_ZSt[0-9]*__throw_.
 string(REPLACE "|" ";" LIBS "${LIBS}")
 set(failed FALSE)
 foreach(lib IN LISTS LIBS)
-    execute_process(COMMAND ${NM} -u ${lib} OUTPUT_VARIABLE out RESULT_VARIABLE rc)
-    if(NOT rc EQUAL 0)
-        message(FATAL_ERROR "nm failed on ${lib}")
+    execute_process(COMMAND ${NM} -u ${lib} OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc)
+    # An object nm cannot read (link-time optimization's) would pass unseen.
+    if(NOT rc EQUAL 0 OR err MATCHES "plugin needed")
+        message(FATAL_ERROR "nm failed on ${lib}: ${err}")
     endif()
     string(REPLACE "\n" ";" lines "${out}")
     foreach(line IN LISTS lines)
