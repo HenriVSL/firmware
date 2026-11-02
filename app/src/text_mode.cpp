@@ -408,6 +408,17 @@ std::optional<int> parseInt(std::string_view text)
     }
 }
 
+// Kept out of the senders' frames: they run on the ui task's stack too.
+[[gnu::noinline, gnu::cold]] void logNotSent(Sending why)
+{
+    log::info("text") << "not sent: " << services::text_mode::sendingText(why);
+}
+
+[[gnu::noinline, gnu::cold]] void logRefused(const char *why)
+{
+    log::info("text") << "send refused: " << why;
+}
+
 // The text to send in filled[0..length), from @p text as the settings say.
 Sending prepare(std::string_view text, std::size_t &length)
 {
@@ -481,7 +492,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
     logPieces(toLoopback ? "loopback" : "send", std::string_view(filled.data(), length));
     if (toLoopback) {
         if (!status().decoding) {
-            log::info("text") << "loopback refused: the decoder is not running";
+            logRefused("the decoder is not running");
             return Sending::Refused;
         }
         loopbackLength = n;
@@ -499,7 +510,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
     t.tailMs = TailMs;
     t.levelPercent = levelPercent.load();
     if (!radio::sendText(std::span<const std::uint8_t>(codes.data(), n), t)) {
-        log::info("text") << "send refused: a text is still going out";
+        logRefused("a text is still going out");
         return Sending::Refused;
     }
     return Sending::Waiting;
@@ -509,7 +520,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
 Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
 {
     if (modeHz.load() == 0) {
-        log::info("text") << "send refused: the text mode is off";
+        logRefused("the text mode is off");
         sendingChanged(Sending::Refused);
         return Sending::Refused;
     }
@@ -520,7 +531,7 @@ Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
     }
     const Sending now = sendStatus().state;
     if (loopbackBusy.load() || now == Sending::Waiting || now == Sending::OnAir) {
-        log::info("text") << "send refused: a text is still going out";
+        logRefused("a text is still going out");
         return Sending::Refused;
     }
     sendLock.lock();
@@ -538,7 +549,7 @@ Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
     }
     sendLock.unlock();
     if (result != Sending::Waiting && result != Sending::OnAir) {
-        log::info("text") << "not sent: " << services::text_mode::sendingText(result);
+        logNotSent(result);
     }
     sendingChanged(result);
     return result;
