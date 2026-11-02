@@ -9,6 +9,7 @@ FetchContent_MakeAvailable(doctest)
 
 add_executable(tests
     main.cpp
+    lib/test_constexpr_math.cpp
     lib/test_containers.cpp
     lib/test_format.cpp
     lib/test_strings.cpp

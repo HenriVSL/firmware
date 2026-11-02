@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "dmm/lib/constexpr_math.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -11,25 +13,10 @@ namespace dmm::lib {
 
 namespace detail {
 
-// cos(x) for 0 <= x <= 2 pi, from its Taylor series around pi.
-constexpr double cosine(double x)
-{
-    constexpr double Pi = 3.14159265358979323846;
-    const double y = x - Pi;
-    double term = 1.0;
-    double sum = 1.0;
-    for (int n = 1; n < 14; ++n) {
-        term *= -y * y / ((2 * n - 1) * (2 * n));
-        sum += term;
-    }
-    return -sum;
-}
-
 // One cycle of (1 - cos) / 2, scaled to 0..255.
 template <std::size_t N>
 constexpr std::array<std::uint8_t, N> raisedCosine()
 {
-    constexpr double Pi = 3.14159265358979323846;
     std::array<std::uint8_t, N> wave{};
     for (std::size_t i = 0; i < N; ++i) {
         const double v = (1.0 - cosine(2.0 * Pi * static_cast<double>(i) / N)) / 2.0;
