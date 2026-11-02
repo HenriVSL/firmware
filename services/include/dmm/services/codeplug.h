@@ -191,6 +191,11 @@ struct TextModeSettings
     bool reverse = false;       // mark is the higher tone
     bool unshiftOnSpace = true; // a space in figures goes back to letters
     bool audible = false;       // the speaker opens with the squelch
+    /// Sending: the power, " DE <callsign>" added where the text lacks
+    /// the callsign, and how Ä Å Ö go out.
+    PowerLevel power = PowerLevel::Low;
+    bool addCall = true;
+    rtty::Nordic nordic = rtty::Nordic::Plain;
 
     bool operator==(const TextModeSettings &) const = default;
 };

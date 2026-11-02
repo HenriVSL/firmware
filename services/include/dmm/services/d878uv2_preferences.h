@@ -31,6 +31,8 @@ namespace dmm::services::d878uv2 {
 /// | 24 | its tone pair (0: 2125/2295, 1: 1275/1445) |
 /// | 25 | its speed (0: 45.45, 1: 50, 2: 75 Bd) |
 /// | 26 | its options: 1 reverse, 2 no unshift on space, 4 on the speaker |
+/// | 27 | its transmit power (0 low, 1 mid, 2 high) |
+/// | 28 | its transmit options: 1 no callsign added, 2 Ä Å Ö as AE AA OE |
 /// | 60-63 | CRC-32 of bytes 0-59 |
 inline constexpr std::size_t PreferencesRecordBytes = 0x40;
 

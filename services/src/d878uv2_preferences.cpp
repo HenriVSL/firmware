@@ -37,6 +37,12 @@ constexpr std::uint8_t TextReverse = 0x01;
 constexpr std::uint8_t TextNoUnshift = 0x02;
 constexpr std::uint8_t TextAudible = 0x04;
 constexpr std::uint8_t TextOptionsAll = 0x07;
+// Sending in the text mode: the power (low, mid, high) and option bits.
+constexpr std::size_t TextPowerAt = 27;
+constexpr std::size_t TextSendAt = 28;
+constexpr std::uint8_t TextNoCall = 0x01;
+constexpr std::uint8_t TextTelex = 0x02;
+constexpr std::uint8_t TextSendAll = 0x03;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
 
 template <typename E>
@@ -88,6 +94,11 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.text.reverse = (options & TextReverse) != 0;
     p.text.unshiftOnSpace = (options & TextNoUnshift) == 0;
     p.text.audible = (options & TextAudible) != 0;
+    p.text.power = record[TextPowerAt] <= static_cast<std::uint8_t>(PowerLevel::High) ? static_cast<PowerLevel>(record[TextPowerAt])
+                                                                                      : PowerLevel::Low;
+    const std::uint8_t send = record[TextSendAt] <= TextSendAll ? record[TextSendAt] : 0;
+    p.text.addCall = (send & TextNoCall) == 0;
+    p.text.nordic = (send & TextTelex) != 0 ? rtty::Nordic::Telex : rtty::Nordic::Plain;
     return p;
 }
 
@@ -112,6 +123,10 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[TextBaudAt] = static_cast<std::uint8_t>(p.text.baud);
     record[TextOptionsAt] = static_cast<std::uint8_t>((p.text.reverse ? TextReverse : 0) |
         (p.text.unshiftOnSpace ? 0 : TextNoUnshift) | (p.text.audible ? TextAudible : 0));
+    record[TextPowerAt] = static_cast<std::uint8_t>(
+        p.text.power > PowerLevel::High ? PowerLevel::High : p.text.power);
+    record[TextSendAt] = static_cast<std::uint8_t>((p.text.addCall ? 0 : TextNoCall) |
+        (p.text.nordic == rtty::Nordic::Telex ? TextTelex : 0));
     putLe32(&record[CrcAt], lib::crc32(record.data(), CrcAt));
 }
 
