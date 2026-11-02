@@ -109,6 +109,27 @@ private:
     bool m_figures = false;
 };
 
+/// How Ä, Å and Ö, which ITA2 lacks, go out: as A, A and O, or as the
+/// telex spellings AE, AA and OE.
+enum class Nordic : std::uint8_t
+{
+    Plain,
+    Telex,
+    Count,
+};
+
+/// The ITA2 codes of one transmission: a letters shift, CR LF, @p text,
+/// CR LF. @p text is UTF-8: lower case goes out as upper case, Ä Å Ö as
+/// @p nordic says, other characters ITA2 lacks are left out, and CR, LF or
+/// CR LF become CR LF. Returns the number of codes, or 0 if they do not
+/// fit in @p out.
+std::size_t encodeTransmission(std::string_view text, std::span<std::uint8_t> out, Figures figures = Figures::UsTty,
+    Nordic nordic = Nordic::Plain);
+
+/// The time @p characters take at @p baud with 1.5 stop bits, ms, rounded
+/// up.
+std::uint32_t charactersMs(std::size_t characters, float baud);
+
 /// Spots the callsign a station gives after "DE" in received text.
 class CallSpotter
 {

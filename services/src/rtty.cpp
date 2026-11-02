@@ -140,6 +140,72 @@ std::size_t Ita2Encoder::encode(char c, std::span<std::uint8_t, 2> out)
     return n;
 }
 
+std::size_t encodeTransmission(std::string_view text, std::span<std::uint8_t> out, Figures figures, Nordic nordic)
+{
+    Ita2Encoder encoder(figures);
+    std::size_t n = 0;
+    bool fits = true;
+    auto put = [&](std::uint8_t code) {
+        if (n < out.size()) {
+            out[n++] = code;
+        } else {
+            fits = false;
+        }
+    };
+    auto send = [&](char c) {
+        std::uint8_t codes[2];
+        const std::size_t k = encoder.encode(c, codes);
+        for (std::size_t i = 0; i < k; ++i) {
+            put(codes[i]);
+        }
+    };
+    put(Letters);
+    send('\r');
+    send('\n');
+    bool afterCr = false;
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (c == '\n' && afterCr) {
+            afterCr = false;
+            continue;
+        }
+        afterCr = c == '\r';
+        if (c == '\r' || c == '\n') {
+            send('\r');
+            send('\n');
+            continue;
+        }
+        // Ä Å Ö ä å ö in UTF-8: 0xC3 then 0x84, 0x85, 0x96, 0xA4, 0xA5, 0xB6.
+        if (static_cast<unsigned char>(c) == 0xC3 && i + 1 < text.size()) {
+            const unsigned char next = static_cast<unsigned char>(text[i + 1]) & 0xDF;
+            const char *spelt = next == 0x84 ? (nordic == Nordic::Telex ? "AE" : "A")
+                : next == 0x85               ? (nordic == Nordic::Telex ? "AA" : "A")
+                : next == 0x96               ? (nordic == Nordic::Telex ? "OE" : "O")
+                                             : nullptr;
+            if (spelt != nullptr) {
+                ++i;
+                for (; *spelt != '\0'; ++spelt) {
+                    send(*spelt);
+                }
+                continue;
+            }
+        }
+        send(c);
+    }
+    send('\r');
+    send('\n');
+    return fits ? n : 0;
+}
+
+std::uint32_t charactersMs(std::size_t characters, float baud)
+{
+    if (baud <= 0.0F) {
+        return 0;
+    }
+    const float ms = static_cast<float>(characters) * 7.5F * 1000.0F / baud;
+    return static_cast<std::uint32_t>(ms) + 1;
+}
+
 void CallSpotter::reset()
 {
     m_wordLength = 0;

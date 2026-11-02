@@ -31,6 +31,8 @@ add_library(dmm_services STATIC
     src/roaming.cpp
     src/rtty.cpp
     src/rtty_demodulator.cpp
+    src/rtty_loopback.cpp
+    src/rtty_modulator.cpp
     src/audio.cpp
     src/audio_meter.cpp
     src/rda1846_transceiver.cpp
