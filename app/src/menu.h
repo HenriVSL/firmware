@@ -208,12 +208,12 @@ ValueText valueText(Item item, std::int32_t value);
 /// The frequency offset's steps, as the board's transceiver tunes.
 inline constexpr services::FrequencyOffset OffsetSteps{board::Fm::TuningStepMilliHz};
 
-/// The values one item can take, each with its text and an optional note.
+/// The values one item can take, each with its text and an optional note:
+/// listed one by one, or made on demand for a long scale.
 class Choices
 {
 public:
-    static constexpr std::size_t MaxChoices = std::max<std::size_t>(services::CodeplugSource::MaxRoamingZones,
-        2 * static_cast<std::size_t>(OffsetSteps.maxSteps()) + 1);
+    static constexpr std::size_t MaxChoices = services::CodeplugSource::MaxRoamingZones;
     static constexpr std::size_t TextBytes = 17;
     static constexpr std::size_t NoteBytes = 9;
 
@@ -221,13 +221,26 @@ public:
     {
         m_count = 0;
         m_coarse = 0;
+        m_madeValue = nullptr;
+        m_madeText = nullptr;
     }
     /// Cut to fit: keep @p text to 16 characters and @p note to 8.
     void add(std::int32_t value, std::string_view text, std::string_view note = {});
+    /// @p count choices, without notes, the i-th with the value
+    /// @p valueOf(i) and the text @p textOf(i); nothing is stored per
+    /// choice, and a made text lasts until the next text().
+    void make(std::size_t count, std::int32_t (*valueOf)(std::size_t), ValueText (*textOf)(std::size_t));
     std::size_t size() const { return m_count; }
-    std::int32_t value(std::size_t i) const { return m_value[i]; }
-    std::string_view text(std::size_t i) const { return m_text[i]; }
-    std::string_view note(std::size_t i) const { return m_note[i]; }
+    std::int32_t value(std::size_t i) const { return m_madeValue != nullptr ? m_madeValue(i) : m_value[i]; }
+    std::string_view text(std::size_t i) const
+    {
+        if (m_madeText != nullptr) {
+            m_made = m_madeText(i);
+            return m_made.view();
+        }
+        return m_text[i];
+    }
+    std::string_view note(std::size_t i) const { return m_madeText != nullptr ? std::string_view() : m_note[i]; }
     bool hasNotes() const;
     /// The place of @p value, or size() when it is not one of them.
     std::size_t find(std::int32_t value) const;
@@ -243,6 +256,9 @@ private:
     char m_note[MaxChoices][NoteBytes] = {};
     std::size_t m_count = 0;
     std::size_t m_coarse = 0;
+    std::int32_t (*m_madeValue)(std::size_t) = nullptr;
+    ValueText (*m_madeText)(std::size_t) = nullptr;
+    mutable ValueText m_made;
 };
 
 /// Lists @p item's choices into @p out, those that depend on the settings

@@ -167,6 +167,22 @@ ValueText offsetText(std::int32_t hz)
     return offset.text();
 }
 
+// The offset choices, from the most negative step up.
+services::FrequencyOffset offsetChoice(std::size_t i)
+{
+    services::FrequencyOffset offset = OffsetSteps;
+    offset.setSteps(static_cast<int>(i) - offset.maxSteps());
+    return offset;
+}
+std::int32_t offsetChoiceValue(std::size_t i)
+{
+    return offsetChoice(i).hz();
+}
+ValueText offsetChoiceText(std::size_t i)
+{
+    return offsetChoice(i).text();
+}
+
 // "Always", "5 s", "2 min", "1 h".
 ValueText durationText(std::int32_t seconds)
 {
@@ -532,7 +548,7 @@ ValueText valueText(Item item, std::int32_t value)
 
 void Choices::add(std::int32_t value, std::string_view text, std::string_view note)
 {
-    if (m_count >= MaxChoices) {
+    if (m_count >= MaxChoices || m_madeValue != nullptr) {
         return;
     }
     m_value[m_count] = value;
@@ -541,8 +557,18 @@ void Choices::add(std::int32_t value, std::string_view text, std::string_view no
     ++m_count;
 }
 
+void Choices::make(std::size_t count, std::int32_t (*valueOf)(std::size_t), ValueText (*textOf)(std::size_t))
+{
+    m_count = count;
+    m_madeValue = valueOf;
+    m_madeText = textOf;
+}
+
 bool Choices::hasNotes() const
 {
+    if (m_madeValue != nullptr) {
+        return false;
+    }
     for (std::size_t i = 0; i < m_count; ++i) {
         if (m_note[i][0] != '\0') {
             return true;
@@ -554,7 +580,7 @@ bool Choices::hasNotes() const
 std::size_t Choices::find(std::int32_t value) const
 {
     for (std::size_t i = 0; i < m_count; ++i) {
-        if (m_value[i] == value) {
+        if (this->value(i) == value) {
             return i;
         }
     }
@@ -599,15 +625,10 @@ bool listChoices(Item item, Choices &out, const Settings &s)
         }
         return true;
     }
-    case Item::FrequencyOffset: {
-        services::FrequencyOffset offset = OffsetSteps;
-        for (int step = -offset.maxSteps(); step <= offset.maxSteps(); ++step) {
-            offset.setSteps(step);
-            out.add(offset.hz(), offset.text().view());
-        }
+    case Item::FrequencyOffset:
+        out.make(2 * static_cast<std::size_t>(OffsetSteps.maxSteps()) + 1, offsetChoiceValue, offsetChoiceText);
         out.setScale(OffsetCoarseSteps);
         return true;
-    }
     default:
         break;
     }
