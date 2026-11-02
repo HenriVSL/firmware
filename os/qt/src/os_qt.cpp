@@ -56,6 +56,16 @@ Ticks nowMs()
     return static_cast<Ticks>(elapsedClock().elapsed());
 }
 
+std::uint32_t cycleCount()
+{
+    return static_cast<std::uint32_t>(elapsedClock().nsecsElapsed());
+}
+
+std::uint32_t cyclesPerSecond()
+{
+    return 1'000'000'000u;
+}
+
 void sleepMs(Ticks ms)
 {
     QThread::msleep(ms);

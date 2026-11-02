@@ -8,6 +8,7 @@
 #include "dmm/services/key_lock.h"
 #include "dmm/services/microphone_gain.h"
 #include "dmm/services/power_level.h"
+#include "dmm/services/rtty.h"
 #include "dmm/services/tone.h"
 
 #include <array>
@@ -184,6 +185,25 @@ struct HomeLayout
 
 /// Settings of the radio's own that no codeplug field holds, kept with
 /// the codeplug.
+/// The text mode's settings (RTTY), entered on the radio.
+struct TextModeSettings
+{
+    /// Where the mode listens, entered by the user; 0 = not set.
+    std::uint32_t frequencyHz = 0;
+    rtty::Tones tones = rtty::Tones::High;
+    rtty::Baud baud = rtty::Baud::Baud45;
+    bool reverse = false;       // mark is the higher tone
+    bool unshiftOnSpace = true; // a space in figures goes back to letters
+    bool audible = false;       // the speaker opens with the squelch
+    /// Sending: the power, " DE <callsign>" added where the text lacks
+    /// the callsign, and how Ä Å Ö go out.
+    PowerLevel power = PowerLevel::Low;
+    bool addCall = true;
+    rtty::Nordic nordic = rtty::Nordic::Plain;
+
+    bool operator==(const TextModeSettings &) const = default;
+};
+
 struct RadioPreferences
 {
     /// Added to every frequency, to make up for the radio's reference.
@@ -199,6 +219,7 @@ struct RadioPreferences
     /// after a restart.
     DedicatedMode mode = DedicatedMode::Off;
     bool aprsAudible = false; // the speaker opens for packets in APRS mode
+    TextModeSettings text;
 };
 
 /// One repeater of a roaming zone.

@@ -44,11 +44,17 @@ add_library(dmm_services STATIC
     src/gps_schedule.cpp
     src/power.cpp
     src/roaming.cpp
+    src/rtty.cpp
+    src/rtty_demodulator.cpp
+    src/rtty_loopback.cpp
+    src/rtty_modulator.cpp
     src/audio.cpp
     src/audio_meter.cpp
     src/rda1846_transceiver.cpp
     src/sct3258_baseband.cpp
     src/text.cpp
+    src/text_entry.cpp
+    src/text_mode.cpp
     src/usb_log.cpp
     src/fonts/spleen_5x8.cpp
     src/fonts/spleen_6x12.cpp

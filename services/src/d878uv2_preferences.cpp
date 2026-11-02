@@ -29,6 +29,24 @@ constexpr std::size_t MicGainAt = 16;
 // The dedicated receive mode; a byte out of range is none.
 // Bytes 16 and 17 hold the microphone gain (feat/mic-gain).
 constexpr std::size_t ModeAt = 18;
+// The text mode: its kind (0: RTTY, the only one yet), its frequency in Hz
+// (unsigned, little-endian; 0 or all ones: not set), the tone pair, the
+// speed, and option bits; a byte out of range is the default.
+constexpr std::size_t TextKindAt = 19;
+constexpr std::size_t TextFrequencyAt = 20;
+constexpr std::size_t TextTonesAt = 24;
+constexpr std::size_t TextBaudAt = 25;
+constexpr std::size_t TextOptionsAt = 26;
+constexpr std::uint8_t TextReverse = 0x01;
+constexpr std::uint8_t TextNoUnshift = 0x02;
+constexpr std::uint8_t TextAudible = 0x04;
+constexpr std::uint8_t TextOptionsAll = 0x07;
+// Sending in the text mode: the power (low, mid, high) and option bits.
+constexpr std::size_t TextPowerAt = 27;
+constexpr std::size_t TextSendAt = 28;
+constexpr std::uint8_t TextNoCall = 0x01;
+constexpr std::uint8_t TextTelex = 0x02;
+constexpr std::uint8_t TextSendAll = 0x03;
 constexpr std::size_t CrcAt = PreferencesRecordBytes - 4;
 
 std::optional<std::uint8_t> gainDb(std::uint8_t stored)
@@ -79,6 +97,19 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.micGainDb = gainDb(record[MicGainAt]);
     p.fmMicGainDb = gainDb(record[MicGainAt + 1]);
     p.mode = choice(record[ModeAt], DedicatedMode::Off);
+    const std::uint32_t textHz = le32(&record[TextFrequencyAt]);
+    p.text.frequencyHz = textHz == 0xFFFFFFFF ? 0 : textHz;
+    p.text.tones = choice(record[TextTonesAt], rtty::Tones::High);
+    p.text.baud = choice(record[TextBaudAt], rtty::Baud::Baud45);
+    const std::uint8_t options = record[TextOptionsAt] <= TextOptionsAll ? record[TextOptionsAt] : 0;
+    p.text.reverse = (options & TextReverse) != 0;
+    p.text.unshiftOnSpace = (options & TextNoUnshift) == 0;
+    p.text.audible = (options & TextAudible) != 0;
+    p.text.power = record[TextPowerAt] <= static_cast<std::uint8_t>(PowerLevel::High) ? static_cast<PowerLevel>(record[TextPowerAt])
+                                                                                      : PowerLevel::Low;
+    const std::uint8_t send = record[TextSendAt] <= TextSendAll ? record[TextSendAt] : 0;
+    p.text.addCall = (send & TextNoCall) == 0;
+    p.text.nordic = (send & TextTelex) != 0 ? rtty::Nordic::Telex : rtty::Nordic::Plain;
     return p;
 }
 
@@ -99,6 +130,16 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[MicGainAt] = p.micGainDb.value_or(0xFF);
     record[MicGainAt + 1] = p.fmMicGainDb.value_or(0xFF);
     record[ModeAt] = static_cast<std::uint8_t>(p.mode);
+    record[TextKindAt] = 0;
+    putLe32(&record[TextFrequencyAt], p.text.frequencyHz);
+    record[TextTonesAt] = static_cast<std::uint8_t>(p.text.tones);
+    record[TextBaudAt] = static_cast<std::uint8_t>(p.text.baud);
+    record[TextOptionsAt] = static_cast<std::uint8_t>((p.text.reverse ? TextReverse : 0) |
+        (p.text.unshiftOnSpace ? 0 : TextNoUnshift) | (p.text.audible ? TextAudible : 0));
+    record[TextPowerAt] = static_cast<std::uint8_t>(
+        p.text.power > PowerLevel::High ? PowerLevel::High : p.text.power);
+    record[TextSendAt] = static_cast<std::uint8_t>((p.text.addCall ? 0 : TextNoCall) |
+        (p.text.nordic == rtty::Nordic::Telex ? TextTelex : 0));
     putLe32(&record[CrcAt], lib::crc32(record.data(), CrcAt));
 }
 

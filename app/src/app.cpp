@@ -10,6 +10,7 @@
 #include "input.h"
 #include "radio.h"
 #include "system.h"
+#include "text_mode.h"
 #include "ui.h"
 
 #include "dmm/lib/format.h"
@@ -573,6 +574,7 @@ void runCommand(std::string_view command)
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
         log::info("console") << probe::consoleHelp();
+        log::info("console") << text_mode::consoleHelp();
         log::info("console") << "tests: screen shot|watch <s>|stream on|off, key <name> [long], knob <steps>";
     } else if (lib::startsWith(command, "screen ")) {
         if (!ui::screenCommand(std::string_view(command.data() + 7, command.size() - 7))) {
@@ -668,6 +670,7 @@ void runCommand(std::string_view command)
         loaderCommand(command);
     } else if (radioCommand(command)) {
     } else if (aprs::runCommand(command)) {
+    } else if (text_mode::runCommand(command)) {
     } else if (probe::runCommand(command, *platform)) {
     } else if (const std::string_view reply = platform->system.boardCommand(command); !reply.empty()) {
         log::info("console") << reply;

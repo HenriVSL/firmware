@@ -496,10 +496,18 @@ void StandbyScreen::drawMode(Display &d, const StandbyState &s, const ModeScreen
     band(d, NameY, nameH, {{4, NameY + (Large.height - bf.height) / 2 + 1, m.big, &bf, p::Text}});
     d.fillRect(0, PanelY - 1, w, 1, p::Rule);
 
-    band(d, PanelY, SettingsY - PanelY,
-        {{4, PanelY + 5, m.panel, &Body, p::Text},
-            {w - 4 - textWidth(Body, m.panelRight), PanelY + 5, m.panelRight, &Body, p::Dim}},
-        palette::Panel);
+    if (m.twoLines) {
+        const int chars = (w - 4) / Small.width;
+        constexpr int Half = (SettingsY - PanelY) / 2;
+        band(d, PanelY, Half, {{4, PanelY + 2, cut(m.panel, chars), &Small, p::Text}}, palette::Panel);
+        band(d, PanelY + Half, SettingsY - PanelY - Half, {{4, PanelY + Half + 1, cut(m.panel2, chars), &Small, p::Text}},
+            palette::Panel);
+    } else {
+        band(d, PanelY, SettingsY - PanelY,
+            {{4, PanelY + 5, m.panel, &Body, p::Text},
+                {w - 4 - textWidth(Body, m.panelRight), PanelY + 5, m.panelRight, &Body, p::Dim}},
+            palette::Panel);
+    }
 
     band(d, SettingsY, InfoY - SettingsY - 1,
         {{4, SettingsY + 5, m.leftLabel, &Small, p::Dim}, {26, SettingsY + 3, m.left, &Body, p::Text}}, p::Ground, 0,
@@ -510,7 +518,7 @@ void StandbyScreen::drawMode(Display &d, const StandbyState &s, const ModeScreen
         p::Ground, RightX);
     d.fillRect(0, InfoY - 1, w, 1, p::Rule);
 
-    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, m.bottom, &Small, p::Dim}});
+    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, m.bottom, &Small, m.bottomWarn ? p::Warn : p::Dim}});
 
     d.fillRect(0, h - HintH, w, 1, p::Rule);
     band(d, h - HintH + 1, HintH - 1, {{3, h - HintH + 2, m.keys, &Small, p::Dim}});
@@ -629,6 +637,36 @@ void drawLogRow(Display &d, int row, std::string_view time, std::string_view tex
     band(d, y, LogRowH,
         {{4, y + 1, time, &Small, selected ? p::Dim : p::Rule}, {34, y + 1, cut(text, 25), &Small, ink}},
         selected ? p::Rule : p::Ground);
+}
+
+void drawTextRow(Display &d, int row, std::string_view text, Color ink)
+{
+    const int y = LogTop + row * LogRowH;
+    band(d, y, LogRowH, {{4, y + 1, cut(text, (d.width() - 4) / Small.width), &Small, ink}}, p::Ground);
+}
+
+void drawComposeRow(Display &d, int row, std::string_view text, std::size_t cursor)
+{
+    const int y = LogTop + row * LogRowH;
+    const int w = d.width();
+    constexpr int X = 4;
+    // The mark, then as many cells as fit; the cursor's cell stays in view.
+    const std::size_t cells = static_cast<std::size_t>((w - X) / Small.width) - 1;
+    const std::size_t first = cursor + 1 > cells ? cursor + 1 - cells : 0;
+    fillArea(d, 0, y, X, LogRowH, p::Ground);
+    drawText(d, Small, X, y + 1, ">", p::Warn, p::Ground);
+    fillArea(d, X, y, Small.width, 1, p::Ground);
+    fillArea(d, X, y + 1 + Small.height, Small.width, LogRowH - 1 - Small.height, p::Ground);
+    int x = X + Small.width;
+    for (std::size_t c = first; c < first + cells; ++c) {
+        const char ch = c < text.size() ? text[c] : ' ';
+        const bool here = c == cursor;
+        drawText(d, Small, x, y + 1, std::string_view(&ch, 1), here ? p::Ground : p::Text, here ? p::Warn : p::Ground);
+        fillArea(d, x, y, Small.width, 1, p::Ground);
+        fillArea(d, x, y + 1 + Small.height, Small.width, LogRowH - 1 - Small.height, p::Ground);
+        x += Small.width;
+    }
+    fillArea(d, x, y, w - x, LogRowH, p::Ground);
 }
 
 void drawGpsScreen(Display &d, const GpsState &gps, bool full)

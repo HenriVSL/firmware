@@ -23,6 +23,12 @@ inline constexpr Ticks WaitForever = 0xFFFFFFFFu;
 Ticks nowMs();
 void sleepMs(Ticks ms);
 
+/// A wrapping count for timing short stretches of code, cyclesPerSecond()
+/// a second: the CPU's clock cycles on a radio, nanoseconds on the PC.
+/// Differences over up to about four seconds hold.
+std::uint32_t cycleCount();
+std::uint32_t cyclesPerSecond();
+
 /// Sleeps until @p wake + @p period, then advances @p wake by @p period.
 /// Keeps a periodic loop on its own schedule regardless of its run time.
 void sleepUntil(Ticks &wake, Ticks period);

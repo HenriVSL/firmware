@@ -10,6 +10,8 @@ const char *modeName(DedicatedMode mode)
     switch (mode) {
     case DedicatedMode::Aprs:
         return "APRS";
+    case DedicatedMode::Text:
+        return "Text";
     case DedicatedMode::Off:
     case DedicatedMode::Count:
         break;
@@ -54,16 +56,19 @@ DedicatedModeState::KeyUse DedicatedModeState::keyUse(Key key) const
     case Key::Down:
         return KeyUse::List;
     case Key::Ptt:
-        // APRS sends a beacon; a mode that only receives would refuse.
-        return m_mode == DedicatedMode::Aprs ? KeyUse::Action : KeyUse::Refused;
+        // APRS sends a beacon, the text mode the text typed.
+        return KeyUse::Action;
     case Key::Front1: // zones
-    case Key::Hash:   // VFO
         return KeyUse::Refused;
+    case Key::Hash: // VFO
+    case Key::Star:
+        return m_mode == DedicatedMode::Text ? KeyUse::Type : key == Key::Hash ? KeyUse::Refused
+                                                                               : KeyUse::Usual;
     default:
         break;
     }
     if (key >= Key::Digit0 && key <= Key::Digit9) {
-        return KeyUse::Refused;
+        return m_mode == DedicatedMode::Text ? KeyUse::Type : KeyUse::Refused;
     }
     return KeyUse::Usual;
 }

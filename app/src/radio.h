@@ -11,6 +11,7 @@
 #include "dmm/services/codeplug.h"
 #include "dmm/services/fm_transceiver.h"
 #include "dmm/services/roaming.h"
+#include "dmm/services/rtty_modulator.h"
 
 #include <cstdint>
 #include <span>
@@ -195,6 +196,10 @@ struct GpsPower
 struct SendPacket
 {
 };
+/// A text was queued with sendText().
+struct SendText
+{
+};
 /// How packets go out: flags before the frame, and the audio level in
 /// percent of the board's full level.
 struct PacketSettings
@@ -230,7 +235,7 @@ struct RoamAutomatic
     bool on;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, LockReceiver, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, LockReceiver, RoamNow, RoamingOn, FrequencyOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings, SendText>;
 
 /// Starts the radio task, which owns @p fm, @p baseband and @p modem
 /// (each nullptr on a board without one) and brings them up.
@@ -253,6 +258,31 @@ struct PacketChannel
 /// without a modem.
 bool sendPacket(const services::ax25::Frame &frame, const PacketChannel &channel);
 
+/// How a text goes out in the text mode: RTTY on @c hz, which must be
+/// where the mode holds the receiver.
+struct TextTransmission
+{
+    std::uint32_t hz = 0;
+    services::RttyModulator::Config config;
+    services::PowerLevel power = services::PowerLevel::Low;
+    std::uint16_t leadMs = 300;
+    std::uint16_t tailMs = 200;
+    std::uint8_t levelPercent = 5;
+};
+/// The most codes one text takes.
+inline constexpr std::size_t MaxTextCodes = 256;
+
+/// Queues @p codes (5-bit ITA2) to go out as @p t says. The radio waits
+/// until the channel has been free for half a second (no carrier and no
+/// RTTY heard), at most 10 s, transmits with the microphone muted and
+/// unkeys after the tail, or 2 s past the time the text takes at the
+/// latest. text_mode::sendingChanged() hears how it goes. False while
+/// another text waits or goes out, without a modem, or when the codes do
+/// not fit. Any task.
+bool sendText(std::span<const std::uint8_t> codes, const TextTransmission &t);
+/// Stops a text that waits or goes out. Any task.
+void stopText();
+
 /// Queues a message for the radio task; false when the queue is full or
 /// the task has not started.
 bool post(const Message &message);
@@ -272,6 +302,9 @@ Activity activity();
 /// (without the frequency offset); 0 while it transmits, works on a DMR
 /// channel or does not receive. Any task may ask.
 std::uint32_t analogListeningHz();
+
+/// Inside the bands the radio transmits in (2 m and 70 cm). Any task.
+bool inTransmitBand(std::uint32_t hz);
 
 /// True once the radio's chips are up and it takes commands that reach the
 /// air; false while they start or restart. Any task may ask.

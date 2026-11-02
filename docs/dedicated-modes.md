@@ -38,7 +38,50 @@ APRS mode is its first user.
   again the next time.
 - A mode stays on until the user turns it off in the menu. Nothing else
   turns it off: not a channel key, not a call, not a timeout.
-- The console can do the same for tests (`aprs mode on|off`).
+- The console can do the same for tests (`aprs mode on|off`,
+  `text mode on|off`, `text freq <MHz>`).
+
+### The text mode
+
+Menu, Text holds the text mode (RTTY for now; PSK31 and others later as
+kinds of the same mode):
+
+| Row | Does |
+| --- | --- |
+| Text mode | On/Off. The panel: "One receiver: text mode" / "listens only on 144.6125", or "needs a frequency (below)" |
+| Frequency | Opens the digit entry: digits typed over the value, the knob or Up/Down in 12.5 kHz steps, `*` deletes a digit, Menu sets. Only inside 144-146 and 430-440 MHz; only while the mode is off ("Turn the mode off") |
+| Received text | Opens the received text and the compose line (below) |
+| Macros | The six ready texts by name (CQ, Answer, QTH, Over, 73, Test); Menu sends the one chosen and goes to the home screen |
+| Send power | Low (the default), Mid or High |
+| Add callsign | On (the default): " DE <callsign>" goes after a text that lacks the callsign |
+| Tones | 2125/2295 or 1275/1445 Hz: mark the lower tone, 170 Hz shift |
+| Baud | 45.45, 50 or 75 |
+| Reverse | Mark and space swapped |
+| Unshift | A space after figures goes back to letters (unshift on space, on by default) |
+| Nordic letters | How Ä, Å and Ö go out, which ITA2 lacks: A A O (the default) or AE AA OE |
+| Hear audio | The speaker opens with the squelch, as "Hear packets" does for APRS |
+
+The options take effect at once, the mode on or off. The callsign is the
+codeplug's APRS callsign without its SSID.
+
+Sending: PTT (or a macro) sends on the mode's frequency, where the
+receiver already is. The user chose the frequency and answers for it; the
+radio still sends only inside 144-146 and 430-440 MHz. Before keying it
+waits until the channel has been free for half a second (no carrier, no
+RTTY heard), at most 10 s ("Channel busy", the text stays). A
+transmission is a letters shift, CR LF, the text, CR LF, after 300 ms of
+mark and before 200 ms of mark, at most 120 s long ("Text too long");
+the transmitter drops 2 s after the text should have ended whatever
+happens, and the channel's timeout still applies. The microphone stays
+muted. Placeholders in a text are filled in when it goes out: `$MYCALL`
+(the callsign), `$CALL` (the other station: the last callsign after "DE"
+in the received text, or the one set with `text call`), `$LOC` (the
+6-character locator from a GPS fix at most 10 minutes old) and `$UTC`.
+A text that needs one of them without a value is not sent ("No callsign",
+"No call heard", "No position"). The receiver listens
+narrow (12.5 kHz) on the frequency. While the text mode is on the APRS
+task's automatic beacons wait (they would take the receiver away), and
+"Send now" still sends one.
 
 ### Kept over a restart
 
@@ -85,8 +128,8 @@ changed), the mode stays off and the radio works on its channel.
 | Menu | The menu, opened in the mode's group on its On/Off row |
 | Exit, P2, Exit held | As usual: back, the activity pages, the next screen |
 | Knob, Up, Down | The mode's own list (APRS: the heard list; the knob then picks a station, Menu opens it, Exit comes back) |
-| P1 (zones), #, digits | Refused with a notice ("In APRS mode", 1.5 s as every notice) and a log line: each would change the channel or the frequency |
-| Side keys | Their functions as usual; Roam answers "Not roaming" |
+| P1 (zones), #, digits | Refused with a notice ("In APRS mode", 1.5 s as every notice) and a log line: each would change the channel or the frequency. In the text mode digits, `*` and `#` type text instead (below); P1 is refused |
+| Side keys | Their functions as usual; Roam answers "Not roaming". In the text mode a short press of side key 1, 2 or 3 sends macro 1, 2 or 3, and a long press does what the key does elsewhere |
 | PTT | The mode's own action (below); never voice |
 
 The key lock works as usual, PTT included.
@@ -100,8 +143,10 @@ APRS frequency. Holding PTT does nothing more. The transmit limits apply
 as to every packet: only inside the 2 m and 70 cm amateur bands, only once
 the channel has been free for a slot (it waits up to 30 s, then gives up
 with "Beacon not sent"), and only with a GPS position no older than
-2 minutes (it waits up to 3 minutes for one). A mode that must not
-transmit (RTTY or PSK31 receive) refuses PTT with a notice.
+2 minutes (it waits up to 3 minutes for one). The text mode: PTT sends
+the compose line (section 1, "The text mode"); with nothing typed it
+answers "Nothing to send", and while a text waits or goes out PTT stops
+it ("Sending stopped").
 
 Automatic beacons go on as set (Menu, APRS, Auto send). In the mode they
 go out on the locked frequency without retuning.
@@ -137,6 +182,38 @@ APRS:
 It is redrawn when a station is heard and each second (ages, the beacon
 countdown), in place.
 
+Text mode:
+
+| Row | Shows |
+| --- | --- |
+| Top | "RTTY 144.6125": the kind and frequency; the clock on the right |
+| Big | The callsign last given after "DE" in the text; "Receiving" while a signal is detected before one is; "Listening" otherwise |
+| Panel | The two newest lines of received text, small, 31 characters each |
+| Under the panel | TON: the tone pair (mark first, swapped when reversed); SIG: how far the two tones stand above the noise beside them (0-100 %), in amber while the decoder is not running |
+| Bottom | The speed, characters received and framing errors: "45.45 Bd  123 chr  4 err"; "Composing 23" with text typed; while sending "Waiting for the channel", "Sending 12 s", then for 5 s "Sent" or why not, in amber ("Channel busy", "Text too long", "No callsign", "Sending stopped", "Not sent") |
+| Hint bar | "Menu  Up/Down Text  PTT Send" |
+
+It is redrawn each second and as text comes in (at most four times a
+second). The mode's own list (knob, Up, Down) is the received text: the
+last 32 lines of 31 characters, newest at the bottom, the knob or Up/Down
+scrolling back; new text keeps the view where it is. Exit goes back.
+
+Typing: a digit, `*` or `#` on the home screen opens the received text
+with the compose line as its last row (">" and the text, the cursor
+standing out), and acts there:
+
+| Key | On the received text |
+| --- | --- |
+| 2-9, 1, 0 | Letters as on a keypad phone: pressing the key again within 1 s steps through `ABC2`, `DEF3` ... (1: `.,?'-/:()1`, 0: space, `0`); another key or the pause keeps the letter. The hint bar shows the key's letters |
+| `*` | Deletes the character before the cursor; held: clears the line |
+| `#` | Letters or figures (digits type at once: `123`); held: picks a symbol (`.,?:-/()'$!&#;"`) with the knob or Up/Down, Menu or `#` puts it in, Exit leaves it out |
+| Up, Down | Move the cursor while there is text; else scroll |
+| Knob | Scrolls the received text |
+| PTT | Sends the line; once sent it is cleared, else it stays |
+| Exit, Menu | Back to the home screen; the line is kept |
+
+Only characters RTTY can send are offered (upper case, ITA2 figures).
+
 ## 4. The decoder
 
 Sampling the audio and decoding run only while the mode is on and the
@@ -156,6 +233,21 @@ The audio sampler fills a ring by DMA. The decoding task reads it every
 redraw or codeplug write cannot hold it up; the ring covers 0.4 s.
 `aprs rx` reports samples lost and the longest gap between reads.
 
+One task decodes for every mode: the aprs task holds the sampler and runs
+the APRS decoder in APRS mode or the text mode's RTTY decoder in the text
+mode (`text_mode::decode`). For tests the text mode can feed the decoder
+its own transmit audio instead of the sampler's, in real time, without
+keying: `text selftest [<SNR dB>] [<text>]` sends a fixed text (or the
+one given) through the RTTY modulator at the transmit level, turned into
+received audio with noise at that ratio; `text loopback <text>` and
+`text dry on` (every send: PTT, macros, `text send`) do the same with the
+text as it would go on air. The loopback logs each line heard and ends
+with `loopback done: exact` (or how many characters were wrong) and the
+share of the CPU the decoder took. Only one mode is on at a time, so the two never
+run together, and a second task's stack is saved. `text` reports the RTTY
+decoder: signal, quality, characters, framing errors, the longest pass;
+`text log on` copies each received line to the log (`text: rx "..."`).
+
 ## 5. Adding a mode
 
 A new mode brings:
@@ -171,11 +263,11 @@ A new mode brings:
    (`DedicatedModeState::turnOn` answers `NoFrequency`).
 3. Its settings: on/off and the mode's own options in the preferences
    record (`RadioPreferences`), statistics in RAM only.
-4. A task that owns its decoder, told by a message when the mode starts
-   and stops; it samples only while the radio listens on the mode's
-   frequency (`radio::analogListeningHz()`). The audio sampler has one
-   user at a time: the mode's task holds it and lends it out as the APRS
-   task does for the audio probe.
+4. A decoder hosted by the aprs task, told by a message when the mode
+   starts and stops (`aprs::ModeOn` names the mode); it samples only while
+   the radio listens on the mode's frequency
+   (`radio::analogListeningHz()`). The audio sampler has one user at a
+   time: the aprs task holds it and lends it out for the audio probe.
 5. A home screen builder: a pure function in services that turns the
    mode's state into the rows of section 3, with host tests. The ui only
    draws what it returns.
