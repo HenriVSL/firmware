@@ -97,6 +97,7 @@ void publish(bool decoding)
     shown.decoding = decoding;
     shown.signal = decoding && demodulator.signal();
     shown.quality = decoding ? demodulator.quality() : 0.0F;
+    shown.afcHz = demodulator.afcHz();
     shown.characters = st.characters;
     shown.errors = st.framingErrors;
     statsShown = st;
@@ -119,7 +120,8 @@ void report()
                       << (s.reverse ? " reversed" : "") << ", " << services::rtty::baudText(s.baud) << " Bd, unshift on space "
                       << (s.unshiftOnSpace ? "on" : "off") << ", speaker " << (s.audible ? "on" : "off");
     log::info("text") << "decoder " << (st.decoding ? "running" : "not running") << ", signal "
-                      << (st.signal ? "on" : "off") << ", quality " << static_cast<int>(st.quality * 100.0F + 0.5F) << " %";
+                      << (st.signal ? "on" : "off") << ", quality " << static_cast<int>(st.quality * 100.0F + 0.5F)
+                      << " %, AFC " << static_cast<int>(st.afcHz + (st.afcHz < 0.0F ? -0.5F : 0.5F)) << " Hz";
     log::info("text") << stats.characters << " characters, " << stats.framingErrors << " framing errors, "
                       << stats.unsignalled << " dropped without a signal; " << stats.samples / RttyDemodulator::SampleRateHz
                       << " s of audio, " << stats.signalSamples / RttyDemodulator::SampleRateHz << " s with a signal";

@@ -234,7 +234,13 @@ TEST_CASE("rtty demodulator: decode rate under each condition")
     add({.name = "tilt +12 dB", .tiltDb = 12.0}, 0.98);
     add({.name = "tones +15 Hz", .toneOffsetHz = 15.0}, 1.0);
     add({.name = "tones -15 Hz", .toneOffsetHz = -15.0}, 1.0);
-    add({.name = "tones +30 Hz", .toneOffsetHz = 30.0}, 0.95);
+    add({.name = "tones +30 Hz", .toneOffsetHz = 30.0}, 1.0);
+    // The AFC's range.
+    add({.name = "tones +50 Hz", .toneOffsetHz = 50.0}, 0.97);
+    add({.name = "tones -50 Hz", .toneOffsetHz = -50.0}, 0.97);
+    add({.name = "tones +40 Hz, SNR 0 dB", .toneOffsetHz = 40.0, .snrDb = 0.0}, 0.97);
+    // The sampler's clock 1 % fast: tones and speed both read 1 % low.
+    add({.name = "sampler +1 %", .toneOffsetHz = -22.0, .clockScale = 0.99}, 1.0);
     add({.name = "speed +2 %", .clockScale = 1.02}, 1.0);
     add({.name = "speed -2 %", .clockScale = 0.98}, 1.0);
     add({.name = "speed +4 %", .clockScale = 1.04}, 0.98);
@@ -243,7 +249,7 @@ TEST_CASE("rtty demodulator: decode rate under each condition")
     add({.name = "white noise SNR 0 dB", .snrDb = 0.0}, 0.97);
     add({.name = "white noise SNR -3 dB", .snrDb = -3.0}, 0.85);
     // Below the signal detector's edge: nothing comes out.
-    add({.name = "white noise SNR -6 dB", .snrDb = -6.0}, 0.0);
+    add({.name = "white noise SNR -6 dB", .snrDb = -6.0}, 0.85);
     add({.name = "FM noise SNR 3 dB", .snrDb = 3.0, .fmNoise = true}, 0.99);
     add({.name = "FM noise SNR -3 dB", .snrDb = -3.0, .fmNoise = true}, 0.97);
     add({.name = "FM noise SNR -6 dB", .snrDb = -6.0, .fmNoise = true}, 0.85);
@@ -281,8 +287,94 @@ TEST_CASE("rtty demodulator: a level step in the middle costs little")
     CHECK(editDistance(out, Sample) <= 3);
 }
 
+TEST_CASE("rtty demodulator: the AFC follows tones that drift during a transmission")
+{
+    RttySignal s;
+    s.toneOffsetHz = -40.0;
+    // 80 Hz over the text's 66 s.
+    s.driftHzPerS = 80.0 / 66.0;
+    s.silence(0.5);
+    std::string text;
+    for (int i = 0; i < 4; ++i) {
+        text += Sample;
+    }
+    s.text(text);
+    s.addNoise(6.0, 21);
+    RttyDemodulator d;
+    const std::string out = decodeAudio(d, s.millivolts(300.0));
+    CHECK(editDistance(out, text) <= 4);
+    CHECK(d.afcHz() > 30.0F);
+}
+
+TEST_CASE("rtty demodulator: the AFC goes back to the set tones after a transmission")
+{
+    RttySignal s;
+    s.toneOffsetHz = 45.0;
+    s.silence(0.5);
+    s.text(Sample);
+    const std::size_t end = s.samples().size();
+    s.silence(20.0);
+    s.addNoise(10.0, 4);
+    const std::vector<std::uint16_t> mv = s.millivolts(300.0);
+    RttyDemodulator d;
+    d.process(std::span<const std::uint16_t>(mv.data(), end), [](char) {});
+    CHECK(d.afcHz() > 40.0F);
+    d.process(std::span<const std::uint16_t>(mv.data() + end, mv.size() - end), [](char) {});
+    CHECK(std::abs(d.afcHz()) < 5.0F);
+}
+
+TEST_CASE("rtty demodulator: speech, packets and noise between transmissions pass nothing on")
+{
+    RttySignal s;
+    s.silence(1.0);
+    s.voice(8.0, 1.0, 5);
+    s.text("RYRY FIRST LINE 123\r\n", 0.5, 0.2);
+    s.voice(4.0, 1.5, 6);
+    s.afsk(0.8, 1.0, 7);
+    s.silence(2.0);
+    // A station joining on another speed and shift: not taken for text.
+    s.baud = 75.0;
+    s.shiftHz = 850.0;
+    s.text("XXXXXXXXXXXXXXXXXXXX", 0.2, 0.2);
+    s.baud = 45.45;
+    s.shiftHz = 170.0;
+    s.voice(4.0, 0.7, 8);
+    s.text("SECOND LINE 456\r\n", 0.5, 0.2);
+    s.voice(8.0, 1.0, 9);
+    s.addNoise(15.0, 10);
+    RttyDemodulator d;
+    const std::string out = decodeAudio(d, s.millivolts(300.0));
+    MESSAGE("decoded: " << out);
+    CHECK(editDistance(out, "RYRY FIRST LINE 123\r\nSECOND LINE 456\r\n") <= 2);
+}
+
+TEST_CASE("rtty demodulator: joining in the middle of a transmission")
+{
+    RttySignal s;
+    s.silence(0.5);
+    s.text(Sample);
+    const std::vector<std::uint16_t> mv = s.millivolts(300.0);
+    // In the middle of a character of the first line.
+    const std::size_t from = static_cast<std::size_t>(3.37 * RttySignal::RateHz);
+    RttyDemodulator d;
+    std::string out;
+    d.process(std::span<const std::uint16_t>(mv.data() + from, mv.size() - from), [&out](char c) { out.push_back(c); });
+    // A few characters may be lost or wrong while it falls into step.
+    const std::string_view tail = Sample.substr(Sample.size() - 100);
+    REQUIRE(out.size() >= 100);
+    CHECK(editDistance(std::string_view(out).substr(out.size() - 100), tail) == 0);
+}
+
 TEST_CASE("rtty demodulator: noise alone passes nothing on")
 {
+    // Speech alone, a minute.
+    {
+        RttySignal s;
+        s.voice(60.0, 1.0, 77);
+        s.addNoise(20.0, 78);
+        RttyDemodulator d;
+        CHECK(decodeAudio(d, s.millivolts(400.0)).empty());
+    }
     // Ten minutes each: white noise and an FM receiver's noise with the
     // squelch open, cut at 0 mV, and quiet noise as with it closed.
     CHECK(charactersFromNoise(600.0, false, 600.0, 100) == 0);

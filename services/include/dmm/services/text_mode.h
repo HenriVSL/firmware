@@ -58,8 +58,8 @@ struct HomeInput
     /// The two newest lines of received text, the newest last.
     std::string_view older;
     std::string_view newest;
-    /// The audio is being decoded now; a signal is detected, and the
-    /// share of its power in the tones (0..1).
+    /// The audio is being decoded now; a signal is detected, and how far
+    /// the tones stand above the noise (0..1).
     bool decoding = false;
     bool signal = false;
     float quality = 0.0F;

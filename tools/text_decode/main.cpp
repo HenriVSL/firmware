@@ -202,8 +202,8 @@ int main(int argc, char **argv)
         if (demodulator.signal() != signal) {
             signal = demodulator.signal();
             endLine();
-            std::printf("%8.2f s  [signal %s, quality %.0f %%]\n", now(), signal ? "on" : "off",
-                static_cast<double>(demodulator.quality()) * 100.0);
+            std::printf("%8.2f s  [signal %s, quality %.0f %%, AFC %+.0f Hz]\n", now(), signal ? "on" : "off",
+                static_cast<double>(demodulator.quality()) * 100.0, static_cast<double>(demodulator.afcHz()));
         }
     }
     endLine();

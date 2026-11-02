@@ -30,12 +30,20 @@ namespace dmm::services {
 /// still be space and the stop bit mark, else the character is dropped as
 /// a framing error.
 ///
-/// A signal detector compares the power in the two tone filters with the
-/// power of all the audio below about 3 kHz: text is passed on only while
-/// that share stays high, so noise (with the squelch open or not) gives
-/// none.
+/// The tones are followed (AFC): the frequency of the mixed-down audio,
+/// taken from its phase step, is compared with the nearer of the two tones
+/// and the mixer moves by the mean difference, up to MaxAfcHz either way.
+/// It follows only while the audio near the tones stands well above the
+/// noise beside them, and drifts back to the set tones after a few seconds
+/// without.
 ///
-/// Heap-free; about 0.3 KB of state.
+/// A signal detector compares the power in the two tone filters with the
+/// power in two filters as wide just below and above the pair, where an
+/// RTTY signal has little: text is passed on only while the tones stand
+/// clearly above that noise, so noise, clicks and the receiver's hiss
+/// (with the squelch open or not) give none.
+///
+/// Heap-free; about 0.6 KB of state.
 class RttyDemodulator
 {
 public:
@@ -44,6 +52,8 @@ public:
     static constexpr std::uint32_t BasebandHz = SampleRateHz / Decimation;
     /// The longest bit at 600 samples a second (45.45 Bd and up).
     static constexpr std::size_t MaxBitSamples = 14;
+    /// How far the AFC moves the tones either way.
+    static constexpr float MaxAfcHz = 60.0F;
 
     struct Config
     {
@@ -86,11 +96,13 @@ public:
     void process(std::span<const std::uint16_t> mv, Sink onChar);
     void process(std::span<const float> samples, Sink onChar);
 
-    /// The share of the audio's power in the tone filters, about 0.8 for a
-    /// clean signal and a few hundredths for noise.
+    /// How far the tones stand above the noise beside them, 0..1: near 0
+    /// for noise, near 1 for a clean signal.
     float quality() const;
     /// A signal is detected: text is passed on.
     bool signal() const { return m_signal; }
+    /// How far the AFC has moved the tones, Hz (positive: up).
+    float afcHz() const { return m_afcHz; }
 
     const Stats &stats() const { return m_stats; }
 
@@ -123,6 +135,8 @@ private:
 
     void sample(float x, Sink &onChar);
     void baseband(Complex z, Sink &onChar);
+    void followTones(Complex z);
+    void setMixer();
     void decide(float v, Sink &onChar);
     void character(std::uint8_t code, Sink &onChar);
     void updateSignal();
@@ -131,27 +145,40 @@ private:
     rtty::Ita2Decoder m_ita2;
     float m_dc = 0.0F;
     bool m_dcKnown = false;
-    std::array<float, 2> m_previous{};
-    // Mixes the audio down around the middle of the tone pair.
+    // Mixes the audio down around the middle of the tone pair, moved by
+    // the AFC.
     Complex m_mixer{1.0F, 0.0F};
     Complex m_mixerStep{1.0F, 0.0F};
+    float m_centreHz = 2210.0F;
+    float m_afcHz = 0.0F;
+    float m_afcSet = 0.0F;
+    // The last mixed-down sample, the power near the tones and beside them
+    // as the AFC judges it, and how long it has had nothing to follow.
+    Complex m_lastZ;
+    float m_nearPower = 0.0F;
+    float m_besidePower = 0.0F;
+    float m_toneStepHz = 85.0F;
+    std::uint32_t m_afcIdle = 0;
     // The decimating filter's sums for the next three outputs, and the
     // place of the next input in the output period.
     std::array<Complex, 3> m_sums{};
     std::uint32_t m_phase = 0;
     Tone m_mark;
     Tone m_space;
+    // The noise references just below and above the pair.
+    Tone m_below;
+    Tone m_above;
     std::size_t m_historyAt = 0;
     std::size_t m_bitLength = 13;
     float m_bitSamples = 13.2F;
     float m_attack = 0.25F;
     float m_decay = 0.01F;
-    // Power of all the audio and of the tones, followed slowly.
-    float m_audioPower = 0.0F;
+    // Power in the tone filters and in the reference filters, followed
+    // slowly; the references' gain to the tones' for white noise.
     float m_tonePower = 0.0F;
-    float m_audioSmoothing = 0.001F;
+    float m_referencePower = 0.0F;
     float m_toneSmoothing = 0.01F;
-    float m_toneGain = 1.0F;
+    float m_referenceGain = 1.0F;
     bool m_signal = false;
     // Character framing at 600 samples a second.
     Frame m_frame = Frame::Hunting;

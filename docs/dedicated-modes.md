@@ -167,7 +167,7 @@ Text mode:
 | Top | "RTTY 144.6125": the kind and frequency; the clock on the right |
 | Big | The callsign last given after "DE" in the text; "Receiving" while a signal is detected before one is; "Listening" otherwise |
 | Panel | The two newest lines of received text, small, 31 characters each |
-| Under the panel | TON: the tone pair (mark first, swapped when reversed); SIG: the share of the audio's power in the two tones, in amber while the decoder is not running |
+| Under the panel | TON: the tone pair (mark first, swapped when reversed); SIG: how far the two tones stand above the noise beside them (0-100 %), in amber while the decoder is not running |
 | Bottom | The speed, characters received and framing errors: "45.45 Bd  123 chr  4 err" |
 | Hint bar | "Menu  Up/Down Text  P2 Log" |
 

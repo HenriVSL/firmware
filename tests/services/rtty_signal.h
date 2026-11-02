@@ -25,8 +25,10 @@ public:
     double markHz = 2125.0;
     double shiftHz = 170.0;
     double baud = 45.45;
-    /// Added to both tones (the sender's tuning).
+    /// Added to both tones (the sender's tuning), and how fast that moves
+    /// per second of audio made (drift).
     double toneOffsetHz = 0.0;
+    double driftHzPerS = 0.0;
     /// The sender's bit rate times this.
     double clockScale = 1.0;
     double stopBits = 1.5;
@@ -117,6 +119,62 @@ public:
         }
     }
 
+    /// Appends @p seconds of something like speech at @p amplitude: a
+    /// voiced sound on a wandering pitch near 120 Hz with its harmonics up
+    /// to 3.4 kHz, louder near 500 Hz and 1.5 kHz, and hiss between
+    /// syllables of about 0.2 s.
+    void voice(double seconds, double amplitude, std::uint32_t seed)
+    {
+        m_seed = seed | 1u;
+        const std::size_t n = static_cast<std::size_t>(seconds * RateHz);
+        double pitchPhase = 0.0;
+        double syllable = 0.0;
+        double pitch = 120.0;
+        bool voiced = true;
+        for (std::size_t i = 0; i < n; ++i) {
+            syllable += 1.0 / (0.2 * RateHz);
+            if (syllable >= 1.0) {
+                syllable -= 1.0;
+                voiced = uniform() < 0.7;
+                pitch = 90.0 + 80.0 * uniform();
+            }
+            const double envelope = std::sin(Pi * syllable);
+            pitchPhase += 2.0 * Pi * pitch / RateHz;
+            double v = 0.0;
+            if (voiced) {
+                for (int h = 1; pitch * h < 3400.0; ++h) {
+                    const double f = pitch * h;
+                    const double formants = 1.0 / (1.0 + std::pow((f - 500.0) / 300.0, 2)) +
+                        0.5 / (1.0 + std::pow((f - 1500.0) / 400.0, 2)) + 0.05;
+                    v += formants * std::sin(pitchPhase * h);
+                }
+                v *= 0.3;
+            } else {
+                v = 0.5 * gaussian();
+            }
+            m_samples.push_back(amplitude * envelope * v);
+        }
+    }
+
+    /// Appends a burst of 1200 baud packet audio (1200 and 2200 Hz tones,
+    /// random bits) for @p seconds.
+    void afsk(double seconds, double amplitude, std::uint32_t seed)
+    {
+        m_seed = seed | 1u;
+        const std::size_t n = static_cast<std::size_t>(seconds * RateHz);
+        double bit = 0.0;
+        bool high = false;
+        for (std::size_t i = 0; i < n; ++i) {
+            bit += 1200.0 / RateHz;
+            if (bit >= 1.0) {
+                bit -= 1.0;
+                high = uniform() < 0.5;
+            }
+            m_phase += 2.0 * Pi * (high ? 2200.0 : 1200.0) / RateHz;
+            m_samples.push_back(amplitude * std::sin(m_phase));
+        }
+    }
+
     /// Scales the samples from @p from on by @p gain (a level step).
     void scaleFrom(std::size_t from, double gain)
     {
@@ -153,7 +211,8 @@ private:
         m_due += bits * RateHz / (baud * clockScale);
         while (m_due >= 1.0) {
             m_due -= 1.0;
-            m_phase += 2.0 * Pi * hz / RateHz;
+            const double drift = driftHzPerS * static_cast<double>(m_samples.size()) / RateHz;
+            m_phase += 2.0 * Pi * (hz + drift) / RateHz;
             if (m_phase > 2.0 * Pi) {
                 m_phase -= 2.0 * Pi;
             }

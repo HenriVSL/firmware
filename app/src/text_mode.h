@@ -34,6 +34,8 @@ struct Status
     bool decoding = false;
     bool signal = false;
     float quality = 0.0F;
+    /// How far the decoder has moved the tones, Hz.
+    float afcHz = 0.0F;
     std::uint32_t characters = 0;
     std::uint32_t errors = 0;
 };

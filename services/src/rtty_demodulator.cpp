@@ -39,11 +39,27 @@ constexpr std::array<std::uint16_t, KernelTaps> makeKernel()
 constexpr std::array<std::uint16_t, KernelTaps> Kernel = makeKernel();
 constexpr float KernelScale = 1.0F / static_cast<float>(D * D * D);
 
-// The detector's share of power in the tones to start and to stop passing
-// text on, and the time it is averaged over, in bits.
-constexpr float SignalOn = 0.18F;
-constexpr float SignalOff = 0.11F;
-constexpr float SignalBits = 6.0F;
+// The detector's quality to start and to stop passing text on, and the
+// time it is averaged over, in bits.
+constexpr float SignalOn = 0.65F;
+constexpr float SignalOff = 0.5F;
+constexpr float SignalBits = 10.0F;
+// The noise references sit this far beyond the tones, at most this close
+// to half the 600 Hz rate.
+constexpr float ReferenceBeyondHz = 170.0F;
+constexpr float ReferenceMaxHz = 270.0F;
+// The AFC follows while the audio near the tones has this many times the
+// power beside them; each step moves by this share of the difference; it
+// takes frequencies this far from the middle (not those of a change from
+// one tone to the other); and drifts back after this long without.
+constexpr float AfcNear = 8.0F;
+constexpr float AfcStep = 1.0F / 300.0F;
+constexpr float AfcLowHz = 30.0F;
+constexpr float AfcHighHz = 170.0F;
+constexpr float AfcIdleSeconds = 2.0F;
+constexpr float AfcReturnSeconds = 3.0F;
+// The AFC's power estimates follow over this many bits.
+constexpr float AfcBits = 3.0F;
 // How fast each tone's peak and floor follow its level: a jump towards
 // the level at once, a return over this many bits.
 constexpr float TrackAttack = 0.25F;
@@ -74,6 +90,15 @@ float kernelGain(float hz)
     }
     const float one = std::sin(static_cast<float>(D) * x) / (static_cast<float>(D) * std::sin(x));
     return one * one * one;
+}
+
+// The decimated noise power a filter at @p hz gets from white noise: from
+// @p hz and from its image half the 600 Hz rate further.
+float noiseGain(float hz)
+{
+    const float a = kernelGain(hz);
+    const float b = kernelGain(static_cast<float>(RttyDemodulator::BasebandHz) - std::fabs(hz));
+    return a * a + b * b;
 }
 
 } // namespace
@@ -122,38 +147,52 @@ void RttyDemodulator::configure(const Config &config)
         m_bitLength = 2;
     }
     const float half = 0.5F * static_cast<float>(config.shiftHz);
-    const float centre = static_cast<float>(config.markHz) + half;
-    const auto mix = turn(centre, static_cast<float>(SampleRateHz));
-    m_mixerStep = {mix.i, mix.q};
+    m_centreHz = static_cast<float>(config.markHz) + half;
+    m_toneStepHz = half;
+    m_afcHz = 0.0F;
+    setMixer();
     const float markOffset = config.reverse ? half : -half;
     const auto m = turn(markOffset, static_cast<float>(BasebandHz));
     const auto s = turn(-markOffset, static_cast<float>(BasebandHz));
     m_mark.step = {m.i, m.q};
     m_space.step = {s.i, s.q};
-    const float gain = kernelGain(half);
-    const float c = std::cos(Pi * centre / static_cast<float>(SampleRateHz));
-    const float lowGain = 4.0F * c * c;
-    m_toneGain = 2.0F * lowGain * lowGain / (gain * gain);
+    const float beyond = std::fmin(half + ReferenceBeyondHz, ReferenceMaxHz);
+    const auto below = turn(-beyond, static_cast<float>(BasebandHz));
+    const auto above = turn(beyond, static_cast<float>(BasebandHz));
+    m_below.step = {below.i, below.q};
+    m_above.step = {above.i, above.q};
+    m_referenceGain = noiseGain(half) / noiseGain(beyond);
     m_attack = TrackAttack;
     m_decay = 1.0F / (TrackBits * m_bitSamples);
     m_toneSmoothing = 1.0F / (SignalBits * m_bitSamples);
-    m_audioSmoothing = m_toneSmoothing / static_cast<float>(D);
     reset();
+}
+
+void RttyDemodulator::setMixer()
+{
+    const auto mix = turn(m_centreHz + m_afcHz, static_cast<float>(SampleRateHz));
+    m_mixerStep = {mix.i, mix.q};
+    m_afcSet = m_afcHz;
 }
 
 void RttyDemodulator::reset()
 {
     m_dcKnown = false;
-    m_previous = {};
     m_mixer = {1.0F, 0.0F};
     m_sums = {};
     m_phase = D - 1;
-    m_mark.rotor = m_space.rotor = {1.0F, 0.0F};
-    m_mark.history = m_space.history = {};
-    m_mark.peak = m_mark.floor = m_space.peak = m_space.floor = 0.0F;
+    for (Tone *t : {&m_mark, &m_space, &m_below, &m_above}) {
+        t->rotor = {1.0F, 0.0F};
+        t->history = {};
+        t->peak = t->floor = 0.0F;
+    }
     m_historyAt = 0;
-    m_audioPower = 0.0F;
     m_tonePower = 0.0F;
+    m_referencePower = 0.0F;
+    m_lastZ = {};
+    m_nearPower = 0.0F;
+    m_besidePower = 0.0F;
+    m_afcIdle = 0;
     m_signal = false;
     m_frame = Frame::Hunting;
     m_last = 0.0F;
@@ -163,7 +202,11 @@ void RttyDemodulator::reset()
 
 float RttyDemodulator::quality() const
 {
-    return m_audioPower > 0.0F ? m_tonePower * m_toneGain / m_audioPower : 0.0F;
+    if (m_tonePower <= 0.0F) {
+        return 0.0F;
+    }
+    const float q = 1.0F - m_referencePower * m_referenceGain / m_tonePower;
+    return q > 0.0F ? q : 0.0F;
 }
 
 void RttyDemodulator::process(std::span<const std::uint16_t> mv, Sink onChar)
@@ -189,13 +232,6 @@ void RttyDemodulator::sample(float x, Sink &onChar)
     }
     m_dc += (x - m_dc) * DcStep;
     x -= m_dc;
-    // The power is taken through a low-pass with two zeros at half the
-    // sample rate: the receiver's noise above the voice band, which the
-    // tones never reach, counts for little.
-    const float low = x + 2.0F * m_previous[0] + m_previous[1];
-    m_previous[1] = m_previous[0];
-    m_previous[0] = x;
-    m_audioPower += (low * low - m_audioPower) * m_audioSmoothing;
 
     const Complex mixed{x * m_mixer.i, x * m_mixer.q};
     m_mixer = {m_mixer.i * m_mixerStep.i - m_mixer.q * m_mixerStep.q,
@@ -230,12 +266,46 @@ void RttyDemodulator::baseband(Complex z, Sink &onChar)
     m_historyAt = (m_historyAt + 1) % MaxBitSamples;
     const float mark = m_mark.level(z, m_historyAt, m_bitLength);
     const float space = m_space.level(z, m_historyAt, m_bitLength);
+    const float below = m_below.level(z, m_historyAt, m_bitLength);
+    const float above = m_above.level(z, m_historyAt, m_bitLength);
     m_tonePower += (mark * mark + space * space - m_tonePower) * m_toneSmoothing;
+    m_referencePower += (below * below + above * above - m_referencePower) * m_toneSmoothing;
+    const float afcSmoothing = 1.0F / (AfcBits * m_bitSamples);
+    m_nearPower += (z.i * z.i + z.q * z.q - m_nearPower) * afcSmoothing;
+    m_besidePower += ((below * below + above * above) * m_referenceGain - m_besidePower) * afcSmoothing;
+    followTones(z);
     updateSignal();
     const bool markNow = m_last > 0.0F;
     m_mark.track(mark, markNow, m_attack, m_decay);
     m_space.track(space, !markNow, m_attack, m_decay);
     decide((mark - m_mark.middle()) - (space - m_space.middle()), onChar);
+}
+
+void RttyDemodulator::followTones(Complex z)
+{
+    // The phase step from the last sample, as a frequency from the mixer.
+    const Complex p{z.i * m_lastZ.i + z.q * m_lastZ.q, z.q * m_lastZ.i - z.i * m_lastZ.q};
+    m_lastZ = z;
+    const float power = z.i * z.i + z.q * z.q;
+    const bool near = m_nearPower > AfcNear * m_besidePower && m_nearPower > 0.0F;
+    if (near) {
+        m_afcIdle = 0;
+        const float hz = std::atan2(p.q, p.i) * static_cast<float>(BasebandHz) / (2.0F * Pi);
+        const float away = std::fabs(hz);
+        if (away > AfcLowHz && away < AfcHighHz) {
+            const float error = hz - (hz > 0.0F ? m_toneStepHz : -m_toneStepHz);
+            // Louder samples count more, a click no more than twice.
+            const float weight = std::fmin(power / m_nearPower, 2.0F);
+            m_afcHz += error * weight * AfcStep;
+            m_afcHz = std::fmax(-MaxAfcHz, std::fmin(MaxAfcHz, m_afcHz));
+        }
+    } else if (static_cast<float>(++m_afcIdle) > AfcIdleSeconds * static_cast<float>(BasebandHz)) {
+        m_afcIdle = static_cast<std::uint32_t>(AfcIdleSeconds * static_cast<float>(BasebandHz));
+        m_afcHz -= m_afcHz / (AfcReturnSeconds * static_cast<float>(BasebandHz));
+    }
+    if (std::fabs(m_afcHz - m_afcSet) > 0.25F) {
+        setMixer();
+    }
 }
 
 void RttyDemodulator::updateSignal()
