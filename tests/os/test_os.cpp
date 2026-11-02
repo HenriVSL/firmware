@@ -96,3 +96,12 @@ TEST_CASE("a full queue refuses after its timeout")
     CHECK(q.receive(p, 0));
     CHECK(p.value == 1);
 }
+
+TEST_CASE("the cycle count runs at its rate")
+{
+    const std::uint32_t start = os::cycleCount();
+    os::sleepMs(20);
+    const double seconds = static_cast<double>(os::cycleCount() - start) / os::cyclesPerSecond();
+    CHECK(seconds >= 0.019);
+    CHECK(seconds < 0.5);
+}

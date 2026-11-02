@@ -53,6 +53,29 @@ void sleepMs(Ticks ms)
     vTaskDelay(ms);
 }
 
+// The Cortex-M cycle counter (ARMv7-M Architecture Reference Manual, the
+// Data Watchpoint and Trace unit): it counts once the trace enable bit in
+// the debug monitor control register and the counter's enable bit in the
+// unit's control register are set.
+std::uint32_t cycleCount()
+{
+    auto *const demcr = reinterpret_cast<volatile std::uint32_t *>(0xE000EDFCu);
+    auto *const control = reinterpret_cast<volatile std::uint32_t *>(0xE0001000u);
+    auto *const counter = reinterpret_cast<volatile std::uint32_t *>(0xE0001004u);
+    constexpr std::uint32_t TraceEnable = 1u << 24;
+    constexpr std::uint32_t CounterEnable = 1u << 0;
+    if ((*control & CounterEnable) == 0) {
+        *demcr = *demcr | TraceEnable;
+        *control = *control | CounterEnable;
+    }
+    return *counter;
+}
+
+std::uint32_t cyclesPerSecond()
+{
+    return configCPU_CLOCK_HZ;
+}
+
 void sleepUntil(Ticks &wake, Ticks period)
 {
     xTaskDelayUntil(&wake, period);
