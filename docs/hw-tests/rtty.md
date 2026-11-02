@@ -49,7 +49,7 @@ prints them all. Console lines are at most 80 characters of plain ASCII.
 | 4 | `text freq 144.6` | `ui: text mode frequency 144.600 MHz`; Menu > Text shows "Frequency  144.600" |
 | 5 | `text power low`, `text addcall on`, `text nordic plain`, `text tones high`, `text baud 45`, `text reverse off`, `text usos on`, `text hear off` | `text` prints `RTTY 144.600 MHz, 2125/2295, 45.45 Bd, unshift on space on, speaker off` and `sending: power low, level 5 %, callsign <call> added, Nordic letters A A O, dry run off, idle` |
 | 6 | Menu > Text: `key down` ×11 with a `screen shot` at each row | The twelve rows as listed above, with the values of step 5 |
-| 7 | `text mode on` | `ui: Text mode on`, `radio: receiver held at 144.600 MHz, 12.5 kHz, speaker quiet`, after about a second `aprs: MCU decoding RTTY on at 144.600 MHz`; the home screen: top `RTTY 144.600`, large `Listening`, `TON 2125/2295`, `SIG` low, bottom `45.45 Bd  0 chr  0 err`, hint bar `Menu  Up/Down Text  PTT Send` (`screen shot`) |
+| 7 | `text mode on` | `ui: Text mode on`, `radio: receiver held at 144.600 MHz, 12.5 kHz, speaker quiet`, `text: mode on at 144.600 MHz`, after about a second `text: decoding RTTY on at 144.600 MHz`; the home screen: top `RTTY 144.600`, large `Listening`, `TON 2125/2295`, `SIG` low, bottom `45.45 Bd  0 chr  0 err`, hint bar `Menu  Up/Down Text  PTT Send` (`screen shot`) |
 | 8 | `text dry on` | `text: dry run on: texts go through the loopback, not on air`. **Keep it on for the rest of part A**: then no PTT, macro or `text send` keys the radio |
 
 ### A2. Self-test: decoding and CPU on the MCU
@@ -110,7 +110,7 @@ The Nordic letters (Ä Å Ö as A A O or AE AA OE) and the 120 s and
 | 42 | The uptime line after the steps above | Unused stack words: aprs at least 100, ui at least 100, link at least 80, radio at least 80 |
 | 43 | `restart` with the mode on | The text mode's home screen after the start screen; `radio: receiver held at 144.600 MHz` before any `fm: receiving`; `text` shows the settings of step 5 |
 | 44 | `text` | `dry run off` after the restart: `text dry on` again before any more of part A |
-| 45 | `text mode off` | `ui: dedicated mode off`, `radio: receiver back to the channel`, `aprs: MCU decoding off`; the channel's home screen as before (`screen shot`, `fm status`) |
+| 45 | `text mode off` | `ui: dedicated mode off`, `radio: receiver back to the channel`, `text: decoding off`, `text: mode off`; the channel's home screen as before (`screen shot`, `fm status`) |
 
 ### A6. On the PC: text-decode
 

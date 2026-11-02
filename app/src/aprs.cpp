@@ -464,13 +464,14 @@ void stopDecoding()
         return;
     }
     sampler->stop();
-    if (running == Decoder::Text) {
+    const bool text = running == Decoder::Text;
+    if (text) {
         text_mode::stopDecoding();
     }
     decoding = false;
     running = Decoder::None;
     samplerHeld.store(false);
-    log::info("aprs") << "MCU decoding off";
+    log::info(text ? "text" : "aprs") << (text ? "decoding off" : "MCU decoding off");
 }
 
 // Starts or stops decoding on the MCU as the radio and the settings say.
@@ -516,8 +517,9 @@ void updateDecoding()
     lastReadAt = now;
     decoding = true;
     running = wanted;
-    log::info("aprs") << "MCU decoding " << (wanted == Decoder::Text ? "RTTY" : "APRS") << " on at "
-                      << frequencyText(radio::analogListeningHz()).view() << " MHz";
+    const bool text = wanted == Decoder::Text;
+    log::info(text ? "text" : "aprs") << (text ? "decoding RTTY on at " : "MCU decoding APRS on at ")
+                                      << frequencyText(radio::analogListeningHz()).view() << " MHz";
 }
 
 [[gnu::noinline, gnu::cold]] void logLost(std::uint32_t samples, os::Ticks gapMs)
@@ -713,9 +715,11 @@ void logBadFrame()
                        modeHz = m.hz;
                        modeKind = m.on ? m.mode : services::DedicatedMode::Off;
                        beaconsPausedLogged = false;
-                       log::info("aprs") << services::modeName(m.on ? m.mode : was) << " mode " << (m.on ? "on at " : "off")
-                                         << (m.on ? frequencyText(m.hz).view() : std::string_view())
-                                         << (m.on ? " MHz" : "");
+                       // Each mode logs under its own name.
+                       const bool text = (m.on ? m.mode : was) == services::DedicatedMode::Text;
+                       log::info(text ? "text" : "aprs") << (text ? "" : "APRS ") << "mode " << (m.on ? "on at " : "off")
+                                                         << (m.on ? frequencyText(m.hz).view() : std::string_view())
+                                                         << (m.on ? " MHz" : "");
                    },
                    [](const McuReceive &m) {
                        mcuMode = m.mode;
