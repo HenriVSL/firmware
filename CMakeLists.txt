@@ -16,7 +16,7 @@ if(NOT PROJECT_VERSION VERSION_EQUAL DMM_FORK_BASE)
     message(FATAL_ERROR "The upstream version is now ${PROJECT_VERSION}, the fork's release number counts from "
                         "${DMM_FORK_BASE}: set DMM_FORK_BASE to ${PROJECT_VERSION} and DMM_FORK_RELEASE to 1.")
 endif()
-set(DMM_VERSION "${PROJECT_VERSION}-6HL-${DMM_FORK_RELEASE}")
+set(DMM_VERSION "${PROJECT_VERSION}-6HL-${DMM_FORK_RELEASE}-rtty2")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
