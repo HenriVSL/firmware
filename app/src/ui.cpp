@@ -486,6 +486,10 @@ enum class MenuItem : std::uint8_t
     TextReverse,
     TextUnshift,
     TextAudible,
+    TextMacros, // the macros: Menu sends one
+    TextPower,
+    TextAddCall,
+    TextNordic,
     PlugChannels, // the codeplug's books, each opens its list
     PlugZones,
     PlugContacts,
@@ -543,7 +547,7 @@ struct GroupInfo
     // Two lines about the group for the menu's panel.
     const char *about1;
     const char *about2;
-    MenuItem items[11];
+    MenuItem items[12];
     std::uint8_t count;
     // The group it opens from, and the item there that opens it; Count for
     // the top of the menu.
@@ -558,10 +562,11 @@ constexpr GroupInfo Groups[] = {
     {"GPS", "The position and", "the GPS receiver", {MenuItem::GpsStatus, MenuItem::Gps}, 2},
     {"APRS", "APRS mode, sending the", "position, stations heard",
         {MenuItem::AprsMode, MenuItem::AprsSend, MenuItem::AprsBeacon, MenuItem::AprsHeard}, 4},
-    {"Text", "RTTY: text received on", "a frequency you enter",
-        {MenuItem::TextMode, MenuItem::TextFrequency, MenuItem::TextReceived, MenuItem::TextTones, MenuItem::TextBaud,
-            MenuItem::TextReverse, MenuItem::TextUnshift, MenuItem::TextAudible},
-        8},
+    {"Text", "RTTY: text sent and", "received where you say",
+        {MenuItem::TextMode, MenuItem::TextFrequency, MenuItem::TextReceived, MenuItem::TextMacros, MenuItem::TextPower,
+            MenuItem::TextAddCall, MenuItem::TextTones, MenuItem::TextBaud, MenuItem::TextReverse, MenuItem::TextUnshift,
+            MenuItem::TextNordic, MenuItem::TextAudible},
+        12},
     {"Settings", "How the radio is set up:", "screen, keys, clock, GPS",
         {MenuItem::OpenHome, MenuItem::OpenDisplay, MenuItem::OpenKeys, MenuItem::OpenClock, MenuItem::OpenGpsSettings,
             MenuItem::OpenAprsSettings, MenuItem::OpenRadioSettings},
@@ -701,6 +706,14 @@ ItemAbout itemAbout(MenuItem item)
         return {"A space after figures", "goes back to letters"};
     case MenuItem::TextAudible:
         return {"In the text mode: the", "signal on the speaker"};
+    case MenuItem::TextMacros:
+        return {"Ready texts; Menu sends", "one (side keys: 1-3)"};
+    case MenuItem::TextPower:
+        return {"Power for sending", "in the text mode"};
+    case MenuItem::TextAddCall:
+        return {"\"DE\" and your callsign", "added if the text lacks it"};
+    case MenuItem::TextNordic:
+        return {"How the Nordic letters go", "out: A A O, or AE AA OE"};
     case MenuItem::PlugChannels:
         return {"Every channel: names,", "frequencies, DMR, tones"};
     case MenuItem::PlugZones:
@@ -834,6 +847,17 @@ bool receivedFromMenu = false;
 std::uint32_t modeEntryHz = 0;
 char modeTyped[8] = {};
 std::size_t modeTypedLength = 0;
+// The text mode's compose line, typed on the keys; whether what PTT sent
+// from it is on its way, and the symbol being picked (# held), if any.
+constexpr services::TextEntry::KeyLetters ComposeLetters = {" 0", ".,?'-/:()1", "abc2", "def3", "ghi4", "jkl5", "mno6",
+    "pqrs7", "tuv8", "wxyz9"};
+// What # held offers: every symbol RTTY sends.
+constexpr std::string_view ComposeSymbols = ".,?:-/()'$!&#;\"";
+constexpr os::Ticks ComposeTapMs = 1000;
+char composeText[160] = {};
+services::TextEntry compose;
+bool composeSending = false;
+int composePick = -1;
 
 // "UTC+3:00", "UTC-9:30", "UTC".
 lib::StaticString<10> zoneText(int minutes)
@@ -1277,7 +1301,9 @@ void uiMain(void *)
               << keyText(Key::Hash) << " VFO";
     modeKeys << keyText(Key::Menu) << "  " << keyText(Key::Front2) << " Log  " << keyText(Key::Ptt) << " Beacon";
     textKeys << keyText(Key::Menu) << "  " << keyText(Key::Up) << '/' << keyText(Key::Down) << " Text  "
-             << keyText(Key::Front2) << " Log";
+             << keyText(Key::Ptt) << " Send";
+    compose.begin(composeText, 0,
+        {&ComposeLetters, ComposeTapMs, false, false, true, [](char c) { return services::rtty::Ita2Encoder().sendable(c); }});
 
     // The codeplug: settings, and the channel the radio starts on.
     if (codeplug != nullptr) {
@@ -1316,6 +1342,7 @@ void uiMain(void *)
                 aprsFrequencyHz = a->frequencyHz;
                 aprsWide = a->wide;
                 aprs::setStation(*a);
+                text_mode::setOwnCall(a->callsign);
             }
             if (selector.settings().voiceEnhancement) {
                 radio::post(radio::VoiceEnhancement{true});
@@ -1837,6 +1864,23 @@ void uiMain(void *)
             label = "Hear audio";
             value << (textSettings.audible ? "On" : "Off");
             break;
+        case MenuItem::TextMacros:
+            label = "Macros";
+            break;
+        case MenuItem::TextPower:
+            label = "Send power";
+            value << (textSettings.power == services::PowerLevel::High ? "High"
+                    : textSettings.power == services::PowerLevel::Mid  ? "Mid"
+                                                                       : "Low");
+            break;
+        case MenuItem::TextAddCall:
+            label = "Add callsign";
+            value << (textSettings.addCall ? "On" : "Off");
+            break;
+        case MenuItem::TextNordic:
+            label = "Nordic letters";
+            value << (textSettings.nordic == services::rtty::Nordic::Telex ? "AE AA OE" : "A A O");
+            break;
         case MenuItem::PlugChannels:
         case MenuItem::PlugZones:
         case MenuItem::PlugContacts:
@@ -2282,6 +2326,11 @@ void uiMain(void *)
         in.reverse = textSettings.reverse;
         in.characters = st.characters;
         in.errors = st.errors;
+        const text_mode::SendStatus sent = text_mode::sendStatus();
+        in.sending = sent.state;
+        in.sendingS = sent.onAirS;
+        in.dry = sent.dry;
+        in.composing = compose.length();
         textRows = services::text_mode::homeRows(in);
         ModeScreen m;
         m.top = textRows.top.view();
@@ -2295,6 +2344,7 @@ void uiMain(void *)
         m.right = textRows.quality.view();
         m.rightWarn = textRows.qualityWarn;
         m.bottom = textRows.bottom.view();
+        m.bottomWarn = textRows.bottomWarn;
         m.keys = textKeys.view();
         return m;
     };
@@ -2303,27 +2353,61 @@ void uiMain(void *)
     };
     // The received text, newest at the bottom, scrolled back receivedBack
     // lines.
+    // With text typed, the last row is the compose line, the cursor on it
+    // and the hint bar naming the letters of the key being tapped.
     auto drawReceived = [&] {
         standby.drawStatus(d, standbyState());
         drawBattery(d);
+        const bool composing = compose.length() > 0 || composePick >= 0;
+        const int rows = composing ? LogRows - 1 : LogRows;
         const std::size_t count = text_mode::lineCount();
-        receivedBack = std::min(receivedBack, count > static_cast<std::size_t>(LogRows) ? count - LogRows : 0);
+        receivedBack = std::min(receivedBack, count > static_cast<std::size_t>(rows) ? count - rows : 0);
         lib::StaticString<16> title;
         title << "RTTY " << services::text_mode::frequencyText(textSettings.frequencyHz).view();
         const text_mode::Status st = text_mode::status();
-        lib::StaticString<16> note;
-        if (receivedBack > 0) {
+        const text_mode::SendStatus sent = text_mode::sendStatus();
+        lib::StaticString<24> note;
+        if (sent.state == services::text_mode::Sending::OnAir) {
+            note << (sent.dry ? "LOOP " : "TX ") << sent.onAirS << " s";
+        } else if (sent.state == services::text_mode::Sending::Waiting) {
+            note << "waiting";
+        } else if (receivedBack > 0) {
             note << '-' << receivedBack;
         } else if (st.decoding) {
             note << "SIG " << static_cast<int>(st.quality * 100.0F + 0.5F) << '%';
         } else {
             note << "not decoding";
         }
-        drawLogFrame(d, title.view(), note.view(), "Knob: scroll   Exit: back");
+        lib::StaticString<40> hint;
+        char letters[16];
+        const std::size_t n = compose.letters(compose.lastDigit(), letters);
+        if (composePick >= 0) {
+            hint << "Pick " << ComposeSymbols[static_cast<std::size_t>(composePick)] << "  Menu: put in";
+        } else if (compose.lastDigit() >= 0 && n > 0) {
+            hint << compose.lastDigit() << ": " << std::string_view(letters, n);
+        } else if (composing) {
+            hint << "PTT send *del #" << (compose.textCase() == services::TextEntry::Case::Digits ? "ABC" : "123");
+        } else {
+            hint << "0-9: type  Knob: scroll";
+        }
+        drawLogFrame(d, title.view(), note.view(), hint.view());
         static char text[services::text_mode::TextLines::Width];
-        for (int row = 0; row < LogRows; ++row) {
-            const std::size_t back = receivedBack + static_cast<std::size_t>(LogRows - 1 - row);
+        for (int row = 0; row < rows; ++row) {
+            const std::size_t back = receivedBack + static_cast<std::size_t>(rows - 1 - row);
             drawTextRow(d, row, text_mode::line(back, text), palette::Text);
+        }
+        if (composing) {
+            if (composePick >= 0) {
+                // The symbol being picked shows at the cursor.
+                lib::StaticString<sizeof composeText + 1> shown;
+                const std::string_view typed = compose.text();
+                shown << std::string_view(typed.data(), compose.cursor())
+                      << ComposeSymbols[static_cast<std::size_t>(composePick)]
+                      << std::string_view(typed.data() + compose.cursor(), typed.size() - compose.cursor());
+                drawComposeRow(d, LogRows - 1, shown.view(), compose.cursor());
+            } else {
+                drawComposeRow(d, LogRows - 1, compose.text(), compose.cursor());
+            }
         }
     };
     // The text mode's frequency as typed: MHz with five decimals, the
@@ -2517,6 +2601,82 @@ void uiMain(void *)
         receivedBack = 0;
         receivedFromMenu = fromMenu;
         show(View::Received);
+    };
+    // A key on the received text that edits the compose line: digits tap
+    // letters, * deletes (held: all), # changes between letters and
+    // figures (held: picks a symbol), Up and Down move the cursor while
+    // there is text. False if the key is not for the compose line.
+    auto composeKey = [&](Key key, KeyDebouncer::EventType type) {
+        using Type = KeyDebouncer::EventType;
+        const bool press = type == Type::Press;
+        const bool step = press || type == Type::Repeat;
+        const bool digit = key >= Key::Digit0 && key <= Key::Digit9;
+        if (composePick >= 0) {
+            if (step && (key == Key::Up || key == Key::Down)) {
+                const int n = static_cast<int>(ComposeSymbols.size());
+                composePick = ((composePick + (key == Key::Down ? 1 : -1)) % n + n) % n;
+            } else if (press && (key == Key::Menu || key == Key::Hash)) {
+                compose.insert(ComposeSymbols[static_cast<std::size_t>(composePick)]);
+                composePick = -1;
+            } else if (press && key == Key::Exit) {
+                composePick = -1;
+            } else {
+                return type != Type::Release || key == Key::Hash;
+            }
+            drawReceived();
+            return true;
+        }
+        // A release would end the tapping on its key.
+        if (type == Type::Release && (digit || key == Key::Star || key == Key::Hash)) {
+            return true;
+        }
+        if (press && digit) {
+            compose.digit(static_cast<int>(key) - static_cast<int>(Key::Digit0), os::nowMs());
+        } else if (press && key == Key::Star) {
+            compose.backspace();
+        } else if (type == Type::LongPress && key == Key::Star) {
+            compose.clear();
+        } else if (press && key == Key::Hash) {
+            compose.nextCase();
+        } else if (type == Type::LongPress && key == Key::Hash) {
+            // The press before changed the case: back to it.
+            compose.nextCase();
+            composePick = 0;
+        } else if (step && (key == Key::Up || key == Key::Down) && compose.length() > 0) {
+            if (key == Key::Up) {
+                compose.left();
+            } else {
+                compose.right();
+            }
+        } else {
+            if (press) {
+                compose.accept();
+            }
+            return digit || key == Key::Star || key == Key::Hash;
+        }
+        drawReceived();
+        return true;
+    };
+    // PTT in the text mode: sends the compose line, or stops a text on its
+    // way.
+    auto textPtt = [&] {
+        using services::text_mode::Sending;
+        const Sending now = text_mode::sendStatus().state;
+        if (now == Sending::Waiting || now == Sending::OnAir) {
+            log::info("ui") << "PTT: stop sending";
+            text_mode::stopSending();
+            return;
+        }
+        if (compose.length() == 0) {
+            log::info("ui") << "PTT: nothing to send";
+            notice(services::text_mode::sendingText(Sending::Nothing));
+            return;
+        }
+        log::info("ui") << "PTT: send " << compose.length() << " characters";
+        compose.accept();
+        composeSending = true;
+        const Sending r = text_mode::send(compose.text(), false);
+        composeSending = r == Sending::Waiting || r == Sending::OnAir;
     };
     // The dedicated mode's own list: the stations heard, newest first, or
     // the text received.
@@ -3167,14 +3327,38 @@ void uiMain(void *)
             }
             menuValue.select(static_cast<std::uint8_t>(textSettings.baud));
             break;
+        case MenuItem::TextMacros:
+            menuValue.open("Send a macro");
+            for (std::uint8_t i = 0; i < services::text_mode::MacroCount; ++i) {
+                menuValue.add(i, services::text_mode::macro(i).name);
+            }
+            menuValue.select(0);
+            break;
+        case MenuItem::TextPower:
+            menuValue.open("Send power");
+            menuValue.add(0, "Low");
+            menuValue.add(1, "Mid");
+            menuValue.add(2, "High");
+            menuValue.select(static_cast<std::uint8_t>(textSettings.power));
+            break;
+        case MenuItem::TextNordic:
+            menuValue.open("Nordic letters");
+            menuValue.add(0, "A A O");
+            menuValue.add(1, "AE AA OE");
+            menuValue.select(textSettings.nordic == services::rtty::Nordic::Telex ? 1 : 0);
+            break;
+        case MenuItem::TextAddCall:
         case MenuItem::TextReverse:
         case MenuItem::TextUnshift:
         case MenuItem::TextAudible: {
-            const bool on = item == MenuItem::TextReverse ? textSettings.reverse
+            const bool on = item == MenuItem::TextAddCall ? textSettings.addCall
+                : item == MenuItem::TextReverse           ? textSettings.reverse
                 : item == MenuItem::TextUnshift           ? textSettings.unshiftOnSpace
                                                           : textSettings.audible;
-            menuValue.open(item == MenuItem::TextReverse ? "Reverse" : item == MenuItem::TextUnshift ? "Unshift"
-                                                                                                     : "Hear audio");
+            menuValue.open(item == MenuItem::TextAddCall ? "Add callsign"
+                    : item == MenuItem::TextReverse      ? "Reverse"
+                    : item == MenuItem::TextUnshift      ? "Unshift"
+                                                         : "Hear audio");
             menuValue.add(0, "Off");
             menuValue.add(1, "On");
             menuValue.select(on ? 1 : 0);
@@ -3294,12 +3478,14 @@ void uiMain(void *)
             heard.shown = false;
             radio::post(radio::LockReceiver{true, l.hz, l.wide, text ? textSettings.audible : aprsAudible});
             aprs::post(aprs::ModeOn{true, l.hz, mode});
+            text_mode::modeChanged(text ? l.hz : 0);
             log::info("ui") << services::modeName(modeState.mode()) << " mode on";
             break;
         }
         case Change::TurnedOff:
             radio::post(radio::LockReceiver{false, 0, true, false});
             aprs::post(aprs::ModeOn{false, 0, services::DedicatedMode::Off});
+            text_mode::modeChanged(0);
             log::info("ui") << "dedicated mode off";
             break;
         }
@@ -3340,6 +3526,16 @@ void uiMain(void *)
                 const services::ReceiverLock &l = modeState.lock();
                 radio::post(radio::LockReceiver{true, l.hz, l.wide, textSettings.audible});
             }
+            break;
+        case MenuItem::TextPower:
+            textSettings.power = v == 2 ? services::PowerLevel::High : v == 1 ? services::PowerLevel::Mid
+                                                                              : services::PowerLevel::Low;
+            break;
+        case MenuItem::TextAddCall:
+            textSettings.addCall = v == 1;
+            break;
+        case MenuItem::TextNordic:
+            textSettings.nordic = v == 1 ? services::rtty::Nordic::Telex : services::rtty::Nordic::Plain;
             break;
         default:
             return;
@@ -3543,8 +3739,20 @@ void uiMain(void *)
         case MenuItem::TextReverse:
         case MenuItem::TextUnshift:
         case MenuItem::TextAudible:
+        case MenuItem::TextPower:
+        case MenuItem::TextAddCall:
+        case MenuItem::TextNordic:
             setTextOption(menuItem, v);
             break;
+        case MenuItem::TextMacros:
+            // Sent from the home screen, where its progress shows.
+            show(View::Standby);
+            if (modeState.mode() != services::DedicatedMode::Text) {
+                notice("Text mode is off");
+            } else {
+                text_mode::sendMacro(v, false);
+            }
+            return;
         case MenuItem::GpsStatus:
         case MenuItem::AprsSend:
         case MenuItem::PlugChannels:
@@ -3673,6 +3881,13 @@ void uiMain(void *)
                 openModeList();
                 return;
             }
+            if (use == Use::Type) {
+                if (type != Type::Release) {
+                    openReceived(false);
+                    composeKey(key, type);
+                }
+                return;
+            }
             const bool text = modeState.mode() == services::DedicatedMode::Text;
             if (use == Use::Refused) {
                 if (press) {
@@ -3755,6 +3970,20 @@ void uiMain(void *)
         } else if (type == Type::Release && sideLong[k] != services::KeyFunction::None && !sideLongDone[k]) {
             f = sideShort[k];
         }
+        if (modeState.mode() == services::DedicatedMode::Text) {
+            // In the text mode a short press sends macro 1-3; a long press
+            // does what a press or long press does elsewhere.
+            if (type == Type::Press) {
+                return;
+            }
+            if (type == Type::LongPress) {
+                f = sideLong[k] != services::KeyFunction::None ? sideLong[k] : sideShort[k];
+            } else if (type == Type::Release && !sideLongDone[k]) {
+                log::info("ui") << "side key " << k + 1 << ": macro " << k + 1;
+                text_mode::sendMacro(k, false);
+                return;
+            }
+        }
         if (f == services::KeyFunction::Roam) {
             radio::post(radio::RoamNow{});
         }
@@ -3808,6 +4037,10 @@ void uiMain(void *)
             stationShown = static_cast<std::size_t>(
                 std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
             drawHeard();
+        } else if (view == View::Received && composePick >= 0) {
+            const int n = static_cast<int>(ComposeSymbols.size());
+            composePick = ((composePick + static_cast<int>(moved)) % n + n) % n;
+            drawReceived();
         } else if (view == View::Received) {
             // Clockwise towards the newest line.
             const int back = static_cast<int>(receivedBack) - static_cast<int>(moved);
@@ -3893,16 +4126,17 @@ void uiMain(void *)
                                        using Use = services::DedicatedModeState::KeyUse;
                                        const Use use = modeState.keyUse(Key::Ptt);
                                        if (v == Verdict::Pass && use == Use::Action) {
-                                           // One beacon now; never voice.
-                                           if (down) {
+                                           // One beacon now, or the text typed; never voice.
+                                           if (down && modeState.mode() == services::DedicatedMode::Text) {
+                                               textPtt();
+                                           } else if (down) {
                                                log::info("ui") << "PTT: beacon";
                                                aprs::post(aprs::BeaconNow{});
                                                notice("Beacon queued");
                                            }
                                        } else if (v == Verdict::Pass && use == Use::Refused) {
                                            if (down) {
-                                               log::info("ui") << "PTT refused: the text mode only receives";
-                                               notice("Receive only");
+                                               notice("Mode is on");
                                            }
                                        } else if (v == Verdict::Pass) {
                                            radio::post(radio::Ptt{down});
@@ -3953,6 +4187,13 @@ void uiMain(void *)
                                    return;
                                }
                                if (view == View::Received) {
+                                   if (e.key >= Key::Side1 && e.key <= Key::Side3) {
+                                       sideKey(e.key, e.type);
+                                       return;
+                                   }
+                                   if (composeKey(e.key, e.type)) {
+                                       return;
+                                   }
                                    if (step && (e.key == Key::Up || e.key == Key::Down)) {
                                        receivedBack = e.key == Key::Up ? receivedBack + 1 : receivedBack > 0 ? receivedBack - 1
                                                                                                              : 0;
@@ -4281,7 +4522,8 @@ void uiMain(void *)
                            [&](const TextSetting &t) {
                                using Field = TextSetting::Field;
                                constexpr MenuItem Items[] = {MenuItem::TextFrequency, MenuItem::TextTones, MenuItem::TextBaud,
-                                   MenuItem::TextReverse, MenuItem::TextUnshift, MenuItem::TextAudible};
+                                   MenuItem::TextReverse, MenuItem::TextUnshift, MenuItem::TextAudible, MenuItem::TextPower,
+                                   MenuItem::TextAddCall, MenuItem::TextNordic};
                                if (t.field == Field::Frequency) {
                                    setTextFrequency(t.value);
                                } else {
@@ -4292,6 +4534,34 @@ void uiMain(void *)
                                } else if (view == View::Standby && modeState.on() && !noticeShown) {
                                    redrawView();
                                }
+                           },
+                           [&](const TextSent &t) {
+                               using services::text_mode::Sending;
+                               if (t.how == Sending::Sent && composeSending) {
+                                   compose.clear();
+                               }
+                               if (t.how != Sending::Waiting && t.how != Sending::OnAir) {
+                                   composeSending = false;
+                               }
+                               const bool failed = t.how != Sending::Waiting && t.how != Sending::OnAir && t.how != Sending::Sent &&
+                                   t.how != Sending::Idle;
+                               if (failed && (view == View::Standby || view == View::Received || view == View::MenuValue)) {
+                                   notice(services::text_mode::sendingText(t.how));
+                               } else if (view == View::Received && !noticeShown) {
+                                   drawReceived();
+                               } else if (view == View::Standby && modeState.on() && !noticeShown) {
+                                   redrawView();
+                               }
+                           },
+                           [&](const TextCompose &) {
+                               constexpr const char *Cases[] = {"ABC", "abc", "123"};
+                               char letters[16];
+                               const std::size_t n = compose.letters(compose.lastDigit(), letters);
+                               log::info("text") << "compose \"" << compose.text() << "\", cursor " << compose.cursor() << ", "
+                                                 << Cases[static_cast<int>(compose.textCase())] << ", key "
+                                                 << compose.lastDigit() << " letters \"" << std::string_view(letters, n)
+                                                 << "\" at " << compose.tapIndex()
+                                                 << (composePick >= 0 ? ", picking a symbol" : "");
                            },
                            [&](const AprsProblem &p) {
                                notice(p.kind == AprsProblem::Kind::NoCallsign     ? "No APRS callsign"
@@ -4409,7 +4679,11 @@ void uiMain(void *)
         }
         if (view == View::Received && !noticeShown) {
             const os::Ticks now = os::nowMs();
-            if (text_mode::version() != textShown && now - textDrawnAt >= TextRedrawMs) {
+            const services::text_mode::Sending sending = text_mode::sendStatus().state;
+            const bool ticking = (sending == services::text_mode::Sending::OnAir ||
+                                     sending == services::text_mode::Sending::Waiting) &&
+                now / 1000 != textDrawnAt / 1000;
+            if ((text_mode::version() != textShown || ticking) && now - textDrawnAt >= TextRedrawMs) {
                 textShown = text_mode::version();
                 textDrawnAt = now;
                 drawReceived();

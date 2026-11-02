@@ -85,17 +85,22 @@ TEST_CASE("in APRS mode the channel keys are refused and PTT sends a beacon")
     CHECK(s.keyUse(Key::Front1) == Use::Usual);
 }
 
-TEST_CASE("the text mode only receives: PTT is refused")
+TEST_CASE("in the text mode digits, * and # type and PTT sends")
 {
     DedicatedModeState s;
     CHECK(s.turnOn(DedicatedMode::Text, {144'612'500, false}) == Change::TurnedOn);
     CHECK_FALSE(s.lock().wide);
-    CHECK(s.keyUse(Key::Ptt) == Use::Refused);
+    CHECK(s.keyUse(Key::Ptt) == Use::Action);
     CHECK(s.keyUse(Key::Up) == Use::List);
     CHECK(s.knobUse() == Use::List);
-    CHECK(s.keyUse(Key::Digit5) == Use::Refused);
+    CHECK(s.keyUse(Key::Digit5) == Use::Type);
+    CHECK(s.keyUse(Key::Star) == Use::Type);
+    CHECK(s.keyUse(Key::Hash) == Use::Type);
+    CHECK(s.keyUse(Key::Front1) == Use::Refused);
     CHECK(s.turnOn(DedicatedMode::Aprs, Aprs) == Change::Moved);
     CHECK(s.keyUse(Key::Ptt) == Use::Action);
+    CHECK(s.keyUse(Key::Digit5) == Use::Refused);
+    CHECK(s.keyUse(Key::Star) == Use::Usual);
 }
 
 TEST_CASE("modes have names")

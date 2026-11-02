@@ -50,6 +50,44 @@ std::string_view line(std::size_t back, std::span<char, services::text_mode::Tex
 /// The last callsign given after "DE", copied into @p out. Any task.
 std::string_view call(std::span<char, services::rtty::CallSpotter::MaxCall> out);
 
+/// The text mode is on at @p hz (0: off), as the ui turns it. Any task.
+void modeChanged(std::uint32_t hz);
+
+/// The callsign that fills $MYCALL and is added to texts sent: the
+/// codeplug's APRS callsign. Any task.
+void setOwnCall(std::string_view call);
+/// The other station's callsign for $CALL; empty: the last one spotted
+/// after "DE". Any task.
+void setTheirCall(std::string_view call);
+
+/// Sends @p text (UTF-8) in the text mode: the placeholders filled in,
+/// " DE <callsign>" added as the settings say, then RTTY on the mode's
+/// frequency, or with @p dry through the loopback into the decoder instead
+/// of the transmitter. Waiting when it is queued (OnAir for the loopback),
+/// else why not. Any task.
+services::text_mode::Sending send(std::string_view text, bool dry);
+/// Sends macro @p index (0-based) as send() does.
+services::text_mode::Sending sendMacro(std::size_t index, bool dry);
+/// Stops a text that waits, goes out or runs through the loopback. Any
+/// task.
+void stopSending();
+/// The radio task (or the loopback) tells how a text moves on. Any task.
+void sendingChanged(services::text_mode::Sending how);
+
+/// What sending is doing, for the screens: a result stays a few seconds,
+/// then Idle. Any task.
+struct SendStatus
+{
+    services::text_mode::Sending state = services::text_mode::Sending::Idle;
+    std::uint32_t onAirS = 0;
+    bool dry = false;
+};
+SendStatus sendStatus();
+
+/// Every send goes through the loopback instead of the air while on
+/// (console; off at start). Any task.
+bool dryRun();
+
 /// The console's text commands, for its help.
 const char *consoleHelp();
 

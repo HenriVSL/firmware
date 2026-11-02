@@ -518,7 +518,7 @@ void StandbyScreen::drawMode(Display &d, const StandbyState &s, const ModeScreen
         p::Ground, RightX);
     d.fillRect(0, InfoY - 1, w, 1, p::Rule);
 
-    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, m.bottom, &Small, p::Dim}});
+    band(d, InfoY, h - HintH - InfoY, {{4, InfoY + 5, m.bottom, &Small, m.bottomWarn ? p::Warn : p::Dim}});
 
     d.fillRect(0, h - HintH, w, 1, p::Rule);
     band(d, h - HintH + 1, HintH - 1, {{3, h - HintH + 2, m.keys, &Small, p::Dim}});
@@ -643,6 +643,30 @@ void drawTextRow(Display &d, int row, std::string_view text, Color ink)
 {
     const int y = LogTop + row * LogRowH;
     band(d, y, LogRowH, {{4, y + 1, cut(text, (d.width() - 4) / Small.width), &Small, ink}}, p::Ground);
+}
+
+void drawComposeRow(Display &d, int row, std::string_view text, std::size_t cursor)
+{
+    const int y = LogTop + row * LogRowH;
+    const int w = d.width();
+    constexpr int X = 4;
+    // The mark, then as many cells as fit; the cursor's cell stays in view.
+    const std::size_t cells = static_cast<std::size_t>((w - X) / Small.width) - 1;
+    const std::size_t first = cursor + 1 > cells ? cursor + 1 - cells : 0;
+    fillArea(d, 0, y, X, LogRowH, p::Ground);
+    drawText(d, Small, X, y + 1, ">", p::Warn, p::Ground);
+    fillArea(d, X, y, Small.width, 1, p::Ground);
+    fillArea(d, X, y + 1 + Small.height, Small.width, LogRowH - 1 - Small.height, p::Ground);
+    int x = X + Small.width;
+    for (std::size_t c = first; c < first + cells; ++c) {
+        const char ch = c < text.size() ? text[c] : ' ';
+        const bool here = c == cursor;
+        drawText(d, Small, x, y + 1, std::string_view(&ch, 1), here ? p::Ground : p::Text, here ? p::Warn : p::Ground);
+        fillArea(d, x, y, Small.width, 1, p::Ground);
+        fillArea(d, x, y + 1 + Small.height, Small.width, LogRowH - 1 - Small.height, p::Ground);
+        x += Small.width;
+    }
+    fillArea(d, x, y, w - x, LogRowH, p::Ground);
 }
 
 void drawGpsScreen(Display &d, const GpsState &gps, bool full)

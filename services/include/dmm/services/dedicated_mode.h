@@ -15,7 +15,7 @@ enum class DedicatedMode : std::uint8_t
 {
     Off,
     Aprs,
-    Text, // RTTY on a frequency the user enters
+    Text, // RTTY on a frequency the user enters, typed and sent
     Count,
 };
 
@@ -52,6 +52,7 @@ public:
         Usual,   // as on a channel
         List,    // opens or moves in the mode's own list
         Action,  // the mode's own action (PTT)
+        Type,    // types text (the text mode's digits, * and #)
         Refused, // it would change the channel or the frequency
     };
 

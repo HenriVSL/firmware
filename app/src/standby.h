@@ -143,6 +143,8 @@ struct ModeScreen
     std::string_view right;
     bool rightWarn = false;
     std::string_view bottom;
+    /// The bottom row in amber.
+    bool bottomWarn = false;
     /// The hint bar.
     std::string_view keys;
 };
@@ -210,6 +212,9 @@ void drawLogRow(services::Display &d, int row, std::string_view time, std::strin
     bool selected = false);
 /// One row of the same list holding only text, across the whole width.
 void drawTextRow(services::Display &d, int row, std::string_view text, services::Color ink);
+/// A row of the same list with text being typed after a mark: as much of
+/// it as fits around the cursor, which stands out.
+void drawComposeRow(services::Display &d, int row, std::string_view text, std::size_t cursor);
 
 /// The GPS screen: the receiver's state, position, altitude, satellites,
 /// speed and UTC time, between the status bar and a hint bar. @p full

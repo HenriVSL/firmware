@@ -9,6 +9,7 @@
 #include "dmm/services/input.h"
 #include "dmm/services/key_lock.h"
 #include "dmm/services/nmea.h"
+#include "dmm/services/text_mode.h"
 
 #include <cstdint>
 #include <variant>
@@ -188,8 +189,8 @@ struct SetMode
     services::DedicatedMode mode;
 };
 /// Changes one of the text mode's settings as its menu row does (console):
-/// the frequency in Hz, the tone pair and speed as their index, the others
-/// 0 or 1.
+/// the frequency in Hz, the tone pair, speed, power and Nordic letters as
+/// their index, the others 0 or 1.
 struct TextSetting
 {
     enum class Field : std::uint8_t
@@ -200,9 +201,21 @@ struct TextSetting
         Reverse,
         Unshift,
         Audible,
+        Power,
+        AddCall,
+        Nordic,
     };
     Field field;
     std::uint32_t value;
+};
+/// How a text sent in the text mode moved on.
+struct TextSent
+{
+    services::text_mode::Sending how;
+};
+/// Logs the text mode's compose line (console).
+struct TextCompose
+{
 };
 /// The APRS heard list changed.
 struct AprsHeard
@@ -222,7 +235,7 @@ struct AprsProblem
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, SetMode, TextSetting, Notice, PlugCommand, ScreenCommand, KnobTurn>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, KeyLockSettings, KeyLockReport, Gps, ClockRate, ClockCalibration, Packet, AprsProblem, AprsHeard, SetMode, TextSetting, TextSent, TextCompose, Notice, PlugCommand, ScreenCommand, KnobTurn>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels.
