@@ -3,6 +3,7 @@
 
 #include "dmm/services/rtty_demodulator.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace dmm::services {
@@ -36,8 +37,18 @@ constexpr std::array<std::uint16_t, KernelTaps> makeKernel()
     }
     return out;
 }
-constexpr std::array<std::uint16_t, KernelTaps> Kernel = makeKernel();
-constexpr float KernelScale = 1.0F / static_cast<float>(D * D * D);
+// The taps as floats with the gain taken out, so a sample needs no
+// conversion.
+constexpr std::array<float, KernelTaps> scaledKernel()
+{
+    const std::array<std::uint16_t, KernelTaps> k = makeKernel();
+    std::array<float, KernelTaps> out{};
+    for (std::size_t i = 0; i < KernelTaps; ++i) {
+        out[i] = static_cast<float>(k[i]) / static_cast<float>(D * D * D);
+    }
+    return out;
+}
+constexpr std::array<float, KernelTaps> Kernel = scaledKernel();
 
 // The detector's quality to start and to stop passing text on, and the
 // time it is averaged over, in bits.
@@ -110,22 +121,30 @@ float noiseGain(float hz)
 
 } // namespace
 
-float RttyDemodulator::Tone::level(const Complex &z, std::size_t at, std::size_t length)
+float RttyDemodulator::Tone::power(const Complex &z, std::size_t at, std::size_t length, float scale)
 {
     const Complex r = rotor;
-    history[at] = {z.i * r.i - z.q * r.q, z.i * r.q + z.q * r.i};
+    const Complex turned{z.i * r.i - z.q * r.q, z.i * r.q + z.q * r.i};
     Complex next{r.i * step.i - r.q * step.q, r.i * step.q + r.q * step.i};
     // Kept on the unit circle.
     const float g = 1.5F - 0.5F * (next.i * next.i + next.q * next.q);
     rotor = {next.i * g, next.q * g};
-    float si = 0.0F;
-    float sq = 0.0F;
-    for (std::size_t k = 0; k < length; ++k) {
-        const Complex &h = history[(at + MaxBitSamples - k) % MaxBitSamples];
-        si += h.i;
-        sq += h.q;
+    // The sum over the last bit moves on by one sample; each time round the
+    // history it is summed afresh, so rounding cannot build up.
+    const std::size_t oldest = at >= length ? at - length : at + MaxBitSamples - length;
+    sum.i += turned.i - history[oldest].i;
+    sum.q += turned.q - history[oldest].q;
+    history[at] = turned;
+    if (at == 0) {
+        sum = {};
+        std::size_t k = MaxBitSamples - length + 1;
+        for (std::size_t n = 0; n < length; ++n, ++k) {
+            const Complex &h = history[k == MaxBitSamples ? 0 : k];
+            sum.i += h.i;
+            sum.q += h.q;
+        }
     }
-    return std::sqrt(si * si + sq * sq) / static_cast<float>(length);
+    return (sum.i * sum.i + sum.q * sum.q) * scale;
 }
 
 void RttyDemodulator::Tone::track(float level, bool on, float attack, float decay)
@@ -174,6 +193,8 @@ void RttyDemodulator::configure(const Config &config)
     m_attack = TrackAttack;
     m_decay = 1.0F / (TrackBits * m_bitSamples);
     m_toneSmoothing = 1.0F / (SignalBits * m_bitSamples);
+    m_afcSmoothing = 1.0F / (AfcBits * m_bitSamples);
+    m_powerScale = 1.0F / static_cast<float>(m_bitLength * m_bitLength);
     m_fastSmoothing = 1.0F / (FastBits * m_bitSamples);
     m_peakDecay = 1.0F / (PeakSeconds * static_cast<float>(BasebandHz));
     reset();
@@ -195,6 +216,7 @@ void RttyDemodulator::reset()
     for (Tone *t : {&m_mark, &m_space, &m_below, &m_above, &m_centre}) {
         t->rotor = {1.0F, 0.0F};
         t->history = {};
+        t->sum = {};
         t->peak = t->floor = 0.0F;
     }
     m_historyAt = 0;
@@ -227,75 +249,100 @@ float RttyDemodulator::quality() const
 
 void RttyDemodulator::process(std::span<const std::uint16_t> mv, Sink onChar)
 {
-    for (const std::uint16_t v : mv) {
-        sample(static_cast<float>(v), onChar);
-    }
+    run(mv, onChar);
 }
 
 void RttyDemodulator::process(std::span<const float> samples, Sink onChar)
 {
-    for (const float v : samples) {
-        sample(v, onChar);
-    }
+    run(samples, onChar);
 }
 
-void RttyDemodulator::sample(float x, Sink &onChar)
+template <typename T>
+void RttyDemodulator::run(std::span<const T> in, Sink &onChar)
 {
-    ++m_stats.samples;
-    if (!m_dcKnown) {
-        m_dc = x;
-        m_dcKnown = true;
-    }
-    m_dc += (x - m_dc) * DcStep;
-    x -= m_dc;
-
-    const Complex mixed{x * m_mixer.i, x * m_mixer.q};
-    m_mixer = {m_mixer.i * m_mixerStep.i - m_mixer.q * m_mixerStep.q,
-        m_mixer.i * m_mixerStep.q + m_mixer.q * m_mixerStep.i};
-    // This input is m_phase samples before the next output, so it adds to
-    // it and to the two after it with the taps that far apart.
-    const std::uint32_t p = m_phase;
-    for (std::uint32_t k = 0; k < 3; ++k) {
-        const std::uint32_t tap = p + k * D;
-        if (tap < KernelTaps) {
-            const float h = static_cast<float>(Kernel[tap]);
-            m_sums[k].i += h * mixed.i;
-            m_sums[k].q += h * mixed.q;
-        }
-    }
-    if (p != 0) {
-        --m_phase;
+    if (in.empty()) {
         return;
     }
-    m_phase = D - 1;
-    const Complex z{m_sums[0].i * KernelScale, m_sums[0].q * KernelScale};
-    m_sums[0] = m_sums[1];
-    m_sums[1] = m_sums[2];
-    m_sums[2] = {};
-    const float g = 1.5F - 0.5F * (m_mixer.i * m_mixer.i + m_mixer.q * m_mixer.q);
-    m_mixer = {m_mixer.i * g, m_mixer.q * g};
-    baseband(z, onChar);
+    if (!m_dcKnown) {
+        m_dc = static_cast<float>(in[0]);
+        m_dcKnown = true;
+    }
+    // The state of the front end in locals for the loop.
+    float dc = m_dc;
+    Complex mixer = m_mixer;
+    Complex step = m_mixerStep;
+    Complex s0 = m_sums[0];
+    Complex s1 = m_sums[1];
+    Complex s2 = m_sums[2];
+    std::uint32_t p = m_phase;
+    std::size_t counted = 0;
+    for (std::size_t n = 0; n < in.size(); ++n) {
+        float x = static_cast<float>(in[n]);
+        dc += (x - dc) * DcStep;
+        x -= dc;
+        const Complex mixed{x * mixer.i, x * mixer.q};
+        mixer = {mixer.i * step.i - mixer.q * step.q, mixer.i * step.q + mixer.q * step.i};
+        // This input is p samples before the next output, so it adds to it
+        // and to the two after it with the taps that far apart.
+        const float h0 = Kernel[p];
+        const float h1 = Kernel[p + D];
+        s0.i += h0 * mixed.i;
+        s0.q += h0 * mixed.q;
+        s1.i += h1 * mixed.i;
+        s1.q += h1 * mixed.q;
+        if (p + 2 * D < KernelTaps) {
+            const float h2 = Kernel[p + 2 * D];
+            s2.i += h2 * mixed.i;
+            s2.q += h2 * mixed.q;
+        }
+        if (p != 0) {
+            --p;
+            continue;
+        }
+        p = D - 1;
+        const Complex z = s0;
+        s0 = s1;
+        s1 = s2;
+        s2 = {};
+        const float g = 1.5F - 0.5F * (mixer.i * mixer.i + mixer.q * mixer.q);
+        mixer = {mixer.i * g, mixer.q * g};
+        m_mixer = mixer;
+        m_stats.samples += static_cast<std::uint32_t>(n + 1 - counted);
+        counted = n + 1;
+        baseband(z, onChar);
+        // The AFC may have moved the mixer.
+        step = m_mixerStep;
+    }
+    m_stats.samples += static_cast<std::uint32_t>(in.size() - counted);
+    m_dc = dc;
+    m_mixer = mixer;
+    m_sums = {s0, s1, s2};
+    m_phase = p;
 }
 
 void RttyDemodulator::baseband(Complex z, Sink &onChar)
 {
-    m_historyAt = (m_historyAt + 1) % MaxBitSamples;
-    const float mark = m_mark.level(z, m_historyAt, m_bitLength);
-    const float space = m_space.level(z, m_historyAt, m_bitLength);
-    const float below = m_below.level(z, m_historyAt, m_bitLength);
-    const float above = m_above.level(z, m_historyAt, m_bitLength);
-    const float centre = m_centre.level(z, m_historyAt, m_bitLength);
-    m_tonePower += (mark * mark + space * space - m_tonePower) * m_toneSmoothing;
-    m_toneFast += (mark * mark + space * space - m_toneFast) * m_fastSmoothing;
-    m_tonePeak = std::fmax(m_toneFast, m_tonePeak - m_tonePeak * m_peakDecay);
+    m_historyAt = m_historyAt + 1 == MaxBitSamples ? 0 : m_historyAt + 1;
+    const std::size_t at = m_historyAt;
+    const float markPower = m_mark.power(z, at, m_bitLength, m_powerScale);
+    const float spacePower = m_space.power(z, at, m_bitLength, m_powerScale);
+    const float belowPower = m_below.power(z, at, m_bitLength, m_powerScale);
+    const float abovePower = m_above.power(z, at, m_bitLength, m_powerScale);
+    const float centrePower = m_centre.power(z, at, m_bitLength, m_powerScale);
+    // The slicer works on the tones' levels, the detector on powers.
+    const float mark = std::sqrt(markPower);
+    const float space = std::sqrt(spacePower);
+    m_tonePower += (markPower + spacePower - m_tonePower) * m_toneSmoothing;
+    m_toneFast += (markPower + spacePower - m_toneFast) * m_fastSmoothing;
+    const float sunk = m_tonePeak - m_tonePeak * m_peakDecay;
+    m_tonePeak = m_toneFast > sunk ? m_toneFast : sunk;
     // Three references weighed as the two tone filters for noise.
-    const float reference =
-        ((below * below + above * above) * m_referenceGain + centre * centre * m_centreGain) * (2.0F / 3.0F);
+    const float beside = (belowPower + abovePower) * m_referenceGain;
+    const float reference = (beside + centrePower * m_centreGain) * (2.0F / 3.0F);
     m_referencePower += (reference - m_referencePower) * m_toneSmoothing;
-    m_centrePower += (centre * centre - m_centrePower) * m_toneSmoothing;
-    const float afcSmoothing = 1.0F / (AfcBits * m_bitSamples);
-    m_nearPower += (z.i * z.i + z.q * z.q - m_nearPower) * afcSmoothing;
-    m_besidePower += ((below * below + above * above) * m_referenceGain - m_besidePower) * afcSmoothing;
+    m_centrePower += (centrePower - m_centrePower) * m_toneSmoothing;
+    m_nearPower += (z.i * z.i + z.q * z.q - m_nearPower) * m_afcSmoothing;
+    m_besidePower += (beside - m_besidePower) * m_afcSmoothing;
     followTones(z);
     updateSignal();
     const bool markNow = m_last > 0.0F;
@@ -318,9 +365,8 @@ void RttyDemodulator::followTones(Complex z)
         if (away > AfcLowHz && away < AfcHighHz) {
             const float error = hz - (hz > 0.0F ? m_toneStepHz : -m_toneStepHz);
             // Louder samples count more, a click no more than twice.
-            const float weight = std::fmin(power / m_nearPower, 2.0F);
-            m_afcHz += error * weight * AfcStep;
-            m_afcHz = std::fmax(-MaxAfcHz, std::fmin(MaxAfcHz, m_afcHz));
+            const float weight = std::min(power / m_nearPower, 2.0F);
+            m_afcHz = std::clamp(m_afcHz + error * weight * AfcStep, -MaxAfcHz, MaxAfcHz);
         }
     } else if (static_cast<float>(++m_afcIdle) > AfcIdleSeconds * static_cast<float>(BasebandHz)) {
         m_afcIdle = static_cast<std::uint32_t>(AfcIdleSeconds * static_cast<float>(BasebandHz));

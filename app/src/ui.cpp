@@ -38,7 +38,7 @@ using namespace services;
 using services::log::Level;
 namespace log = services::log;
 
-os::Task<1024> uiTask;
+os::Task<1088> uiTask;
 os::Queue<Message, 16> inbox;
 // The codeplug editor, and a console command waiting for it.
 board::PlugEditor *plugEditor = nullptr;

@@ -38,10 +38,16 @@ bool signalWas = false;
 // Received text, kept for the screens; a line of it for the log.
 lib::StaticString<64> logLine;
 std::atomic<bool> logText{false};
-// The decoder's time: cycles spent, samples decoded, the longest pass.
+// The decoder's time: cycles spent, samples decoded, the longest pass,
+// and the fewest cycles per sample in a pass of at least QuickestOf
+// samples, which a task above this one cannot have stretched (in 1/16
+// cycle); the same since the loopback started.
 std::uint64_t cyclesUsed = 0;
 std::uint64_t samplesDecoded = 0;
 std::uint32_t longestCycles = 0;
+std::uint32_t quickest = 0xFFFFFFFF;
+std::uint32_t loopbackQuickest = 0xFFFFFFFF;
+constexpr std::size_t QuickestOf = 32;
 RttyLoopback loopback;
 std::atomic<bool> loopbackRunning{false};
 os::Ticks loopbackStarted = 0;
@@ -194,6 +200,15 @@ lib::StaticString<16> cpuText(std::uint64_t cycles, std::uint64_t samples)
     return s;
 }
 
+// The CPU share of the quickest pass, @p perSample in 1/16 cycle.
+lib::StaticString<16> quickestText(std::uint32_t perSample)
+{
+    if (perSample == 0xFFFFFFFF) {
+        return {"-"};
+    }
+    return cpuText(perSample, 16);
+}
+
 std::uint32_t microseconds(std::uint32_t cycles)
 {
     return static_cast<std::uint32_t>(static_cast<std::uint64_t>(cycles) * 1'000'000 / os::cyclesPerSecond());
@@ -216,6 +231,11 @@ void decodeTimed(std::span<const std::uint16_t> mv)
     cyclesUsed += used;
     samplesDecoded += mv.size();
     longestCycles = std::max(longestCycles, used);
+    if (mv.size() >= QuickestOf) {
+        const auto perSample = static_cast<std::uint32_t>(static_cast<std::uint64_t>(used) * 16 / mv.size());
+        quickest = std::min(quickest, perSample);
+        loopbackQuickest = std::min(loopbackQuickest, perSample);
+    }
 }
 
 // Logs @p text after @p what, a line of it at a time, CR and LF left out.
@@ -272,7 +292,8 @@ void report()
     log::info("text") << stats.characters << " characters, " << stats.framingErrors << " framing errors, "
                       << stats.unsignalled << " dropped without a signal; " << stats.samples / RttyDemodulator::SampleRateHz
                       << " s of audio, " << stats.signalSamples / RttyDemodulator::SampleRateHz << " s with a signal";
-    log::info("text") << "decoding takes " << cpuText(cyclesUsed, samplesDecoded).view() << " of the CPU, longest pass "
+    log::info("text") << "decoding takes " << cpuText(cyclesUsed, samplesDecoded).view() << " of the CPU ("
+                      << quickestText(quickest).view() << " in the quickest pass), longest pass "
                       << microseconds(longestCycles) << " us (" << longestPassMs << " ms)";
     log::info("text") << held << " lines held, their call "
                       << (callText.size() > 0 ? callText.view() : std::string_view("none")) << "; log "
@@ -362,6 +383,7 @@ std::optional<int> parseInt(std::string_view text)
     loopbackStarted = os::nowMs();
     loopbackCycles0 = cyclesUsed;
     loopbackSamples0 = samplesDecoded;
+    loopbackQuickest = 0xFFFFFFFF;
     lib::StaticString<16> snr;
     if (loopbackSnrDb < 99.0F) {
         snr << ", SNR " << static_cast<int>(loopbackSnrDb) << " dB";
@@ -385,8 +407,9 @@ std::optional<int> parseInt(std::string_view text)
                       << (loopbackWrong == 0 ? std::string_view("exact") : std::string_view("differs")) << ", "
                       << loopbackWrong << " of " << sent << " characters wrong, " << ms / 1000 << '.' << ms / 100 % 10
                       << " s; decoding took "
-                      << cpuText(cyclesUsed - loopbackCycles0, samplesDecoded - loopbackSamples0).view()
-                      << " of the CPU, longest pass " << microseconds(longestCycles) << " us";
+                      << cpuText(cyclesUsed - loopbackCycles0, samplesDecoded - loopbackSamples0).view() << " of the CPU ("
+                      << quickestText(loopbackQuickest).view() << " in the quickest pass), longest pass "
+                      << microseconds(longestCycles) << " us";
     loopbackBusy = false;
     sendingChanged(stopped ? Sending::Stopped : Sending::Sent);
 }
@@ -406,6 +429,17 @@ std::optional<int> parseInt(std::string_view text)
     } else if (!loopback.running()) {
         endLoopback(false);
     }
+}
+
+// Kept out of the senders' frames: they run on the ui task's stack too.
+[[gnu::noinline, gnu::cold]] void logNotSent(Sending why)
+{
+    log::info("text") << "not sent: " << services::text_mode::sendingText(why);
+}
+
+[[gnu::noinline, gnu::cold]] void logRefused(const char *why)
+{
+    log::info("text") << "send refused: " << why;
 }
 
 // The text to send in filled[0..length), from @p text as the settings say.
@@ -481,7 +515,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
     logPieces(toLoopback ? "loopback" : "send", std::string_view(filled.data(), length));
     if (toLoopback) {
         if (!status().decoding) {
-            log::info("text") << "loopback refused: the decoder is not running";
+            logRefused("the decoder is not running");
             return Sending::Refused;
         }
         loopbackLength = n;
@@ -499,7 +533,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
     t.tailMs = TailMs;
     t.levelPercent = levelPercent.load();
     if (!radio::sendText(std::span<const std::uint8_t>(codes.data(), n), t)) {
-        log::info("text") << "send refused: a text is still going out";
+        logRefused("a text is still going out");
         return Sending::Refused;
     }
     return Sending::Waiting;
@@ -509,7 +543,7 @@ Sending sendFilled(std::size_t length, bool toLoopback, float snrDb)
 Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
 {
     if (modeHz.load() == 0) {
-        log::info("text") << "send refused: the text mode is off";
+        logRefused("the text mode is off");
         sendingChanged(Sending::Refused);
         return Sending::Refused;
     }
@@ -520,7 +554,7 @@ Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
     }
     const Sending now = sendStatus().state;
     if (loopbackBusy.load() || now == Sending::Waiting || now == Sending::OnAir) {
-        log::info("text") << "send refused: a text is still going out";
+        logRefused("a text is still going out");
         return Sending::Refused;
     }
     sendLock.lock();
@@ -538,7 +572,7 @@ Sending sendText(std::string_view text, bool toLoopback, bool raw, float snrDb)
     }
     sendLock.unlock();
     if (result != Sending::Waiting && result != Sending::OnAir) {
-        log::info("text") << "not sent: " << services::text_mode::sendingText(result);
+        logNotSent(result);
     }
     sendingChanged(result);
     return result;
