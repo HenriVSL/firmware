@@ -14,7 +14,10 @@
 #define configUSE_TIME_SLICING 1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION 1
 #define configMAX_PRIORITIES 8
-#define configMINIMAL_STACK_SIZE 128
+/* The idle task's stack: it only sleeps the CPU, so it holds an interrupt
+ * frame without floating point, a context switch and the overflow check's
+ * 16 words. */
+#define configMINIMAL_STACK_SIZE 64
 #define configMAX_TASK_NAME_LEN 8
 #define configSTACK_DEPTH_TYPE unsigned
 #define configIDLE_SHOULD_YIELD 1
@@ -47,6 +50,7 @@
 #define INCLUDE_xTaskDelayUntil 1
 #define INCLUDE_uxTaskGetStackHighWaterMark 1
 #define INCLUDE_xTaskGetSchedulerState 1
+#define INCLUDE_xTaskGetIdleTaskHandle 1
 #define INCLUDE_vTaskDelete 0
 #define INCLUDE_vTaskSuspend 1
 

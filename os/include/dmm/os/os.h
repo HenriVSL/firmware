@@ -54,8 +54,9 @@ struct TaskStack
     std::size_t unusedWords = 0;
 };
 
-/// The @p index-th started task, in start order. The name is nullptr past
-/// the last task, and on the PC, where stacks are not measured.
+/// The @p index-th started task, in start order, then the kernel's idle
+/// task once the scheduler runs. The name is nullptr past the last task,
+/// and on the PC, where stacks are not measured.
 TaskStack taskStack(std::size_t index);
 
 /// A task with a statically allocated stack of @p StackWords 32-bit words.

@@ -60,10 +60,15 @@ void sleepUntil(Ticks &wake, Ticks period)
 
 TaskStack taskStack(std::size_t index)
 {
-    if (index >= startedCount) {
+    TaskHandle_t handle = nullptr;
+    if (index < startedCount) {
+        handle = reinterpret_cast<TaskHandle_t>(startedTasks[index]->storage);
+    } else if (index == startedCount && xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+        handle = xTaskGetIdleTaskHandle();
+    }
+    if (handle == nullptr) {
         return {};
     }
-    const auto handle = reinterpret_cast<TaskHandle_t>(startedTasks[index]->storage);
     return {pcTaskGetName(handle), uxTaskGetStackHighWaterMark(handle)};
 }
 
