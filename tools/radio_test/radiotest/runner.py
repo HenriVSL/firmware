@@ -444,6 +444,24 @@ class Runner:
             label, actions, transmit = self.undo_stack.pop()
             self.echo('undo: ' + label)
             self.undo(label, actions, transmit)
+        self.wait_saved()
+
+    def wait_saved(self, timeout=20.0):
+        """Waits until the radio has no settings change pending, so values
+        put back by the undo are written before the next run restarts it."""
+        end = time.monotonic() + timeout
+        while True:
+            try:
+                pending = self.radio.settings().get('pending', '')
+            except Exception as e:  # an older image or a lost answer
+                self.undo_log.append(('saved', 'settings', 'no answer: %s' % e))
+                return
+            if not pending or 'nothing pending' in pending:
+                return
+            if time.monotonic() > end:
+                self.undo_log.append(('saved', 'settings', 'FAILED: still pending after %.0f s: `%s`' % (timeout, pending)))
+                return
+            time.sleep(1.0)
 
     # Report --------------------------------------------------------------------
 
