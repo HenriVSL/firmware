@@ -20,6 +20,7 @@
 #include "dmm/services/input.h"
 #include "dmm/services/log.h"
 #include "dmm/services/power.h"
+#include "dmm/services/text_entry.h"
 #include "dmm/version.h"
 
 #include <algorithm>
@@ -765,14 +766,10 @@ std::size_t plugSaveRow = 0;
 // Choosing a record for a link field, rather than opening one.
 bool plugPicking = false;
 std::int32_t plugValue = 0;
+// A number typed, or a text typed by pressing a key again and again.
 char plugTyped[plug::TextBytes] = {};
 std::size_t plugTypedLength = 0;
-std::size_t plugCursor = 0;
-// Letters typed by pressing a key again and again.
-Key plugLastKey = Key::Count;
-os::Ticks plugLastTap = 0;
-std::size_t plugTap = 0;
-bool plugUpper = true;
+services::TextEntry plugEntry;
 // Texts for the rows and panels, off the ui task's stack.
 char plugTexts[16][plug::TextBytes] = {};
 // A saved record that the radio reads only at start: restart.
@@ -781,8 +778,8 @@ constexpr const char *BookNames[] = {"Channels", "Zones", "Contacts", "RX groups
     "Radio IDs", "Settings", "More settings", "APRS", "APRS text"};
 static_assert(std::size(BookNames) == static_cast<std::size_t>(Book::Count));
 // The letters on each digit key, and the characters the knob steps through.
-constexpr const char *KeyLetters[] = {" 0", ".,-_/1", "abc2", "def3", "ghi4", "jkl5", "mno6", "pqrs7", "tuv8",
-    "wxyz9"};
+constexpr services::TextEntry::KeyLetters KeyLetters = {" 0", ".,-_/1", "abc2", "def3", "ghi4", "jkl5", "mno6", "pqrs7",
+    "tuv8", "wxyz9"};
 constexpr std::string_view KnobChars =
     " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,-_/()*#+:@!?";
 constexpr os::Ticks TapMs = 1200;
@@ -2178,21 +2175,12 @@ void uiMain(void *)
             plugStrip();
         }
         const plug::FieldInfo f = plugEditor->field(plugField);
-        std::string_view letters;
-        if (plugLastKey >= Key::Digit0 && plugLastKey <= Key::Digit9) {
-            const char *set = KeyLetters[static_cast<int>(plugLastKey) - static_cast<int>(Key::Digit0)];
-            std::size_t k = 0;
-            for (; set[k] != '\0'; ++k) {
-                const char c = set[k];
-                plugTexts[15][k] = plugUpper && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
-            }
-            plugTexts[15][k] = '\0';
-            letters = plugView(15);
-        }
+        const std::size_t n = plugEntry.letters(plugEntry.lastDigit(), plugText(15).first(plug::TextBytes - 1));
+        const std::string_view letters(plugTexts[15], n);
         plugEditor->label(plugField, plugText(14));
-        drawTextEntry(d, plugView(14), std::string_view(plugTyped, plugTypedLength),
-            std::min<std::size_t>(plugCursor, f.maxChars - 1), f.maxChars, letters, plugTap,
-            plugUpper ? "#: ABC *: del Menu: set" : "#: abc *: del Menu: set");
+        const bool upper = plugEntry.textCase() == services::TextEntry::Case::Upper;
+        drawTextEntry(d, plugView(14), plugEntry.text(), std::min<std::size_t>(plugEntry.cursor(), f.maxChars - 1),
+            f.maxChars, letters, plugEntry.tapIndex(), upper ? "#: ABC *: del Menu: set" : "#: abc *: del Menu: set");
     };
     // The changed fields with their new values; the panel shows the chosen
     // one's old value.
@@ -2643,11 +2631,8 @@ void uiMain(void *)
             break;
         case plug::FieldKind::Text:
             plugEditor->show(plugField, plug::Text(plugTyped, plug::TextBytes));
-            plugTypedLength = std::strlen(plugTyped);
-            plugCursor = plugTypedLength;
-            plugLastKey = Key::Count;
-            plugTap = 0;
-            plugUpper = true;
+            plugEntry.begin(std::span<char>(plugTyped, std::min<std::size_t>(f.maxChars, plug::TextBytes)),
+                std::strlen(plugTyped), {&KeyLetters, TapMs, true, true, false, nullptr});
             view = View::PlugText;
             break;
         case plug::FieldKind::Link:
@@ -2810,49 +2795,31 @@ void uiMain(void *)
             return;
         }
         case View::PlugText: {
-            const std::size_t max = plugEditor->field(plugField).maxChars;
-            const os::Ticks now = os::nowMs();
             // A key's release would end the tapping on it.
             if (!step) {
                 return;
             }
             if (press && digit) {
-                const std::string_view set = KeyLetters[static_cast<int>(key)];
-                const bool again = key == plugLastKey && now - plugLastTap < TapMs && plugCursor > 0;
-                plugTap = again ? (plugTap + 1) % set.size() : 0;
-                char c = set[plugTap];
-                if (plugUpper && c >= 'a' && c <= 'z') {
-                    c = static_cast<char>(c - 'a' + 'A');
-                }
-                if (again) {
-                    plugTyped[plugCursor - 1] = c;
-                } else if (plugCursor < max) {
-                    plugTyped[plugCursor++] = c;
-                    plugTypedLength = std::max(plugTypedLength, plugCursor);
-                }
-                plugLastKey = key;
-                plugLastTap = now;
+                plugEntry.digit(static_cast<int>(key), os::nowMs());
                 drawPlugText(false);
                 return;
             }
-            plugLastKey = Key::Count;
-            if (press && key == Key::Star && plugCursor > 0) {
-                std::memmove(&plugTyped[plugCursor - 1], &plugTyped[plugCursor], plugTypedLength - plugCursor);
-                --plugCursor;
-                --plugTypedLength;
+            plugEntry.accept();
+            if (press && key == Key::Star) {
+                plugEntry.backspace();
                 drawPlugText(false);
             } else if (press && key == Key::Hash) {
-                plugUpper = !plugUpper;
+                plugEntry.nextCase();
                 drawPlugText(false);
             } else if (step && up != 0) {
-                if (up > 0 && plugCursor > 0) {
-                    --plugCursor;
-                } else if (up < 0 && plugCursor < plugTypedLength && plugCursor + 1 < max) {
-                    ++plugCursor;
+                if (up > 0) {
+                    plugEntry.left();
+                } else {
+                    plugEntry.right();
                 }
                 drawPlugText(false);
             } else if (press && key == Key::Menu) {
-                plugEditor->setText(plugField, std::string_view(plugTyped, plugTypedLength));
+                plugEditor->setText(plugField, plugEntry.text());
                 show(View::PlugEdit);
             } else if (press && key == Key::Exit) {
                 show(View::PlugEdit);
@@ -2882,18 +2849,7 @@ void uiMain(void *)
     // The knob on the editor's screens: rows, values and letters.
     auto plugKnob = [&](int moved) {
         if (view == View::PlugText) {
-            const std::size_t max = plugEditor->field(plugField).maxChars;
-            plugLastKey = Key::Count;
-            if (plugCursor >= max) {
-                return;
-            }
-            if (plugCursor == plugTypedLength) {
-                plugTyped[plugTypedLength++] = ' ';
-            }
-            const std::size_t at = KnobChars.find(plugTyped[plugCursor]);
-            const int n = static_cast<int>(KnobChars.size());
-            const int to = ((at == std::string_view::npos ? 0 : static_cast<int>(at)) + moved % n + n) % n;
-            plugTyped[plugCursor] = KnobChars[static_cast<std::size_t>(to)];
+            plugEntry.turn(moved, KnobChars);
             drawPlugText(false);
             return;
         }

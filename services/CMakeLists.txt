@@ -38,6 +38,7 @@ add_library(dmm_services STATIC
     src/rda1846_transceiver.cpp
     src/sct3258_baseband.cpp
     src/text.cpp
+    src/text_entry.cpp
     src/text_mode.cpp
     src/usb_log.cpp
     src/fonts/spleen_5x8.cpp
