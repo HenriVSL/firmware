@@ -342,8 +342,9 @@ std::optional<int> parseInt(std::string_view text)
     return negative ? -v : v;
 }
 
-// Starts the loopback sendText() asked for; the aprs task only.
-void takeLoopback()
+// Starts the loopback sendText() asked for; the aprs task only. Kept out
+// of decode() to keep its frame small on the aprs task's stack.
+[[gnu::noinline]] void takeLoopback()
 {
     if (!loopbackWanted.exchange(false)) {
         return;
@@ -369,7 +370,7 @@ void takeLoopback()
                       << snr.view();
 }
 
-void endLoopback(bool stopped)
+[[gnu::noinline, gnu::cold]] void endLoopback(bool stopped)
 {
     flushLog();
     loopbackRunning = false;
@@ -392,7 +393,7 @@ void endLoopback(bool stopped)
 
 // Decodes the loopback's audio in place of @p count samples from the
 // sampler.
-void decodeLoopback(std::size_t count)
+[[gnu::noinline]] void decodeLoopback(std::size_t count)
 {
     std::uint16_t block[48];
     while (count > 0 && loopback.running()) {

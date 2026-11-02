@@ -2423,7 +2423,11 @@ void uiMain(void *)
         title << "RTTY " << services::text_mode::frequencyText(textSettings.frequencyHz).view();
         const text_mode::Status st = text_mode::status();
         const text_mode::SendStatus sent = text_mode::sendStatus();
-        lib::StaticString<24> note;
+        // Off the ui task's stack.
+        static lib::StaticString<24> note;
+        static lib::StaticString<40> hint;
+        note.clear();
+        hint.clear();
         if (sent.state == services::text_mode::Sending::OnAir) {
             note << (sent.dry ? "LOOP " : "TX ") << sent.onAirS << " s";
         } else if (sent.state == services::text_mode::Sending::Waiting) {
@@ -2435,7 +2439,6 @@ void uiMain(void *)
         } else {
             note << "not decoding";
         }
-        lib::StaticString<40> hint;
         char letters[16];
         const std::size_t n = compose.letters(compose.lastDigit(), letters);
         if (composePick >= 0) {
