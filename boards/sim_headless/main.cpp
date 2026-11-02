@@ -125,7 +125,7 @@ int main(int argc, char *argv[])
     parser.addHelpOption();
     const QCommandLineOption secondsOption(QStringLiteral("seconds"), QStringLiteral("Stop after <n> seconds (0 = run until killed)."), QStringLiteral("n"), QStringLiteral("0"));
     const QCommandLineOption ledsOption(QStringLiteral("leds"), QStringLiteral("Print LED changes."));
-    const QCommandLineOption commandOption(QStringLiteral("command"), QStringLiteral("Type <text> on the console after <seconds-at> (repeatable)."), QStringLiteral("text"));
+    const QCommandLineOption commandOption(QStringLiteral("command"), QStringLiteral("Type <text> on the console after <seconds-at>, or \"@<s> <text>\" at <s> seconds (repeatable)."), QStringLiteral("text"));
     const QCommandLineOption commandAtOption(QStringLiteral("command-at"), QStringLiteral("When to type the commands, in seconds (default 1)."), QStringLiteral("s"), QStringLiteral("1"));
     const QCommandLineOption frameOption(QStringLiteral("frame"), QStringLiteral("Save the display as a PNG <file> when stopping."), QStringLiteral("file"));
     parser.addOption(secondsOption);
@@ -236,13 +236,18 @@ int main(int argc, char *argv[])
             at += 800;
         }
     }
-    const QStringList commands = parser.values(commandOption);
-    if (!commands.isEmpty()) {
-        QTimer::singleShot(static_cast<int>(parser.value(commandAtOption).toDouble() * 1000), &app, [commands] {
-            for (const QString &c : commands) {
-                logSink.addInput(c.toUtf8() + '\n');
-            }
-        });
+    // A command written "@<s> text" is typed at <s> seconds rather than
+    // with the others.
+    const int commandsAtMs = static_cast<int>(parser.value(commandAtOption).toDouble() * 1000);
+    for (const QString &c : parser.values(commandOption)) {
+        int atMs = commandsAtMs;
+        QString text = c;
+        if (c.startsWith(QLatin1Char('@')) && c.indexOf(QLatin1Char(' ')) > 1) {
+            const qsizetype space = c.indexOf(QLatin1Char(' '));
+            atMs = static_cast<int>(c.mid(1, space - 1).toDouble() * 1000);
+            text = c.mid(space + 1);
+        }
+        QTimer::singleShot(atMs, &app, [text] { logSink.addInput(text.toUtf8() + '\n'); });
     }
     const int seconds = parser.value(secondsOption).toInt();
     const QString frame = parser.value(frameOption);
