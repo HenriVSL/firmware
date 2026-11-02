@@ -120,12 +120,15 @@ private:
         // Turns the tone to 0 Hz at 600 samples a second.
         Complex rotor{1.0F, 0.0F};
         Complex step{1.0F, 0.0F};
-        // The last bit's worth of rotated samples.
+        // The last bit's worth of rotated samples, and their sum.
         std::array<Complex, MaxBitSamples> history{};
+        Complex sum;
         float peak = 0.0F;
         float floor = 0.0F;
 
-        float level(const Complex &z, std::size_t at, std::size_t length);
+        // Takes the next sample at history place @p at; the power of the
+        // mean over the last @p length (@p scale: 1 / length squared).
+        float power(const Complex &z, std::size_t at, std::size_t length, float scale);
         void track(float level, bool on, float attack, float decay);
         float middle() const { return 0.5F * (peak + floor); }
     };
@@ -136,7 +139,8 @@ private:
         Reading, // bits of a character
     };
 
-    void sample(float x, Sink &onChar);
+    template <typename T>
+    void run(std::span<const T> in, Sink &onChar);
     void baseband(Complex z, Sink &onChar);
     void followTones(Complex z);
     void setMixer();
@@ -190,6 +194,8 @@ private:
     float m_fastSmoothing = 0.1F;
     float m_peakDecay = 0.001F;
     float m_toneSmoothing = 0.01F;
+    float m_afcSmoothing = 0.03F;
+    float m_powerScale = 1.0F;
     float m_referenceGain = 1.0F;
     float m_centreGain = 1.0F;
     bool m_signal = false;
