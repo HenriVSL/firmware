@@ -198,6 +198,10 @@ public:
     {
         cm::systemReset();
     }
+    std::uint32_t unusedMainStackWords() override
+    {
+        return static_cast<std::uint32_t>(hal::unusedMainStackWords());
+    }
     dmm::services::ResetReport lastReset() override
     {
         return m_reset;

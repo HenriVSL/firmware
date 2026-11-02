@@ -13,9 +13,15 @@
 // the interrupt number from irq.h; unhandled ones loop until the watchdog
 // restarts the MCU.
 
+#include <cstddef>
+
 namespace dmm::hal::gd32f30x {
 
 /// Defined by the board.
 [[noreturn]] void boardMain();
+
+/// The main stack's words never used since start-up. The start-up code
+/// and the interrupt handlers run on it.
+std::size_t unusedMainStackWords();
 
 } // namespace dmm::hal::gd32f30x

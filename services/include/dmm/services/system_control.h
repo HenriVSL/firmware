@@ -50,6 +50,9 @@ public:
     virtual void feedWatchdog() = 0;
     /// Restarts the MCU. Does not return on a radio.
     virtual void restart() = 0;
+    /// The words of the stack that start-up and interrupts use (not a
+    /// task's) never used since start-up; 0 where it is not measured.
+    virtual std::uint32_t unusedMainStackWords() { return 0; }
     /// Why the previous run ended.
     virtual ResetReport lastReset() = 0;
     /// Crashes on purpose, to test crash capture. Does not return on a radio.

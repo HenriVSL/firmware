@@ -9,6 +9,7 @@
 
 // Provided by the linker script.
 extern "C" {
+extern std::uint32_t __stack_bottom;
 extern std::uint32_t __stack_top;
 extern std::uint32_t __data_load;
 extern std::uint32_t __data_start;
@@ -54,11 +55,18 @@ extern "C" {
     dmm::hal::gd32f30x::boardMain();
 }
 
+// Fills the main stack with a pattern before its first use, so that
+// unusedMainStackWords() can tell how deep it has been used.
 [[noreturn, gnu::naked]] void resetHandler()
 {
     asm volatile("cpsid i\n\t"
                  "ldr r0, =__stack_top\n\t"
                  "msr msp, r0\n\t"
+                 "ldr r1, =__stack_bottom\n\t"
+                 "ldr r2, =0xA5A5A5A5\n\t"
+                 "1: str r2, [r1], #4\n\t"
+                 "cmp r1, r0\n\t"
+                 "blo 1b\n\t"
                  "b startImage\n\t"
                  ".ltorg");
 }
@@ -246,5 +254,14 @@ __attribute__((section(".vectors"), used)) extern const void *const vectorTable[
 };
 
 } // extern "C"
+
+std::size_t dmm::hal::gd32f30x::unusedMainStackWords()
+{
+    std::size_t words = 0;
+    for (const std::uint32_t *p = &__stack_bottom; p < &__stack_top && *p == 0xA5A5A5A5u; ++p) {
+        ++words;
+    }
+    return words;
+}
 
 static_assert(irq::Count == 68, "vector table lists 68 interrupts");

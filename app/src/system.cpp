@@ -368,6 +368,9 @@ void systemMain(void *)
                 const os::TaskStack t = os::taskStack(i);
                 line << (i == 0 ? ", unused stack words: " : ", ") << t.name << ' ' << t.unusedWords;
             }
+            if (const std::uint32_t words = platform->system.unusedMainStackWords(); words > 0) {
+                line << ", main " << words;
+            }
         }
     }
     platform->leds.set(Leds::Led::Green, false);
