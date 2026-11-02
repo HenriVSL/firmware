@@ -243,8 +243,10 @@ received audio with noise at that ratio; `text loopback <text>` and
 `text dry on` (every send: PTT, macros, `text send`) do the same with the
 text as it would go on air. The loopback logs each line heard and ends
 with `loopback done: exact` (or how many characters were wrong) and the
-share of the CPU the decoder took. Only one mode is on at a time, so the two never
-run together, and a second task's stack is saved. `text` reports the RTTY
+share of the CPU the decoder took, on average and in its quickest pass
+(the average also counts higher tasks that ran meanwhile). Only one mode
+is on at a time, so the two never run together, and a second task's stack
+is saved. `text` reports the RTTY
 decoder: signal, quality, characters, framing errors, the longest pass;
 `text log on` copies each received line to the log (`text: rx "..."`).
 

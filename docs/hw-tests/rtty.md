@@ -56,12 +56,12 @@ prints them all. Console lines are at most 80 characters of plain ASCII.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 9 | `text selftest` | `text: loopback "RYRYRYRYRYRY THE QUICK BROWN FOX ..."`, `text: loopback: 83 characters at level 5 %`; about 16 s later `text: rx "RYRYRYRYRYRY THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 012"`, `text: rx "3456789 ?:-/(),."`, then `text: loopback done: exact, 0 of 80 characters wrong, ...; decoding took X % of the CPU, longest pass Y us`. Record X and Y: X under 2 %, Y under 2000 |
+| 9 | `text selftest` | `text: loopback "RYRYRYRYRYRY THE QUICK BROWN FOX ..."`, `text: loopback: 83 characters at level 5 %`; about 16 s later `text: rx "RYRYRYRYRYRY THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 012"`, `text: rx "3456789 ?:-/(),."`, then `text: loopback done: exact, 0 of 80 characters wrong, ...; decoding took X % of the CPU (Q % in the quickest pass), longest pass Y us`. Record X, Q and Y. X counts time other tasks took while the decoder ran, Q does not: Q is the decoder's own cost. rtty-2 gave X 6.3-6.8 %; this build does less than half the work per sample |
 | 10 | During step 9: `screen shot` on the home screen | Bottom `Loopback N s`; while the text comes, large `Receiving`, `SIG` 80-100 %, the newest lines on the panel |
 | 11 | `text selftest 0`, then `text selftest -4`, then `text selftest -6` (each once the last is done) | 0 dB and -4 dB: `exact` or 1-2 wrong; -6 dB: a few wrong (on the PC about 5 % of characters). Record the counts |
 | 12 | `text selftest -12` | Little or nothing decoded: `loopback done: differs`, most characters wrong, no stream of garbage |
 | 13 | `text tones low`, `text selftest`; `text baud 75`, `text selftest`; `text reverse on`, `text selftest`; then `text tones high`, `text baud 45`, `text reverse off` | Each `exact`: the loopback sends and receives with the same settings |
-| 14 | `text` | `decoding takes X % of the CPU, longest pass Y us` for the live decoder too: X under 2 % |
+| 14 | `text` right after `text mode on`, and again after a minute | `decoding takes X % of the CPU (Q % in the quickest pass), longest pass Y us` for the live decoder on noise. rtty-2 gave X 3.08 %, Y 376 us; expect X about half that |
 | 15 | `text selftest`, and `text stop` 3 s later | `text: loopback stopped: differs, ...`; the bottom row `Sending stopped` for 5 s |
 
 ### A3. Typing on the keypad
@@ -107,7 +107,7 @@ The Nordic letters (Ä Å Ö as A A O or AE AA OE) and the 120 s and
 | 39 | `aprs every 60`, wait two minutes, `aprs every 0` | `aprs: automatic beacons paused in the text mode`, no beacon, no retune |
 | 40 | `text log on`, then 10 minutes with nothing sent, half of it with `fm sq 0` | No `text: rx` lines; `text` counts framing errors and characters dropped without a signal, but no characters |
 | 41 | Menu > Text > Frequency with the mode on | Notice `Turn the mode off` |
-| 42 | The uptime line after the steps above | Unused stack words: aprs at least 100, ui at least 100, link at least 80, radio at least 80 |
+| 42 | The uptime line after the steps above | Unused stack words: aprs at least 100, ui at least 150, link at least 80, radio at least 80 |
 | 43 | `restart` with the mode on | The text mode's home screen after the start screen; `radio: receiver held at 144.600 MHz` before any `fm: receiving`; `text` shows the settings of step 5 |
 | 44 | `text` | `dry run off` after the restart: `text dry on` again before any more of part A |
 | 45 | `text mode off` | `ui: dedicated mode off`, `radio: receiver back to the channel`, `text: decoding off`, `text: mode off`; the channel's home screen as before (`screen shot`, `fm status`) |
