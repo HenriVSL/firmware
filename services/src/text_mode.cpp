@@ -84,6 +84,162 @@ lib::StaticString<12> frequencyText(std::uint32_t hz)
     return s;
 }
 
+namespace {
+
+constexpr Macro Macros[MacroCount] = {
+    {"CQ", "CQ CQ CQ DE $MYCALL $MYCALL $MYCALL PSE K"},
+    {"Answer", "$CALL DE $MYCALL $MYCALL K"},
+    {"QTH", "$CALL DE $MYCALL QTH $LOC $LOC KN"},
+    {"Over", "$CALL DE $MYCALL KN"},
+    {"73", "$CALL DE $MYCALL 73 SK"},
+    {"Test", "RYRYRYRYRYRY THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 0123456789 DE $MYCALL"},
+};
+
+char upper(char c)
+{
+    return c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+}
+
+bool wordCharacter(char c)
+{
+    c = upper(c);
+    return (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '/';
+}
+
+} // namespace
+
+const Macro &macro(std::size_t index)
+{
+    return Macros[index < MacroCount ? index : 0];
+}
+
+FillResult fill(std::string_view text, const FillValues &values, std::span<char> out, std::size_t &length)
+{
+    struct Placeholder
+    {
+        std::string_view name;
+        std::string_view value;
+        FillResult missing;
+    };
+    // $MYCALL before $CALL's shorter name could match inside it.
+    const Placeholder placeholders[] = {
+        {"$MYCALL", values.myCall, FillResult::NoCall},
+        {"$CALL", values.theirCall, FillResult::NoTheirCall},
+        {"$LOC", values.locator, FillResult::NoLocator},
+        {"$UTC", values.utc, FillResult::Done},
+    };
+    length = 0;
+    auto put = [&](std::string_view part) {
+        if (length + part.size() > out.size()) {
+            return false;
+        }
+        for (const char c : part) {
+            out[length++] = c;
+        }
+        return true;
+    };
+    std::size_t i = 0;
+    while (i < text.size()) {
+        bool replaced = false;
+        if (text[i] == '$') {
+            for (const Placeholder &p : placeholders) {
+                const std::size_t n = std::min(p.name.size(), text.size() - i);
+                if (std::string_view(text.data() + i, n) == p.name) {
+                    if (p.value.empty() && p.missing != FillResult::Done) {
+                        return p.missing;
+                    }
+                    if (!put(p.value)) {
+                        return FillResult::TooLong;
+                    }
+                    i += p.name.size();
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+        if (!replaced) {
+            if (!put(std::string_view(text.data() + i, 1))) {
+                return FillResult::TooLong;
+            }
+            ++i;
+        }
+    }
+    return FillResult::Done;
+}
+
+bool namesCall(std::string_view text, std::string_view call)
+{
+    if (call.empty() || call.size() > text.size()) {
+        return false;
+    }
+    for (std::size_t i = 0; i + call.size() <= text.size(); ++i) {
+        if (i > 0 && wordCharacter(text[i - 1])) {
+            continue;
+        }
+        const std::size_t end = i + call.size();
+        if (end < text.size() && wordCharacter(text[end])) {
+            continue;
+        }
+        bool same = true;
+        for (std::size_t k = 0; k < call.size() && same; ++k) {
+            same = upper(text[i + k]) == upper(call[k]);
+        }
+        if (same) {
+            return true;
+        }
+    }
+    return false;
+}
+
+lib::StaticString<8> locator(std::int32_t latitudeE7, std::int32_t longitudeE7)
+{
+    // In units of 1/24 of the subsquare's size: lon 5', lat 2.5'.
+    constexpr std::int64_t E7 = 10'000'000;
+    std::int64_t lon = static_cast<std::int64_t>(longitudeE7) + 180 * E7;
+    std::int64_t lat = static_cast<std::int64_t>(latitudeE7) + 90 * E7;
+    lon = std::clamp<std::int64_t>(lon, 0, 360 * E7 - 1);
+    lat = std::clamp<std::int64_t>(lat, 0, 180 * E7 - 1);
+    // Subsquares: 1/12 degree of longitude, 1/24 of latitude.
+    const std::int64_t lonSub = lon * 12 / E7;
+    const std::int64_t latSub = lat * 24 / E7;
+    lib::StaticString<8> s;
+    s << static_cast<char>('A' + lonSub / (20 * 12)) << static_cast<char>('A' + latSub / (10 * 24))
+      << static_cast<char>('0' + lonSub / 24 % 10) << static_cast<char>('0' + latSub / 24 % 10)
+      << static_cast<char>('A' + lonSub % 24) << static_cast<char>('A' + latSub % 24);
+    return s;
+}
+
+const char *sendingText(Sending s)
+{
+    switch (s) {
+    case Sending::Waiting:
+        return "Waiting for the channel";
+    case Sending::OnAir:
+        return "Sending";
+    case Sending::Sent:
+        return "Sent";
+    case Sending::Busy:
+        return "Channel busy";
+    case Sending::Stopped:
+        return "Sending stopped";
+    case Sending::Refused:
+        return "Not sent";
+    case Sending::TooLong:
+        return "Text too long";
+    case Sending::NoCall:
+        return "No callsign";
+    case Sending::NoTheirCall:
+        return "No call heard";
+    case Sending::NoPosition:
+        return "No position";
+    case Sending::Nothing:
+        return "Nothing to send";
+    case Sending::Idle:
+        break;
+    }
+    return "";
+}
+
 HomeRows homeRows(const HomeInput &in)
 {
     HomeRows r;
@@ -105,7 +261,22 @@ HomeRows homeRows(const HomeInput &in)
     const int percent = static_cast<int>(std::clamp(in.quality, 0.0F, 1.0F) * 100.0F + 0.5F);
     r.quality << percent << '%';
     r.qualityWarn = !in.decoding;
-    r.bottom << in.baud << " Bd  " << in.characters << " chr  " << in.errors << " err";
+    switch (in.sending) {
+    case Sending::Idle:
+        if (in.composing > 0) {
+            r.bottom << "Composing " << in.composing;
+        } else {
+            r.bottom << in.baud << " Bd  " << in.characters << " chr  " << in.errors << " err";
+        }
+        break;
+    case Sending::OnAir:
+        r.bottom << (in.dry ? "Loopback " : "Sending ") << in.sendingS << " s";
+        break;
+    default:
+        r.bottom << sendingText(in.sending);
+        r.bottomWarn = in.sending != Sending::Waiting && in.sending != Sending::Sent;
+        break;
+    }
     return r;
 }
 

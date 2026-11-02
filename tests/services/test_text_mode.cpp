@@ -106,3 +106,65 @@ TEST_CASE("the text mode home screen")
     in.signal = false;
     CHECK(text_mode::homeRows(in).big.view() == "Listening");
 }
+
+TEST_CASE("the text mode home screen while sending")
+{
+    text_mode::HomeInput in;
+    in.baud = "45.45";
+    in.composing = 23;
+    CHECK(text_mode::homeRows(in).bottom.view() == "Composing 23");
+    in.sending = text_mode::Sending::Waiting;
+    CHECK(text_mode::homeRows(in).bottom.view() == "Waiting for the channel");
+    CHECK_FALSE(text_mode::homeRows(in).bottomWarn);
+    in.sending = text_mode::Sending::OnAir;
+    in.sendingS = 12;
+    CHECK(text_mode::homeRows(in).bottom.view() == "Sending 12 s");
+    in.dry = true;
+    CHECK(text_mode::homeRows(in).bottom.view() == "Loopback 12 s");
+    in.sending = text_mode::Sending::Busy;
+    CHECK(text_mode::homeRows(in).bottom.view() == "Channel busy");
+    CHECK(text_mode::homeRows(in).bottomWarn);
+}
+
+TEST_CASE("macros: placeholders filled in, or what is missing")
+{
+    char out[text_mode::MaxSendChars];
+    std::size_t n = 0;
+    const text_mode::FillValues v{"N0CALL", "Q0TEST", "KP20LE", "12:34"};
+    REQUIRE(text_mode::fill("$CALL DE $MYCALL QTH $LOC AT $UTC", v, out, n) == text_mode::FillResult::Done);
+    CHECK(std::string_view(out, n) == "Q0TEST DE N0CALL QTH KP20LE AT 12:34");
+    CHECK(text_mode::fill(text_mode::macro(0).text, {"N0CALL", {}, {}, {}}, out, n) == text_mode::FillResult::Done);
+    CHECK(std::string_view(out, n) == "CQ CQ CQ DE N0CALL N0CALL N0CALL PSE K");
+    CHECK(text_mode::fill(text_mode::macro(1).text, {"N0CALL", {}, {}, {}}, out, n) == text_mode::FillResult::NoTheirCall);
+    CHECK(text_mode::fill(text_mode::macro(0).text, {}, out, n) == text_mode::FillResult::NoCall);
+    CHECK(text_mode::fill(text_mode::macro(2).text, {"N0CALL", "Q0TEST", {}, {}}, out, n) == text_mode::FillResult::NoLocator);
+    char small[10];
+    CHECK(text_mode::fill("$MYCALL $MYCALL", v, small, n) == text_mode::FillResult::TooLong);
+    CHECK(text_mode::fill("50$ $X", v, out, n) == text_mode::FillResult::Done);
+    CHECK(std::string_view(out, n) == "50$ $X");
+    for (std::size_t i = 0; i < text_mode::MacroCount; ++i) {
+        CHECK(std::string_view(text_mode::macro(i).name).size() > 0);
+        CHECK(text_mode::fill(text_mode::macro(i).text, v, out, n) == text_mode::FillResult::Done);
+    }
+}
+
+TEST_CASE("a callsign as a word of its own")
+{
+    CHECK(text_mode::namesCall("CQ DE N0CALL K", "N0CALL"));
+    CHECK(text_mode::namesCall("de n0call", "N0CALL"));
+    CHECK(text_mode::namesCall("N0CALL", "N0CALL"));
+    CHECK(text_mode::namesCall("N0CALL, K", "N0CALL"));
+    CHECK_FALSE(text_mode::namesCall("N0CALLS K", "N0CALL"));
+    CHECK_FALSE(text_mode::namesCall("XN0CALL", "N0CALL"));
+    CHECK_FALSE(text_mode::namesCall("N0CALL/P", "N0CALL"));
+    CHECK_FALSE(text_mode::namesCall("HELLO", ""));
+}
+
+TEST_CASE("the Maidenhead locator of a position")
+{
+    // Made-up places: 60.17 N 24.94 E and 33.86 S 151.21 E.
+    CHECK(text_mode::locator(601'700'000, 249'400'000).view() == "KP20LE");
+    CHECK(text_mode::locator(-338'600'000, 1'512'100'000).view() == "QF56OD");
+    CHECK(text_mode::locator(0, 0).view() == "JJ00AA");
+    CHECK(text_mode::locator(900'000'000, 1'800'000'000).view() == "RR99XX");
+}
