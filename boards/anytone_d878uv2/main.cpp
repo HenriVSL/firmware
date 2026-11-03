@@ -9,6 +9,12 @@
 #include "board_display.h"
 #include "board_fm_tuning.h"
 #include "board_rf.h"
+#ifdef DMM_FLASH_PROBE
+#include "flash_probe.h"
+#endif
+#ifdef DMM_LOADER
+#include "board_loader.h"
+#endif
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
@@ -221,6 +227,30 @@ public:
     {
         cm::triggerTestFault();
     }
+#ifdef DMM_LOADER
+    bool enterLoader(dmm::services::LoaderRequest request) override
+    {
+        board::enterLoader(request);
+    }
+    bool confirmImage() override
+    {
+        return board::confirmImage();
+    }
+    dmm::services::LoaderStatus loaderStatus() override
+    {
+        return board::loaderStatus();
+    }
+#endif
+    std::string_view boardCommand(std::string_view command) override
+    {
+#ifdef DMM_FLASH_PROBE
+        if (command == "flashprobe") {
+            return flashProbeReport();
+        }
+#endif
+        static_cast<void>(command);
+        return {};
+    }
 
 private:
     dmm::services::ResetReport m_reset;
@@ -307,10 +337,10 @@ void hal::boardMain()
     const ClockSource clock = startSystemClock(CrystalHz);
     cm::enableCycleCounter();
 
-    for (Port port : {Port::A, Port::B, Port::C, Port::D, Port::E}) {
+    for (Port port : StartPorts) {
         enablePortClock(port);
     }
-    for (Pin pin : {TransmitEnable, PowerAmplifierEnable, SpeakerAmplifier, ReceiveAudioRoute, BluetoothPower, PowerHold, RedLed, GreenLed, BlueLed, UsbPullUp}) {
+    for (Pin pin : StartLowPins) {
         outputLow(pin);
     }
     static BoardBaseband basebandBoard;

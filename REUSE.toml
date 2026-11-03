@@ -67,3 +67,9 @@ SPDX-License-Identifier = "MIT"
 path = ["docs/frequency-offset.md", "docs/hw-tests/frequency-offset.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
+
+# Docs added with DeltaMM's loader.
+[[annotations]]
+path = ["docs/loader.md", "docs/hw-tests/loader.md"]
+SPDX-FileCopyrightText = "2026 Henri Lavikainen"
+SPDX-License-Identifier = "MIT"
