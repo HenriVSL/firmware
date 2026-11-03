@@ -57,7 +57,7 @@ PC, out of the repository; report counts only.
 | # | Do | Expect |
 | --- | --- | --- |
 | 17 | With a packet coming in (traffic or a second radio), listen | No packet sound from the speaker; the status strip's rule turns green during the packet; the backlight does not come on for it |
-| 18 | Menu, Settings, APRS, Hear packets: On (`key menu`, `key exit`, `key down`, `key menu`, `key down` five times, `key menu`, `key down` twice, `key menu`, `key down`, `key menu`) | `radio: receiver held at 144.800 MHz, 25 kHz` without `speaker quiet`; the next packet is heard on the speaker (a person listens). Set it Off again the same way |
+| 18 | Menu, Settings, APRS, Hear packets: On (`key menu`, `key exit`, `key down` twice, `key menu`, `key down` six times, `key menu`, `key down` twice, `key menu`, `key down`, `key menu`) | `radio: receiver held at 144.800 MHz, 25 kHz` without `speaker quiet`; the next packet is heard on the speaker (a person listens). Set it Off again the same way |
 | 19 | `fm sq 5` with no signal on the frequency, then `audio probe 1000` | The probe's AC RMS and tone levels show receiver noise, not a flat line: the ADC input carries audio with the squelch closed. Then `fm sq 3` |
 | 20 | `fm sq 5`, wait for a packet, `aprs rx` | Packets still decoded with the squelch closed for noise (strong packets open it anyway). Then `fm sq 3` |
 
