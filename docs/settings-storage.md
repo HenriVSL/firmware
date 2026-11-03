@@ -131,6 +131,27 @@ past the ones a version knows are ignored and dropped at its next write.
 The version changes only if the header or an existing field changes its
 meaning, which a new field never needs.
 
+## This fork's fields
+
+This fork keeps its own preferences in the same record, from field byte
+64 on (`ForkFieldsAt`), so the shared fields above can grow without
+reaching them; a record written here always holds field bytes up to
+`ForkFieldsEnd` (80), unused ones 0xFF. An image without the fork's
+fields reads the shared fields of such a record as usual and ignores the
+rest; when it next writes the record, the fork's fields are gone and
+read as their defaults again. A record from such an image gives every
+fork field its default.
+
+| Field byte | Holds | Values |
+| --- | --- | --- |
+| 64 | The clock shows UTC rather than local time | 0 off, 1 on |
+| 65 | APRS received through the APRS board | 0 off, 1 on |
+| 66 | The speaker opens for packets in APRS mode | 0 off, 1 on |
+| 67 | The dedicated receive mode on at the last change | 0 none, 1 APRS |
+| 68-79 | Free | 0xFF |
+
+A new fork field takes the next free byte here, never one below 64.
+
 ## Adding a preference
 
 1. Add the member, with its default, to `RadioPreferences` in
