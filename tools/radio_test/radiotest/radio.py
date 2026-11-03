@@ -286,8 +286,19 @@ class Radio:
         for _ in range((tries or count) + 1):
             if matches(w.chosen):
                 return w
+            before = w.chosen
             self.key('Down')
             w = self.where(fresh=True)
+            if not w.chosen or w.chosen == before:
+                # Read before the cursor was drawn again: read once more.
+                time.sleep(self.settle)
+                w = self.where(fresh=True)
+        if matches(w.chosen):
+            return w
+        time.sleep(self.settle)
+        w = self.where(fresh=True)
+        if matches(w.chosen):
+            return w
         raise Failed('no row %r in %s' % (label, w.summary()))
 
     def goto(self, path, open_last=False):
