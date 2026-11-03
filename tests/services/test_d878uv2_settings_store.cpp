@@ -489,7 +489,10 @@ TEST_CASE("preferences record: the fork's area follows the shared fields, unused
     RadioPreferences p;
     const Record r = encoded(p);
     CHECK(r[5] == 80);
-    for (std::size_t i = 6 + 11; i < 6 + 80; ++i) {
+    for (std::size_t i = 6 + 11; i < 6 + 64; ++i) {
+        CHECK(r[i] == 0xFF);
+    }
+    for (std::size_t i = 6 + 65; i < 6 + 80; ++i) {
         CHECK(r[i] == 0xFF);
     }
     // A record with only the shared fields still reads.
@@ -497,6 +500,39 @@ TEST_CASE("preferences record: the fork's area follows the shared fields, unused
     shared[5] = 11;
     seal(shared);
     CHECK(dmm::services::d878uv2::decodePreferences(shared).has_value());
+}
+
+TEST_CASE("preferences record: the clock in UTC, at the fork's first field byte")
+{
+    RadioPreferences p;
+    CHECK_FALSE(p.clockUtc);
+    for (const bool utc : {false, true}) {
+        p.clockUtc = utc;
+        p.frequencyOffsetHz = -1000;
+        const Record r = encoded(p);
+        CHECK(r[6 + 64] == (utc ? 1 : 0));
+        const auto q = dmm::services::d878uv2::decodePreferences(r);
+        REQUIRE(q.has_value());
+        CHECK(q->clockUtc == utc);
+        CHECK(q->frequencyOffsetHz == -1000);
+    }
+
+    // A record that stops before the fork's fields, or holds another value
+    // there, gives the default.
+    p.clockUtc = true;
+    Record r = encoded(p);
+    r[5] = 64;
+    seal(r);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->clockUtc);
+    CHECK(q->frequencyOffsetHz == -1000);
+    r = encoded(p);
+    r[6 + 64] = 2;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->clockUtc);
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")

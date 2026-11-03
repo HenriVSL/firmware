@@ -45,7 +45,7 @@ struct StandbyState
     /// the last call's age and the position.
     services::HomeReadings readings;
     GpsState gps;
-    /// Local time "HH:MM", or empty while the time is unknown.
+    /// Local time "HH:MM", or UTC "HH:MMZ"; empty while the time is unknown.
     std::string_view clock;
     /// A DMR channel's contact ("TG 9", "PC 1234567", "ALL CALL") and the
     /// contact's name; empty without them.

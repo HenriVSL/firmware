@@ -282,7 +282,8 @@ TEST_CASE("every choice of every setting is set, read back and kept")
             CHECK(keptIn(item) == Kept::No);
             continue;
         }
-        CHECK(keptIn(item) != Kept::No);
+        // A calibration run is started, not kept.
+        CHECK((keptIn(item) == Kept::No) == (item == Item::ClockCalibration));
         Choices choices;
         if (!listChoices(item, choices)) {
             // Listed from the codeplug.
@@ -316,6 +317,42 @@ TEST_CASE("the lock covers each set of keys and the time zone reads as an offset
     CHECK(valueText(Item::TimeZone, 0).view() == "UTC");
     CHECK(valueText(Item::BacklightTime, 120).view() == "2 min");
     CHECK(valueText(Item::AutoLock, 5).view() == "5 s");
+}
+
+TEST_CASE("the clock group sets local time or UTC and starts or stops a calibration")
+{
+    Navigator nav;
+    nav.open(Group::Clock);
+    CHECK(nav.current().item == Item::TimeZone);
+    moveTo(nav, 1);
+    REQUIRE(nav.current().item == Item::ClockShown);
+    CHECK(valueTitle(Group::Clock, Item::ClockShown).view() == "Clock > Shown as");
+    CHECK(keptIn(Item::ClockShown) == Kept::Preferences);
+    Settings s;
+    CHECK(valueText(Item::ClockShown, choiceOf(Item::ClockShown, s)).view() == "Local");
+    setChoice(Item::ClockShown, 1, s);
+    CHECK(s.clockUtc);
+    CHECK(valueText(Item::ClockShown, choiceOf(Item::ClockShown, s)).view() == "UTC");
+
+    moveTo(nav, 2);
+    REQUIRE(nav.current().item == Item::ClockCalibration);
+    CHECK(keptIn(Item::ClockCalibration) == Kept::No);
+    // Without a run: two lengths, neither in use.
+    Choices c;
+    REQUIRE(listChoices(Item::ClockCalibration, c, s));
+    REQUIRE(c.size() == 2);
+    CHECK(c.text(0) == "30 min");
+    CHECK(c.text(1) == "60 min");
+    CHECK(styleOf(c) == Style::Buttons);
+    CHECK(c.find(choiceOf(Item::ClockCalibration, s)) == c.size());
+    // During one: Stop too, and the run's length in use.
+    setChoice(Item::ClockCalibration, 60, s);
+    REQUIRE(listChoices(Item::ClockCalibration, c, s));
+    REQUIRE(c.size() == 3);
+    CHECK(c.text(2) == "Stop");
+    CHECK(c.find(choiceOf(Item::ClockCalibration, s)) == 1);
+    setChoice(Item::ClockCalibration, 0, s);
+    CHECK(s.clockCalibrationMinutes == 0);
 }
 
 TEST_CASE("an about text too long for two lines does not fit")

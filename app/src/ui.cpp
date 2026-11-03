@@ -433,14 +433,57 @@ bool gpsAtStart = false;
 std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Beidou;
 // Local time minus UTC, from the codeplug, in half-hour steps.
 int timeZoneMinutes = 0;
+// The clock shows UTC rather than local time.
+bool clockUtc = false;
+// The clock calibration as the gps task last reported it.
+ClockCalibration clockCalibration{ClockCalibration::State::Stopped, 0, 0};
 
-// The local time at UTC @p utc as "HH:MM".
+// The time shown at UTC @p utc, in seconds: local, or UTC when clockUtc.
+std::int64_t shownSeconds(std::uint32_t utc)
+{
+    return static_cast<std::int64_t>(utc) + (clockUtc ? 0 : timeZoneMinutes * 60);
+}
+
+// The time shown at UTC @p utc as "14:32", or "11:32Z" in UTC.
 lib::StaticString<6> localClockText(std::uint32_t utc)
 {
     lib::StaticString<6> s;
-    const services::DateTime t = services::dateTime(static_cast<std::uint32_t>(static_cast<std::int64_t>(utc) + timeZoneMinutes * 60));
+    const services::DateTime t = services::dateTime(static_cast<std::uint32_t>(shownSeconds(utc)));
     s << lib::zeroPadded(t.hour, 2) << ':' << lib::zeroPadded(t.minute, 2);
+    if (clockUtc) {
+        s << 'Z';
+    }
     return s;
+}
+
+// The Calibrate row's value: a run's progress, how the last one ended, or
+// the correction in effect.
+menu::ValueText calibrationText()
+{
+    menu::ValueText t;
+    const std::int32_t rate = system::clockRate();
+    switch (clockCalibration.state) {
+    case ClockCalibration::State::Running:
+        t << clockCalibration.minutesDone << '/' << clockCalibration.minutes << " min";
+        return t;
+    case ClockCalibration::State::TooFewFixes:
+        t << "Too few fixes";
+        return t;
+    case ClockCalibration::State::GpsOff:
+        t << "GPS off";
+        return t;
+    case ClockCalibration::State::Done:
+        t << "Done ";
+        break;
+    case ClockCalibration::State::Stopped:
+        if (rate == 0) {
+            t << '-';
+            return t;
+        }
+        break;
+    }
+    t << system::ppmText(rate).view();
+    return t;
 }
 // What each row of the home screen shows.
 services::HomeLayout homeLayout;
@@ -874,6 +917,7 @@ void uiMain(void *)
             dmrMicGainDb = p->dmrMicGainDb;
             fmMicGainDb = p->fmMicGainDb;
             frequencyOffsetHz = offsetStep(p->frequencyOffsetHz);
+            clockUtc = p->clockUtc;
         }
         if (!roamingOn) {
             radio::post(radio::RoamingOn{false});
@@ -949,7 +993,8 @@ void uiMain(void *)
         clockText.clear();
         if (const auto utc = system::utcNow()) {
             clockText = localClockText(*utc);
-            r.clockMinutes = (static_cast<std::int64_t>(*utc) + timeZoneMinutes * 60) / 60;
+            r.clockMinutes = shownSeconds(*utc) / 60;
+            r.clockUtc = clockUtc;
         }
         s.clock = clockText.view();
         r.volume = volumeLevel;
@@ -1164,6 +1209,10 @@ void uiMain(void *)
         s.gps = gpsState.on;
         s.gpsSystems = gpsSystems;
         s.timeZoneMinutes = static_cast<std::int16_t>(timeZoneMinutes);
+        s.clockUtc = clockUtc;
+        if (clockCalibration.state == ClockCalibration::State::Running) {
+            s.clockCalibrationMinutes = clockCalibration.minutes;
+        }
         s.home = homeLayout;
         s.dmrMicGainDb = dmrMicGainDb;
         s.fmMicGainDb = fmMicGainDb;
@@ -1196,6 +1245,9 @@ void uiMain(void *)
                     : std::string_view("-"));
             break;
         }
+        case menu::Item::ClockCalibration:
+            t = calibrationText();
+            break;
         default:
             if (menu::info(row.item).kind == menu::Kind::Value) {
                 t = menu::valueText(row.item, menu::choiceOf(row.item, s));
@@ -1234,6 +1286,12 @@ void uiMain(void *)
     auto drawMenuValue = [&] {
         drawValueScreen(d, menu::valueTitle(menuNav.group(), menuNav.current().item).view(), menuNav.choices(),
             menuNav.cursor(), menuNav.inUse(), menuNav.hint());
+    };
+    // The Clock group's calibration value, while the group is up.
+    auto refreshClockGroup = [&] {
+        if (view == View::Menu && !menuNav.choosing() && menuNav.group() == menu::Group::Clock && !noticeShown) {
+            drawMenu();
+        }
     };
     // The key hint under the zone list and the roaming status.
     auto listHint = [&]() -> std::string_view {
@@ -1334,6 +1392,7 @@ void uiMain(void *)
             p.dmrMicGainDb = dmrMicGainDb;
             p.fmMicGainDb = fmMicGainDb;
             p.frequencyOffsetHz = frequencyOffsetHz;
+            p.clockUtc = clockUtc;
             settingsStore->keepPreferences(p, os::nowMs());
         }
     };
@@ -1448,6 +1507,14 @@ void uiMain(void *)
         if (s.timeZoneMinutes != was.timeZoneMinutes) {
             timeZoneMinutes = s.timeZoneMinutes;
             log::info("ui") << "time zone " << menu::valueText(menu::Item::TimeZone, timeZoneMinutes).view();
+        }
+        if (s.clockUtc != was.clockUtc) {
+            clockUtc = s.clockUtc;
+            log::info("ui") << "clock shows " << (clockUtc ? "UTC" : "local time");
+        }
+        if (s.clockCalibrationMinutes != was.clockCalibrationMinutes &&
+            !gps::post(gps::CalibrateClock{s.clockCalibrationMinutes})) {
+            log::info("ui") << "clock calibration: no GPS receiver";
         }
         if (s.home != was.home) {
             homeLayout = s.home;
@@ -1992,6 +2059,8 @@ void uiMain(void *)
                                                    << ", mic gain DMR " << keptGainText(p->dmrMicGainDb).view() << ", FM "
                                                    << keptGainText(p->fmMicGainDb).view() << ", frequency offset "
                                                    << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view();
+                                   // This fork's own fields, on a line of their own.
+                                   log::info("ui") << "preferences (fork): clock " << (p->clockUtc ? "UTC" : "local");
                                } else {
                                    log::info("ui") << "no preferences record";
                                }
@@ -2093,6 +2162,25 @@ void uiMain(void *)
                                        !noticeShown) {
                                        drawMenu();
                                    }
+                               }
+                           },
+                           [&](const ClockRate &) { refreshClockGroup(); },
+                           [&](const ClockCalibration &c) {
+                               clockCalibration = c;
+                               refreshClockGroup();
+                               switch (c.state) {
+                               case ClockCalibration::State::Done:
+                                   notice("Clock calibrated");
+                                   break;
+                               case ClockCalibration::State::TooFewFixes:
+                                   notice("Too few fixes");
+                                   break;
+                               case ClockCalibration::State::GpsOff:
+                                   notice("Switch GPS on");
+                                   break;
+                               case ClockCalibration::State::Running:
+                               case ClockCalibration::State::Stopped:
+                                   break;
                                }
                            },
                            [&](const SwitchingOff &) {

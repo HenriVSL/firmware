@@ -146,6 +146,8 @@ struct RadioPreferences
     /// frequency reference has drifted (FrequencyOffset); 0 = none. The
     /// fork owner's radio is about 2 kHz off, so the fork starts at +2 kHz.
     std::int16_t frequencyOffsetHz = 2000;
+    /// The clock shows UTC rather than local time.
+    bool clockUtc = false;
 };
 
 /// One repeater of a roaming zone.
