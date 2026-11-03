@@ -660,8 +660,8 @@ void PlugScreens::drawDigitsEntry(Display &d)
     const int top = bodyTop();
     const int bodyEnd = d.height() - StandbyScreen::HintH;
     const std::string_view all = value.view();
-    const std::string_view done = all.substr(0, typed);
-    const std::string_view rest = all.substr(typed);
+    const std::string_view done(all.data(), typed);
+    const std::string_view rest(all.data() + typed, all.size() - typed);
     const std::string_view unit = frequency ? "MHz" : "";
     constexpr int X = 8;
     const int y = top + 10;
