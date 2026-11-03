@@ -7,3 +7,4 @@ CMakeUserPresets.json
 *.CDI
 *.spi
 *.rdt
+__pycache__/
