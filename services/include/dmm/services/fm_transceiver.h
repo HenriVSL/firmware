@@ -39,6 +39,8 @@ struct FmReceiveStatus
 /// the board names the type (dmm/board/parts.h). Used by the radio task
 /// only. Calibrated values come from the board, not through the caller.
 ///
+/// - TuningStepMilliHz: the step the transceiver tunes in; a frequency
+///   between steps is tuned to the nearest one.
 /// - present(): the chip answers.
 /// - start(): resets and sets the chip up: idle, microphone muted, every RF
 ///   switch off. False when the chip does not answer.
@@ -61,6 +63,9 @@ struct FmReceiveStatus
 /// - logStatus(what): logs @p what, then what the receiver hears in the
 ///   chip's own figures.
 /// - setMicrophoneMuted(muted).
+/// - setMicrophoneGain(db): the microphone gain in dB (microphone_gain)
+///   on FM channels, from the next transmit(), for the microphone that
+///   reaches the transceiver directly.
 /// - setGpsPower(on): switches the GPS receiver's supply where it runs
 ///   through the transceiver's part of the board, else does nothing; kept
 ///   across start().
@@ -68,7 +73,8 @@ struct FmReceiveStatus
 ///   experiments; results go to the log. False if @p text is none of them.
 template <class T>
 concept FmTransceiver = requires(T &fm, const T &state, const FmChannel &channel, int squelchLevel, PowerLevel level,
-    bool on, std::string_view text) {
+    bool on, std::string_view text, int db) {
+    { T::TuningStepMilliHz } -> std::convertible_to<std::uint32_t>;
     { fm.present() } -> std::same_as<bool>;
     { fm.start() } -> std::same_as<bool>;
     { fm.receive(channel, squelchLevel) } -> std::same_as<const char *>;
@@ -83,6 +89,7 @@ concept FmTransceiver = requires(T &fm, const T &state, const FmChannel &channel
     { fm.status() } -> std::same_as<FmReceiveStatus>;
     fm.logStatus(text);
     fm.setMicrophoneMuted(on);
+    fm.setMicrophoneGain(db);
     fm.setGpsPower(on);
     { fm.debugCommand(text) } -> std::same_as<bool>;
     { state.debugHelp() } -> std::same_as<const char *>;

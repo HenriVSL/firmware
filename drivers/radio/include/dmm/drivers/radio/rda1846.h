@@ -29,6 +29,10 @@ public:
     static constexpr std::uint16_t DcsMatch = 1u << 7;
     static constexpr std::uint16_t CtcssMatch = 1u << 9;
 
+    /// The frequency registers count in 1/16 kHz: the chip tunes in
+    /// 62.5 Hz steps.
+    static constexpr std::uint32_t FrequencyStepMilliHz = 62'500;
+
     /// A sub-audible tone: CTCSS in 0.01 Hz units, or a DCS code (the nine
     /// bits of its three octal digits), normal or inverted.
     struct SubTone
@@ -141,7 +145,7 @@ public:
     /// answer.
     bool start(void (*sleepMs)(unsigned), std::uint16_t gpio);
 
-    /// Tunes to @p hz. Change it only while idle.
+    /// Tunes to the step nearest @p hz. Change it only while idle.
     void setFrequency(std::uint32_t hz);
     /// Filters and gains for the channel width, and those for the
     /// frequency, so after setFrequency(). Change it only while idle.
@@ -176,11 +180,18 @@ public:
     /// Transmit deviation: @p voice for voice and tone together (10 bits),
     /// @p tone for the tone alone (6 bits). Larger is wider.
     void setDeviation(std::uint16_t voice, std::uint8_t tone);
+    /// The microphone's level against the tuning's, in dB: scales the
+    /// transmit voice digital gain the tuning writes, from the next switch
+    /// to transmit.
+    void setVoiceGain(int db) { m_voiceGainDb = db; }
+    /// @p value of the voice gain register with its gain field scaled by
+    /// @p db as an amplitude, kept between 1 and the field's top.
+    static std::uint16_t scaledVoiceGain(std::uint16_t value, int db);
 
     std::uint16_t readRegister(std::uint8_t address) { return m_bus.read(address); }
     void writeRegister(std::uint8_t address, std::uint16_t value) { m_bus.write(address, value); }
 
-    /// The frequency in the chip's 1/16 kHz units.
+    /// The frequency in the chip's 1/16 kHz units, rounded to the nearest.
     static std::uint32_t frequencyWord(std::uint32_t hz);
     /// The squelch register for open and close levels in dBm.
     static std::uint16_t squelchWord(int openDbm, int closeDbm);
@@ -195,6 +206,9 @@ public:
 private:
     void write(std::span<const Setting> settings, void (*sleepMs)(unsigned));
     void write(std::span<const WidthSetting> settings);
+    /// @p value as written to @p reg: the tone detectors as switched on,
+    /// the voice gain scaled.
+    std::uint16_t adjusted(std::uint8_t reg, std::uint16_t value);
     void setTone(const SubTone &tone);
 
     hal::RegisterBus &m_bus;
@@ -205,6 +219,10 @@ private:
     // The tone detectors switched on, and the flag of the one listened for.
     std::uint16_t m_detect = 0;
     std::uint16_t m_toneFlag = 0;
+    // The voice gain register as the tuning last wrote it (0: not yet),
+    // and the level asked for.
+    std::uint16_t m_voiceWord = 0;
+    int m_voiceGainDb = 0;
 };
 
 } // namespace dmm::drivers::radio

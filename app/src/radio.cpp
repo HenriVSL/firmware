@@ -11,7 +11,9 @@
 #include "dmm/lib/variant.h"
 #include "dmm/os/os.h"
 #include "dmm/services/battery_saver.h"
+#include "dmm/services/frequency_offset.h"
 #include "dmm/services/log.h"
+#include "dmm/services/microphone_gain.h"
 #include "dmm/services/power.h"
 #include "dmm/services/roaming.h"
 #include "dmm/services/squelch_gate.h"
@@ -52,6 +54,7 @@ constexpr os::Ticks FmPollMs = 10;
 constexpr os::Ticks IdleWaitMs = 1000;
 constexpr int DefaultSquelchLevel = 3;
 services::FmChannel fmChannel;
+services::FrequencyOffset frequencyOffset{board::Fm::TuningStepMilliHz};
 int squelchLevel = DefaultSquelchLevel;
 services::SquelchGate carrierGate;
 // Polls before a tone counts as heard, and as gone: DCS words come slowly
@@ -93,6 +96,12 @@ constexpr int RepeaterWakeTries = 2;
 // The repeater's carrier is heard now.
 bool carrierHeard = false;
 bool timingSeen = false;
+// The level of the signal last heard, read twice a second while one is
+// there; signalAt is 0 until the first.
+constexpr os::Ticks SignalEveryMs = 500;
+os::Ticks lastSignalRead = 0;
+std::atomic<int> signalDbm{0};
+std::atomic<os::Ticks> signalAt{0};
 bool idleLogged = false;
 services::BatterySaver saver;
 
@@ -340,6 +349,17 @@ void report()
     });
 }
 
+// Every tuning goes through these two, which add the frequency offset.
+const char *tuneReceive(const services::FmChannel &channel, int squelch)
+{
+    return fm->receive(frequencyOffset.apply(channel), squelch);
+}
+
+const char *tuneTransmit(const services::FmChannel &channel, services::PowerLevel level)
+{
+    return fm->transmit(frequencyOffset.apply(channel), level);
+}
+
 // Resets the FM transceiver: idle, microphone muted (it reaches the
 // speaker otherwise), every RF switch off.
 void startFm()
@@ -382,7 +402,7 @@ void fmReceive()
         return;
     }
     const int level = squelchLevel < 1 ? 1 : squelchLevel;
-    const char *problem = fm->receive(fmChannel, level);
+    const char *problem = tuneReceive(fmChannel, level);
     saver.reset();
     carrierGate.reset();
     carrierGate.setForcedOpen(squelchLevel == 0);
@@ -468,7 +488,7 @@ void dmrReceive()
         logDmr("receive refused: no calibration loaded");
         return;
     }
-    const char *problem = fm->receive(fmChannel, 1);
+    const char *problem = tuneReceive(fmChannel, 1);
     saver.reset();
     if (problem != nullptr) {
         logReceiveRefused(problem);
@@ -645,7 +665,7 @@ void pollDmr()
 void fmStatus()
 {
     if (!fm->receiving()) {
-        log::info("fm") << "idle";
+        log::info("fm") << "idle, offset " << frequencyOffset.text().view();
         return;
     }
     const services::FmReceiveStatus s = fm->status();
@@ -654,7 +674,7 @@ void fmStatus()
          << (!toneSquelch() ? "not needed" : s.toneHeard ? "heard"
                                                          : "not heard")
          << ", speaker "
-         << (speakerOpen ? "open" : "closed");
+         << (speakerOpen ? "open" : "closed") << ", offset " << frequencyOffset.text().view();
     fm->logStatus(what.view());
 }
 
@@ -837,7 +857,7 @@ struct Probe
         wake.continuous = true;
         withBaseband([&](auto &b) {
             for (int t = 0; t < RepeaterWakeTries && !p.answered; ++t) {
-                if (fm->transmit(wake, powerLevel) != nullptr) {
+                if (tuneTransmit(wake, powerLevel) != nullptr) {
                     fm->endTransmit();
                     return;
                 }
@@ -847,7 +867,7 @@ struct Probe
                 fm->endTransmit();
                 showTransmitting(false);
                 const bool listening = sent && b.setDigital(dmrSettings, fmChannel.receiveHz, dmrRepeater) &&
-                    fm->receive(fmChannel, 1) == nullptr;
+                    tuneReceive(fmChannel, 1) == nullptr;
                 p.answered = listening && awaitDmrEvent(services::dmr::Event::Kind::SlotFound, RepeaterWakeMs);
                 // A carrier without timing yet: a repeater that is slower to
                 // start, given as long as one already on the air.
@@ -1291,7 +1311,7 @@ CallStart startDigitalTransmit(services::FmChannel channel)
     if (waking) {
         lastWakeMs = os::nowMs();
     }
-    const char *problem = fm->transmit(waking ? wake : channel, powerLevel);
+    const char *problem = tuneTransmit(waking ? wake : channel, powerLevel);
     if (problem != nullptr) {
         fm->endTransmit();
         logDmrRefused(problem, "TX refused");
@@ -1306,15 +1326,15 @@ CallStart startDigitalTransmit(services::FmChannel channel)
         if (waking) {
             ok = false;
             for (int t = 0; t < RepeaterWakeTries && !ok; ++t) {
-                const bool keyed = t == 0 || fm->transmit(wake, powerLevel) == nullptr;
+                const bool keyed = t == 0 || tuneTransmit(wake, powerLevel) == nullptr;
                 const bool sent = keyed && b.wakeRepeater(dmrSettings, ownId) &&
                     awaitDmrEvent(services::dmr::Event::Kind::AllSent, DmrEndMs);
                 fm->endTransmit();
                 ok = sent && b.setDigital(dmrSettings, fmChannel.receiveHz, dmrRepeater) &&
-                    fm->receive(fmChannel, 1) == nullptr && awaitDmrEvent(services::dmr::Event::Kind::SlotFound, RepeaterWakeMs);
+                    tuneReceive(fmChannel, 1) == nullptr && awaitDmrEvent(services::dmr::Event::Kind::SlotFound, RepeaterWakeMs);
                 logWakeTry(t + 1, sent, ok);
             }
-            ok = ok && fm->transmit(channel, powerLevel) == nullptr;
+            ok = ok && tuneTransmit(channel, powerLevel) == nullptr;
         }
         // timingFound is cleared as soon as the repeater's carrier goes, so
         // it is never stale here.
@@ -1411,7 +1431,7 @@ void startTransmit()
         b.setWorkMode(services::BasebandWorkMode::Transmit);
     });
     channel.transmitTone = transmitTone;
-    const char *problem = fm->transmit(channel, powerLevel);
+    const char *problem = tuneTransmit(channel, powerLevel);
     if (problem != nullptr) {
         fm->endTransmit();
         withBaseband([](auto &b) { b.setMicrophone(false); });
@@ -1713,6 +1733,13 @@ void handle(Message &message)
                        }
                        search(SearchCause::Asked);
                    },
+                   [](const FmOffset &o) {
+                       frequencyOffset.setHz(o.hz);
+                       log::info("fm") << "frequency offset " << frequencyOffset.text().view();
+                       if (fm->receiving() && !transmitting) {
+                           receive();
+                       }
+                   },
                    [](const RoamingOn &r) {
                        roamingOn = r.on;
                        log::info("roam") << "roaming " << (r.on ? "on" : "off");
@@ -1749,6 +1776,13 @@ void handle(Message &message)
                    [](const Microphone &m) {
                        fm->setMicrophoneMuted(!m.on);
                        log::info("fm") << "microphone " << (m.on ? "on" : "muted");
+                   },
+                   [](const MicrophoneGain &g) {
+                       const int dmrDb = services::microphone_gain::clampDigital(g.dmrDb);
+                       const int fmDb = services::microphone_gain::clampFm(g.fmDb);
+                       fm->setMicrophoneGain(fmDb);
+                       withBaseband([&](auto &b) { b.setMicrophoneGain(dmrDb, fmDb); });
+                       log::info("radio") << "microphone gain: DMR +" << dmrDb << " dB, FM +" << fmDb << " dB";
                    },
                    [](const ChipCommand &c) {
                        bool known = false;
@@ -1807,6 +1841,14 @@ void radioMain(void *)
                 pollFm();
             }
         }
+        // A level only from a signal: the DMR carrier, or the FM carrier
+        // the squelch heard; never the noise between signals.
+        const bool signal = fmChannel.digital ? carrierHeard : carrierGate.heard();
+        if (fm->receiving() && signal && os::nowMs() - lastSignalRead >= SignalEveryMs) {
+            lastSignalRead = os::nowMs();
+            signalDbm.store(fm->status().rssiDbm);
+            signalAt.store(lastSignalRead);
+        }
     }
 }
 
@@ -1817,6 +1859,15 @@ void start(board::Fm &f, board::Baseband *b)
     fm = &f;
     baseband = b;
     radioTask.start("radio", 7, radioMain, nullptr);
+}
+
+SignalLevel signalLevel()
+{
+    SignalLevel l;
+    l.atMs = signalAt.load();
+    l.known = l.atMs != 0;
+    l.dbm = signalDbm.load();
+    return l;
 }
 
 void roamingView(RoamingView &out)
