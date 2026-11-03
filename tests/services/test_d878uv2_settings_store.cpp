@@ -479,7 +479,7 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     seal(r);
     const auto q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
     CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(12));
     CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
 }
@@ -519,7 +519,7 @@ TEST_CASE("preferences record: fields a shorter record lacks, or out of range, r
     auto q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
     CHECK(q->roaming == RadioPreferences{}.roaming);
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
 
     // Only the offset's first byte.
     p.frequencyOffsetHz = 1000;
@@ -528,7 +528,7 @@ TEST_CASE("preferences record: fields a shorter record lacks, or out of range, r
     seal(r);
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
 
     // An offset past 5 kHz.
     r = encoded(p);
@@ -537,7 +537,7 @@ TEST_CASE("preferences record: fields a shorter record lacks, or out of range, r
     seal(r);
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
 
     r = encoded(p);
     r[6] = 7;
