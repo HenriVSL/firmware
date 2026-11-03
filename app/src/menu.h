@@ -58,8 +58,9 @@ enum class Item : std::uint8_t
     HomeMiddle,
     HomeBeside,
     HomeBottom,
-    Log,     // opens the log
-    KeyTest, // opens the key test
+    Activity, // opens the activity pages
+    Log,      // opens the log
+    KeyTest,  // opens the key test
     Version,
     Count,
 };

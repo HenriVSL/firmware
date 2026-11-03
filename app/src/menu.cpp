@@ -20,7 +20,7 @@ constexpr Row RoamingRows[] = {Item::RoamStatus, Item::Roaming, Item::RoamZone};
 constexpr Row GpsRows[] = {Item::GpsStatus, Item::Gps};
 constexpr Row SettingsRows[] = {Group::Home, Group::Audio, Group::Radio, Group::Keys, Group::Clock, Group::GpsSettings};
 constexpr Row DisplayRows[] = {Item::Backlight, Item::BacklightTime};
-constexpr Row ToolsRows[] = {Item::Log, Item::KeyTest, Item::Version};
+constexpr Row ToolsRows[] = {Item::Activity, Item::Log, Item::KeyTest, Item::Version};
 constexpr Row HomeRows[] = {Item::HomePreset, Item::HomeTop, Item::HomeClock, Item::HomeBig, Item::HomeMiddle,
     Item::HomeBeside, Item::HomeBottom};
 constexpr Row AudioRows[] = {Item::DmrMicGain, Item::FmMicGain};
@@ -36,7 +36,7 @@ constexpr GroupInfo Groups[] = {
     {"GPS", "The position and the GPS receiver", GpsRows},
     {"Display", "Brightness and how long the light stays on", DisplayRows},
     {"Settings", "Home screen, audio, radio, keys, clock, GPS", SettingsRows},
-    {"Tools", "The log, the key test and the version", ToolsRows},
+    {"Tools", "Activity, the log, the key test and the version", ToolsRows},
     {"Home screen", "What each row of the home screen shows", HomeRows},
     {"Audio", "The microphone gain on DMR and FM", AudioRows},
     {"Radio", "Frequency offset for a drifted reference", RadioRows},
@@ -72,6 +72,7 @@ constexpr ItemInfo Items[] = {
     {"Middle row", "Frequency, contact or signal under the name", Kind::Value},
     {"Next to power", "Voltage, volume or signal next to the power", Kind::Value},
     {"Bottom row", "Details, last caller or GPS position", Kind::Value},
+    {"Activity", "Calls, roaming moves and GPS fixes, newest first", Kind::Screen},
     {"Log", "The radio's log; hold Exit for the next screen", Kind::Screen},
     {"Key test", "Shows each key pressed; hold Exit for the next", Kind::Screen},
     {"Version", "The firmware's version and time since start", Kind::Info},
@@ -334,6 +335,7 @@ Kept keptIn(Item item)
         return Kept::Settings;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -397,6 +399,7 @@ std::int32_t choiceOf(Item item, const Settings &s)
         return s.frequencyOffsetHz;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -483,6 +486,7 @@ void setChoice(Item item, std::int32_t value, Settings &s)
         break;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:

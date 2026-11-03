@@ -3,6 +3,7 @@
 
 #include "ui.h"
 
+#include "activity.h"
 #include "audio.h"
 #include "gps.h"
 #include "menu.h"
@@ -16,6 +17,7 @@
 #include "dmm/services/channel_selector.h"
 #include "dmm/services/clock.h"
 #include "dmm/services/codeplug.h"
+#include "dmm/services/event_log.h"
 #include "dmm/services/home_screen.h"
 #include "dmm/services/input.h"
 #include "dmm/services/log.h"
@@ -395,6 +397,7 @@ enum class View : std::uint8_t
     RoamStatus, // what roaming knows, refreshed each second
     Menu,       // the menu's lists and value screens
     Gps,        // the GPS receiver's state and fix, from the menu
+    Activity,   // what happened lately, from the menu
     Log,
     KeyTest,
     Message,
@@ -462,6 +465,25 @@ char callChannel[Channel::NameBytes + 1] = {};
 char lastCaller[CodeplugSource::ContactNameBytes + 1] = {};
 std::uint32_t lastCallerId = 0;
 os::Ticks lastCallAt = 0;
+// What happened, for the activity pages: calls heard and made; and
+// roaming moves and fixes. Each keeps what fits on its page.
+services::EventLog<LogRows> callLog;
+services::EventLog<LogRows> systemLog;
+// The activity page open: 0 calls, 1 system.
+constexpr int ActivityPages = 2;
+int activityPage = 0;
+// The roaming repeater last logged as moved to, from 0; the uptime of the
+// last fix logged.
+int roamLogged = -1;
+std::uint32_t fixLoggedS = 0;
+// A call or FM transmission of the user's is on the air, since when.
+bool transmitCall = false;
+os::Ticks transmitStarted = 0;
+
+std::uint32_t uptimeS()
+{
+    return static_cast<std::uint32_t>(os::nowMs() / 1000);
+}
 // Roaming: the roaming zone, how many repeaters it has, and the repeater
 // the radio task last reported.
 std::uint8_t roamingZone = services::RoamingSettings::NoZone;
@@ -869,7 +891,8 @@ void uiMain(void *)
     // the test pattern and full-screen messages do not.
     auto lockContext = [&] {
         services::KeyLock::Context c;
-        c.screenLockable = view == View::Standby || view == View::Gps || view == View::Log || view == View::KeyTest;
+        c.screenLockable = view == View::Standby || view == View::Gps || view == View::Activity || view == View::Log ||
+            view == View::KeyTest;
         c.transmitting = transmitting;
         c.nowMs = os::nowMs();
         return c;
@@ -972,7 +995,120 @@ void uiMain(void *)
         return s;
     };
     // The home screen is up, not the call screen.
-    auto homeShown = [&] { return view == View::Standby && !heard.shown && channels != nullptr; };
+    // The user's own call or FM transmission takes the home screen.
+    auto transmitShown = [&] { return view == View::Standby && transmitting && transmitCall && channels != nullptr; };
+    auto homeShown = [&] { return view == View::Standby && !heard.shown && !transmitShown() && channels != nullptr; };
+    auto transmitInfo = [&] {
+        constexpr std::string_view Powers[] = {"LOW", "MID", "HIGH", "TURBO"};
+        TransmitInfo t;
+        t.seconds = static_cast<std::uint32_t>((os::nowMs() - transmitStarted) / 1000);
+        const Channel *ch = channels != nullptr && channels->current() ? &*channels->current() : nullptr;
+        if (ch == nullptr) {
+            return t;
+        }
+        t.power = Powers[static_cast<int>(ch->power) & 3];
+        copyName(callChannel, ch->name);
+        if (hasTalkgroup(*ch)) {
+            t.slot = ch->dmr.slot;
+            nameTalkgroup(ch->dmr.contact);
+            t.target = homeLayout.big == services::HomeLayout::Big::Contact && talkgroupName[0] != '\0'
+                ? std::string_view(talkgroupName)
+                : callChannel[0] != '\0' ? std::string_view(callChannel)
+                                         : std::string_view(talkgroupText);
+            t.name = talkgroupText;
+        } else {
+            t.target = callChannel[0] != '\0' ? std::string_view(callChannel) : std::string_view("FM");
+        }
+        return t;
+    };
+    // The time of an event @p agoS seconds ago: the local time, or how long
+    // ago while the clock is not set.
+    auto eventTime = [&](std::uint32_t agoS) {
+        lib::StaticString<8> t;
+        if (const auto utc = system::utcNow()) {
+            t << localClockText(*utc - agoS).view();
+        } else {
+            t << '-' << agoS / 60 << 'm';
+        }
+        return t;
+    };
+    // An activity page: what happened, newest first, a row per event. Names
+    // are looked up as the rows are drawn; the logs hold numbers.
+    auto drawActivity = [&] {
+        const bool calls = activityPage == 0;
+        const auto &events = calls ? callLog : systemLog;
+        lib::StaticString<8> note;
+        note << activityPage + 1 << '/' << ActivityPages;
+        drawLogFrame(d, calls ? "Calls" : "System", note.view(), "Up/Down: page   Exit: back");
+        const std::uint32_t now = uptimeS();
+        for (int row = 0; row < LogRows; ++row) {
+            const auto *e = events.newest(static_cast<std::size_t>(row));
+            if (e == nullptr) {
+                drawLogRow(d, row, {}, row == 0 && events.count() == 0 ? "Nothing yet" : "", palette::Dim);
+                continue;
+            }
+            lib::StaticString<40> what;
+            Color ink = palette::Text;
+            using Kind = services::EventKind;
+            switch (e->kind()) {
+            case Kind::CallIn: {
+                // Off the ui task's stack.
+                static HeardCall who;
+                who.source = e->a();
+                who.destination = e->b();
+                who.group = e->group();
+                nameCall(who, codeplug);
+                what << "RX ";
+                if (who.caller[0] != '\0') {
+                    what << who.caller;
+                } else {
+                    what << e->a();
+                }
+                what << "  " << (e->group() ? "TG" : "PC") << e->b() << "  " << e->value() << 's';
+                ink = palette::Receive;
+                break;
+            }
+            case Kind::CallOut:
+                what << "TX ";
+                if (e->a() == 1) {
+                    what << "FM " << e->b() / 1000 << '.' << lib::zeroPadded(e->b() % 1000, 3);
+                } else {
+                    what << (e->group() ? "TG" : "PC") << e->b();
+                }
+                what << "  " << e->value() << 's';
+                ink = palette::Transmit;
+                break;
+            case Kind::RoamMove:
+                what << "ROAM repeater " << e->a();
+                break;
+            case Kind::RoamLost:
+                what << "ROAM repeater " << e->a() << " lost";
+                ink = palette::Warn;
+                break;
+            case Kind::AprsBeacon:
+                what << "APRS beacon sent";
+                break;
+            case Kind::GpsFix:
+                what << "GPS fix";
+                ink = palette::Dim;
+                break;
+            case Kind::GpsLost:
+                what << "GPS fix lost";
+                ink = palette::Dim;
+                break;
+            }
+            drawLogRow(d, row, eventTime(now - e->seconds()).view(), what.view(), ink);
+        }
+    };
+    // Logs an event, and shows it at once when its page is open.
+    auto logEvent = [&](services::EventKind kind, std::uint32_t a = 0, std::uint32_t b = 0, unsigned value = 0,
+                        bool group = false) {
+        const bool call = kind == services::EventKind::CallIn || kind == services::EventKind::CallOut;
+        (call ? callLog : systemLog).add(kind, uptimeS(), a, b, value, group);
+        if (view == View::Activity && activityPage == (call ? 0 : 1) && !noticeShown) {
+            drawActivity();
+        }
+    };
     auto callInfo = [&] {
         CallInfo c;
         c.active = heard.active;
@@ -1097,10 +1233,13 @@ void uiMain(void *)
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
         volumeNoticeUp = false;
-        const bool radioScreen =
-            view == View::Standby || isList(view) || view == View::Gps;
+        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Activity;
         barHeader(radioScreen);
-        if (view == View::Standby && heard.shown) {
+        if (transmitShown()) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawTransmit(d, transmitInfo());
+        } else if (view == View::Standby && heard.shown) {
             standby.drawCall(d, standbyState(), callInfo());
             drawBattery(d);
         } else if (view == View::Standby) {
@@ -1110,6 +1249,10 @@ void uiMain(void *)
             standby.drawStatus(d, standbyState());
             drawBattery(d);
             drawGpsScreen(d, gpsState, true);
+        } else if (view == View::Activity) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            drawActivity();
         } else if (view == View::Menu) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1134,7 +1277,7 @@ void uiMain(void *)
     };
     // The next screen in Exit-held order: standby, log, key test.
     auto nextView = [&] {
-        if (view == View::Standby || view == View::Gps) {
+        if (view == View::Standby || view == View::Gps || view == View::Activity) {
             return View::Log;
         }
         if (view == View::Log) {
@@ -1146,7 +1289,7 @@ void uiMain(void *)
     auto refreshLockMark = [&] {
         if (view == View::Log || view == View::KeyTest) {
             drawLockMark(d);
-        } else if (view == View::Standby || isList(view) || view == View::Gps) {
+        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
         }
@@ -1356,6 +1499,10 @@ void uiMain(void *)
             break;
         case menu::Item::GpsStatus:
             show(View::Gps);
+            break;
+        case menu::Item::Activity:
+            activityPage = 0;
+            show(View::Activity);
             break;
         case menu::Item::Log:
             show(View::Log);
@@ -1635,17 +1782,52 @@ void uiMain(void *)
                                    }
                                    return;
                                }
+                               if (view == View::Activity) {
+                                   const bool step = e.type == Type::Press || e.type == Type::Repeat;
+                                   if (step && (e.key == Key::Up || e.key == Key::Down)) {
+                                       activityPage = (activityPage + (e.key == Key::Up ? ActivityPages - 1 : 1)) % ActivityPages;
+                                       drawActivity();
+                                   } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
+                                       show(View::Menu);
+                                   }
+                                   return;
+                               }
                                if (channels != nullptr && (view == View::Standby || isList(view))) {
                                    channelKey(e.key, e.type);
                                }
                            },
                            [&](const Transmitting &t) {
+                               const bool wasCall = transmitting && transmitCall;
                                transmitting = t.on;
+                               using Kind = services::EventKind;
+                               if (t.on && t.call) {
+                                   transmitCall = true;
+                                   transmitStarted = os::nowMs();
+                                   const Channel *ch =
+                                       channels != nullptr && channels->current() ? &*channels->current() : nullptr;
+                                   if (ch != nullptr && ch->digital()) {
+                                       logEvent(Kind::CallOut, 0, ch->dmr.contact.id, 0,
+                                           ch->dmr.contact.type == services::dmr::CallType::Group);
+                                   } else if (ch != nullptr) {
+                                       logEvent(Kind::CallOut, 1, ch->transmitHz / 1000);
+                                   }
+                               } else if (!t.on && wasCall) {
+                                   transmitCall = false;
+                                   callLog.update(Kind::CallOut, static_cast<unsigned>((os::nowMs() - transmitStarted) / 1000));
+                                   if (view == View::Activity && activityPage == 0 && !noticeShown) {
+                                       drawActivity();
+                                   }
+                               }
                                useLight(d);
                                if (view == View::Log) {
                                    drawHeader(d);
                                }
-                               refreshLockMark();
+                               // The user's call takes the screen and gives it back.
+                               if (view == View::Standby && !noticeShown && (transmitCall || wasCall)) {
+                                   redrawView();
+                               } else {
+                                   refreshLockMark();
+                               }
                            },
                            [&](const Receiving &r) {
                                receiving = r.on;
@@ -1653,6 +1835,15 @@ void uiMain(void *)
                                refreshLockMark();
                            },
                            [&](const DmrCall &c) {
+                               if (c.active && !heard.active) {
+                                   logEvent(services::EventKind::CallIn, c.source, c.destination, 0, c.group);
+                               } else if (!c.active && heard.active) {
+                                   callLog.update(services::EventKind::CallIn,
+                                       static_cast<unsigned>((os::nowMs() - heard.started) / 1000));
+                                   if (view == View::Activity && activityPage == 0 && !noticeShown) {
+                                       drawActivity();
+                                   }
+                               }
                                if (c.active) {
                                    heard.shown = true;
                                    heard.active = true;
@@ -1674,6 +1865,11 @@ void uiMain(void *)
                                }
                            },
                            [&](const Roaming &r) {
+                               // A move to another repeater is logged once.
+                               if (!r.searching && r.site >= 0 && r.site != roamLogged) {
+                                   roamLogged = r.site;
+                                   logEvent(services::EventKind::RoamMove, static_cast<std::uint32_t>(r.site) + 1);
+                               }
                                roam.searching = r.searching;
                                roam.site = r.site;
                                roam.receiveHz = r.receiveHz;
@@ -1792,6 +1988,9 @@ void uiMain(void *)
                                    } else if (isList(view)) {
                                        zonePicker.move(moved);
                                        zonePicker.draw(d, listHint());
+                                   } else if (view == View::Activity) {
+                                       activityPage = ((activityPage + moved) % ActivityPages + ActivityPages) % ActivityPages;
+                                       drawActivity();
                                    } else if (view == View::Standby) {
                                        entryLength = 0;
                                        if (channels->vfoMode()) {
@@ -1841,6 +2040,13 @@ void uiMain(void *)
                            [&](const Gps &g) {
                                const bool tagChanged = g.on != gpsState.on || g.receiving != gpsState.receiving ||
                                    g.fix.valid != gpsState.fix.valid || g.asleep != gpsState.asleep;
+                               // A fix is logged when it comes after a time without
+                               // one, not at every wake-up between fixes.
+                               if (g.fix.valid && !gpsState.fix.valid && !g.asleep &&
+                                   (fixLoggedS == 0 || uptimeS() - fixLoggedS >= 600)) {
+                                   fixLoggedS = uptimeS();
+                                   logEvent(services::EventKind::GpsFix);
+                               }
                                gpsState = {g.on, g.receiving, g.fix, g.asleep};
                                if (view == View::Gps) {
                                    if (tagChanged) {
@@ -1914,9 +2120,17 @@ void uiMain(void *)
             lastHomeCheck = os::nowMs();
             standby.refresh(d, *channels, standbyState());
         }
+        // The transmit screen's time, each second.
+        if (transmitShown() && !noticeShown) {
+            const os::Ticks second = os::nowMs() / 1000;
+            if (second != lastSecond) {
+                lastSecond = second;
+                drawTransmitTime(d, transmitInfo());
+            }
+        }
         // The call screen: its time each second, back to standby a moment
         // after the call.
-        if (view == View::Standby && heard.shown && !noticeShown) {
+        if (view == View::Standby && heard.shown && !transmitShown() && !noticeShown) {
             const os::Ticks second = os::nowMs() / 1000;
             if (!heard.active && os::nowMs() - heard.ended >= CallHoldMs) {
                 heard.shown = false;
