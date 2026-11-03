@@ -60,6 +60,7 @@ enum class Item : std::uint8_t
     HomeBeside,
     HomeBottom,
     HomeUpDown, // what Up and Down do on the home screen
+    Activity,   // opens the activity pages
     Log,        // opens the log
     KeyTest,    // opens the key test
     Version,

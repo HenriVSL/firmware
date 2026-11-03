@@ -57,7 +57,10 @@ a frequency on the keypad.
 rows that the menu sets (talkgroup or zone, the time, the channel or
 contact large, frequency or a signal meter, power with the voltage or
 volume, and details, the last caller or the GPS position), and a
-short grouped settings menu. Settings changed on the radio are kept in
+short grouped settings menu. A transmit screen while the user's own
+call or FM transmission is on the air, and activity pages (Menu > Tools >
+Activity): calls heard and made, roaming moves and GPS fixes
+(`docs/hw-tests/activity.md`). Settings changed on the radio are kept in
 the codeplug (`docs/settings-storage.md`). Key lock covers the keypad,
 side keys and knob, with auto lock and forced lock.
 

@@ -22,11 +22,11 @@ constexpr Row SettingsRows[] = {Group::Home, Group::Audio, Group::Radio, Group::
 constexpr Row DisplayRows[] = {Item::Backlight, Item::BacklightTime, Item::MenuHelp};
 // The key test, for bringing up a radio, only in builds that have it.
 #ifdef DMM_KEY_TEST
-constexpr Row ToolsRows[] = {Item::Log, Item::KeyTest, Item::Version};
-constexpr std::string_view ToolsAbout = "The log, the key test and the version";
+constexpr Row ToolsRows[] = {Item::Activity, Item::Log, Item::KeyTest, Item::Version};
+constexpr std::string_view ToolsAbout = "Activity, the log, the key test and the version";
 #else
-constexpr Row ToolsRows[] = {Item::Log, Item::Version};
-constexpr std::string_view ToolsAbout = "The log and the version";
+constexpr Row ToolsRows[] = {Item::Activity, Item::Log, Item::Version};
+constexpr std::string_view ToolsAbout = "Activity, the log and the version";
 #endif
 constexpr Row HomeRows[] = {Item::HomePreset, Item::HomeTop, Item::HomeClock, Item::HomeBig, Item::HomeMiddle,
     Item::HomeBeside, Item::HomeBottom, Item::HomeUpDown};
@@ -81,6 +81,7 @@ constexpr ItemInfo Items[] = {
     {"Next to power", "Voltage, volume, signal or none", Kind::Value},
     {"Bottom row", "Details, last caller or GPS position", Kind::Value},
     {"Up/Down", "Up and Down: next zone, next channel or off", Kind::Value},
+    {"Activity", "Calls, roaming moves and GPS fixes, newest first", Kind::Screen},
     {"Log", "The radio's log; hold Exit for the next screen", Kind::Screen},
     {"Key test", "Shows each key pressed; hold Exit for the next", Kind::Screen},
     {"Version", "The firmware's version and time since start", Kind::Info},
@@ -350,6 +351,7 @@ Kept keptIn(Item item)
         return Kept::Settings;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -431,6 +433,7 @@ std::int32_t choiceOf(Item item, const Settings &s)
         return s.frequencyOffsetHz;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -523,6 +526,7 @@ void setChoice(Item item, std::int32_t value, Settings &s)
         break;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::Activity:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
