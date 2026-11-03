@@ -378,6 +378,12 @@ bool radioCommand(std::string_view command)
         posted = chipCommand(radio::ChipCommand::Chip::Fm, command, 3);
     } else if (lib::startsWith(command, "bb ")) {
         posted = chipCommand(radio::ChipCommand::Chip::Baseband, command, 3);
+    } else if (lib::startsWith(command, "plug ")) {
+        posted = ui::plugCommand(command.substr(5));
+    } else if (lib::startsWith(command, "prog ") && platform->programming != nullptr) {
+        if (!platform->programming->debugCommand(command.substr(5))) {
+            log::info("console") << "unknown command";
+        }
     } else {
         return false;
     }
@@ -464,6 +470,7 @@ void runCommand(std::string_view command)
                                 "fm rx|rxw <kHz[.ddd]> (12.5|25 kHz), fm off, fm sq 0-5, fm status, fm tx <kHz>|off, fm tone tx|rx off|<0.1 Hz>|d<octal>[n|i], fm power low|mid|high|turbo, fm tot <s>, fm txaudio both|bb|direct, fm offset <+-Hz>, dmr rx <kHz> <colour code> <slot 1|2, 0 = both direct>, dmr tg|pc <id>, dmr tg off, dmr id <id>, roam, roam now, roam auto on|off, ptt <100-10000 ms>, mic on|off, mic gain [dmr 0-30|codeplug, fm 0-24|codeplug] (dB, kept), lock, unlock, lock status, lock set knob|keypad|side|forced on|off, lock auto <s>, save [0-2], light time <s>, settings";
         log::info("console") << "FM chip: " << platform->fm.debugHelp();
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
+        log::info("console") << "codeplug: plug peek <addr> [count], plug poke <addr> <byte>... (hex), prog watch on|off";
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
     } else if (command == "fault") {
@@ -640,6 +647,11 @@ void linkMain(void *)
         }
         // In program mode the PC waits for each answer: look often.
         const bool programming = platform->programming != nullptr && platform->programming->active(os::nowMs());
+        if (ui::takeRestart()) {
+            log::info("ui") << "codeplug edited on the radio: restarting";
+            flushLog();
+            platform->system.restart();
+        }
         if (platform->programming != nullptr && platform->programming->takeCodeplugChanged()) {
             log::info("programming") << "codeplug written from the PC: restarting";
             flushLog();
@@ -656,7 +668,7 @@ void start(Platform &p)
 {
     platform = &p;
     if (p.display != nullptr) {
-        ui::start(*p.display, p.codeplug, p.input, p.settingsStore);
+        ui::start(*p.display, p.codeplug, p.input, p.plugEditor, p.settingsStore);
     }
     if (p.input != nullptr) {
         input::start(*p.input);

@@ -20,7 +20,7 @@ constexpr Row RoamingRows[] = {Item::RoamStatus, Item::Roaming, Item::RoamZone};
 constexpr Row GpsRows[] = {Item::GpsStatus, Item::Gps};
 constexpr Row SettingsRows[] = {Group::Home, Group::Audio, Group::Radio, Group::Keys, Group::Clock, Group::GpsSettings};
 constexpr Row DisplayRows[] = {Item::Backlight, Item::BacklightTime};
-constexpr Row ToolsRows[] = {Item::Log, Item::KeyTest, Item::Version};
+constexpr Row ToolsRows[] = {Group::Codeplug, Item::Log, Item::KeyTest, Item::Version};
 constexpr Row HomeRows[] = {Item::HomePreset, Item::HomeTop, Item::HomeClock, Item::HomeBig, Item::HomeMiddle,
     Item::HomeBeside, Item::HomeBottom};
 constexpr Row AudioRows[] = {Item::DmrMicGain, Item::FmMicGain};
@@ -28,6 +28,9 @@ constexpr Row RadioRows[] = {Item::FrequencyOffset};
 constexpr Row KeysRows[] = {Item::KeyLock, Item::AutoLock, Item::BatterySave};
 constexpr Row ClockRows[] = {Item::TimeZone};
 constexpr Row GpsSettingsRows[] = {Item::GpsSystems};
+constexpr Row CodeplugRows[] = {Item::PlugChannels, Item::PlugZones, Item::PlugContacts, Item::PlugGroupLists,
+    Item::PlugRepeaters, Item::PlugRoamZones, Item::PlugRadioIds, Item::PlugSettings, Item::PlugMoreSettings,
+    Item::PlugAprs, Item::PlugAprsText};
 
 constexpr GroupInfo Groups[] = {
     {"Menu", "", TopRows},
@@ -36,13 +39,14 @@ constexpr GroupInfo Groups[] = {
     {"GPS", "The position and the GPS receiver", GpsRows},
     {"Display", "Brightness and how long the light stays on", DisplayRows},
     {"Settings", "Home screen, audio, radio, keys, clock, GPS", SettingsRows},
-    {"Tools", "The log, the key test and the version", ToolsRows},
+    {"Tools", "Codeplug editor, log, key test and version", ToolsRows},
     {"Home screen", "What each row of the home screen shows", HomeRows},
     {"Audio", "The microphone gain on DMR and FM", AudioRows},
     {"Radio", "Frequency offset for a drifted reference", RadioRows},
     {"Keys & battery", "The key lock and battery save", KeysRows},
     {"Clock", "The time zone", ClockRows},
     {"GPS", "The satellite systems the receiver uses", GpsSettingsRows},
+    {"Codeplug", "Every record and value of the codeplug, edited", CodeplugRows},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(Group::Count));
 
@@ -72,6 +76,17 @@ constexpr ItemInfo Items[] = {
     {"Middle row", "Frequency, contact or signal under the name", Kind::Value},
     {"Next to power", "Voltage, volume or signal next to the power", Kind::Value},
     {"Bottom row", "Details, last caller or GPS position", Kind::Value},
+    {"Channels", "Every channel: names, frequencies, DMR, tones", Kind::Screen},
+    {"Zones", "Zone names", Kind::Screen},
+    {"Contacts", "Contact names and numbers", Kind::Screen},
+    {"RX groups", "Receive group lists", Kind::Screen},
+    {"Repeaters", "The roaming zones' repeaters", Kind::Screen},
+    {"Roam zones", "Roaming zone names", Kind::Screen},
+    {"Radio IDs", "The radio's own DMR IDs", Kind::Screen},
+    {"Settings", "The radio's settings; saving restarts it", Kind::Screen},
+    {"More settings", "Further settings: GPS; saving restarts it", Kind::Screen},
+    {"APRS", "APRS station and beacon", Kind::Screen},
+    {"APRS text", "The text sent with the position", Kind::Screen},
     {"Log", "The radio's log; hold Exit for the next screen", Kind::Screen},
     {"Key test", "Shows each key pressed; hold Exit for the next", Kind::Screen},
     {"Version", "The firmware's version and time since start", Kind::Info},
@@ -303,6 +318,21 @@ bool splitAbout(std::string_view text, std::string_view &first, std::string_view
     return second.size() <= AboutChars;
 }
 
+services::plug::Book bookOf(Item item)
+{
+    constexpr auto First = static_cast<std::size_t>(Item::PlugChannels);
+    static_assert(static_cast<std::size_t>(Item::PlugAprsText) - First + 1 ==
+        static_cast<std::size_t>(services::plug::Book::Count));
+    const auto i = static_cast<std::size_t>(item);
+    return i >= First && i <= static_cast<std::size_t>(Item::PlugAprsText) ? static_cast<services::plug::Book>(i - First)
+                                                                           : services::plug::Book::Count;
+}
+
+Item itemOf(services::plug::Book book)
+{
+    return static_cast<Item>(static_cast<std::size_t>(Item::PlugChannels) + static_cast<std::size_t>(book));
+}
+
 Kept keptIn(Item item)
 {
     switch (item) {
@@ -334,6 +364,17 @@ Kept keptIn(Item item)
         return Kept::Settings;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::PlugChannels:
+    case Item::PlugZones:
+    case Item::PlugContacts:
+    case Item::PlugGroupLists:
+    case Item::PlugRepeaters:
+    case Item::PlugRoamZones:
+    case Item::PlugRadioIds:
+    case Item::PlugSettings:
+    case Item::PlugMoreSettings:
+    case Item::PlugAprs:
+    case Item::PlugAprsText:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -397,6 +438,17 @@ std::int32_t choiceOf(Item item, const Settings &s)
         return s.frequencyOffsetHz;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::PlugChannels:
+    case Item::PlugZones:
+    case Item::PlugContacts:
+    case Item::PlugGroupLists:
+    case Item::PlugRepeaters:
+    case Item::PlugRoamZones:
+    case Item::PlugRadioIds:
+    case Item::PlugSettings:
+    case Item::PlugMoreSettings:
+    case Item::PlugAprs:
+    case Item::PlugAprsText:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:
@@ -483,6 +535,17 @@ void setChoice(Item item, std::int32_t value, Settings &s)
         break;
     case Item::RoamStatus:
     case Item::GpsStatus:
+    case Item::PlugChannels:
+    case Item::PlugZones:
+    case Item::PlugContacts:
+    case Item::PlugGroupLists:
+    case Item::PlugRepeaters:
+    case Item::PlugRoamZones:
+    case Item::PlugRadioIds:
+    case Item::PlugSettings:
+    case Item::PlugMoreSettings:
+    case Item::PlugAprs:
+    case Item::PlugAprsText:
     case Item::Log:
     case Item::KeyTest:
     case Item::Version:

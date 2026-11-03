@@ -267,10 +267,35 @@ TEST_CASE("screens open from their rows and the version row does nothing")
     CHECK(nav.hint() == "Menu: open   Exit: back");
     CHECK(nav.press(Key::Menu) == Step::Show);
     nav.open(Group::Tools);
-    moveTo(nav, 2);
+    moveTo(nav, 3);
     REQUIRE(nav.current().item == Item::Version);
     CHECK(nav.press(Key::Menu) == Step::None);
     CHECK(nav.hint() == "Exit: back");
+}
+
+TEST_CASE("the codeplug editor's books open from Tools, Codeplug")
+{
+    Navigator nav;
+    nav.open(Group::Tools);
+    REQUIRE(nav.current().group == Group::Codeplug);
+    CHECK(nav.press(Key::Menu) == Step::Opened);
+    CHECK(groupTitle(Group::Codeplug).view() == "Tools > Codeplug");
+    std::size_t books = 0;
+    for (const Row row : nav.groupInfo().rows) {
+        CAPTURE(label(row));
+        REQUIRE_FALSE(row.opensGroup());
+        CHECK(info(row.item).kind == Kind::Screen);
+        CHECK(bookOf(row.item) == static_cast<dmm::services::plug::Book>(books));
+        CHECK(itemOf(static_cast<dmm::services::plug::Book>(books++)) == row.item);
+    }
+    CHECK(books == static_cast<std::size_t>(dmm::services::plug::Book::Count));
+    CHECK(bookOf(Item::Log) == dmm::services::plug::Book::Count);
+    moveTo(nav, 7);
+    CHECK(nav.press(Key::Menu) == Step::Show);
+    CHECK(bookOf(nav.current().item) == dmm::services::plug::Book::Settings);
+    CHECK(nav.press(Key::Exit) == Step::Opened);
+    CHECK(nav.group() == Group::Tools);
+    CHECK(nav.row() == 0);
 }
 
 TEST_CASE("every choice of every setting is set, read back and kept")

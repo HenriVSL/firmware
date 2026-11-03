@@ -11,6 +11,7 @@
 #include "dmm/services/input.h"
 #include "dmm/services/key_lock.h"
 #include "dmm/services/microphone_gain.h"
+#include "dmm/services/plug_editor.h"
 #include "dmm/services/power_level.h"
 
 #include <algorithm>
@@ -58,6 +59,17 @@ enum class Item : std::uint8_t
     HomeMiddle,
     HomeBeside,
     HomeBottom,
+    PlugChannels, // the codeplug's books, in plug::Book's order; each opens its list
+    PlugZones,
+    PlugContacts,
+    PlugGroupLists,
+    PlugRepeaters,
+    PlugRoamZones,
+    PlugRadioIds,
+    PlugSettings,
+    PlugMoreSettings,
+    PlugAprs,
+    PlugAprsText,
     Log,     // opens the log
     KeyTest, // opens the key test
     Version,
@@ -81,6 +93,7 @@ enum class Group : std::uint8_t
     Keys,
     Clock,
     GpsSettings,
+    Codeplug,
     Count,
 };
 
@@ -184,6 +197,12 @@ struct Settings
 /// A microphone gain choice of FromCodeplug + N follows the codeplug's
 /// level, N dB; a choice below FromCodeplug is that many dB.
 inline constexpr std::int32_t FromCodeplug = 0x100;
+
+/// The codeplug book that @p item's row opens in the editor, or
+/// Book::Count for a row that opens none.
+services::plug::Book bookOf(Item item);
+/// The row that opens @p book.
+Item itemOf(services::plug::Book book);
 
 /// Where a setting is kept: the general settings, the radio's own
 /// preferences, the channel in use, or nowhere.
