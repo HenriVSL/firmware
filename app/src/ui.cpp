@@ -425,6 +425,8 @@ bool gpsAtStart = false;
 std::uint8_t gpsSystems = services::gps_systems::Gps | services::gps_systems::Beidou;
 // Local time minus UTC, from the codeplug, in half-hour steps.
 int timeZoneMinutes = 0;
+// The clock calibration as the gps task last reported it.
+ClockCalibration clockCalibration{ClockCalibration::State::Stopped, 0, 0};
 
 // The local time at UTC @p utc as "HH:MM".
 lib::StaticString<6> localClockText(std::uint32_t utc)
@@ -1857,6 +1859,24 @@ void uiMain(void *)
                                        !noticeShown) {
                                        drawMenu();
                                    }
+                               }
+                           },
+                           [&](const ClockRate &) {},
+                           [&](const ClockCalibration &c) {
+                               clockCalibration = c;
+                               switch (c.state) {
+                               case ClockCalibration::State::Done:
+                                   notice("Clock calibrated");
+                                   break;
+                               case ClockCalibration::State::TooFewFixes:
+                                   notice("Too few fixes");
+                                   break;
+                               case ClockCalibration::State::GpsOff:
+                                   notice("Switch GPS on");
+                                   break;
+                               case ClockCalibration::State::Running:
+                               case ClockCalibration::State::Stopped:
+                                   break;
                                }
                            },
                            [&](const SwitchingOff &) {
