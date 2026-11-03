@@ -5,3 +5,4 @@ add_library(dmm_app STATIC src/app.cpp src/audio.cpp src/audio.h src/draw.cpp sr
 target_include_directories(dmm_app PUBLIC include ${DMM_PARTS_DIR})
 target_link_libraries(dmm_app PUBLIC dmm_services dmm_version)
 dmm_core_options(dmm_app)
+target_sources(dmm_app PRIVATE src/screen_stream.cpp src/screen_stream.h)

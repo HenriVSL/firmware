@@ -69,6 +69,14 @@ Line::~Line()
     }
 }
 
+std::size_t room()
+{
+    queueLock.lock();
+    const std::size_t n = pending.freeSpace();
+    queueLock.unlock();
+    return n;
+}
+
 std::size_t drain(LogSink &sink)
 {
     std::size_t written = 0;

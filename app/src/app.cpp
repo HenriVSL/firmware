@@ -7,6 +7,7 @@
 #include "gps.h"
 #include "input.h"
 #include "radio.h"
+#include "screen_stream.h"
 #include "system.h"
 #include "ui.h"
 
@@ -215,6 +216,88 @@ bool numbersAfter(std::string_view command, std::string_view prefix, int base, s
         }
     }
     return true;
+}
+
+// Whether @p a and @p b are the same apart from letter case.
+bool sameText(std::string_view a, std::string_view b)
+{
+    if (a.size() != b.size()) {
+        return false;
+    }
+    const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; };
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        if (lower(a[i]) != lower(b[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// "key <name> [long]": presses and releases a key as the keypad would, held
+// long before the release when asked; for tests. The name as the log or the
+// key test writes it, in any case. Not PTT.
+bool keyCommand(std::string_view command)
+{
+    command.remove_prefix(4);
+    const std::string_view name = lib::takeWord(command);
+    const bool held = command == "long";
+    if (!held && !command.empty()) {
+        return false;
+    }
+    for (unsigned k = 0; k < static_cast<unsigned>(services::Key::Ptt); ++k) {
+        const auto key = static_cast<services::Key>(k);
+        const bool named = sameText(name, services::keyName(key)) ||
+            (platform->input != nullptr && sameText(name, platform->input->keyLabel(key)));
+        if (!named) {
+            continue;
+        }
+        using Type = services::KeyDebouncer::EventType;
+        ui::post(ui::KeyEvent{key, Type::Press});
+        if (held) {
+            ui::post(ui::KeyEvent{key, Type::LongPress});
+        }
+        ui::post(ui::KeyEvent{key, Type::Release});
+        return true;
+    }
+    return false;
+}
+
+// "knob <steps>": turns the knob, negative for back; for tests.
+bool knobCommand(std::string_view command)
+{
+    command.remove_prefix(5);
+    const bool back = lib::startsWith(command, "-");
+    if (back) {
+        command.remove_prefix(1);
+    }
+    const auto steps = lib::parseNumber(command, 10);
+    if (!steps || *steps > 100) {
+        return false;
+    }
+    input::turnKnob(back ? -*steps : *steps);
+    return true;
+}
+
+// "screen shot|text|on|off|watch <s>": the screen's drawing, or its text,
+// to the log.
+bool screenCommand(std::string_view command)
+{
+    using Request = ui::ScreenStream::Request;
+    command.remove_prefix(7);
+    std::int32_t seconds[1] = {};
+    if (command == "shot" || command == "text") {
+        ui::ScreenStream::ask(command == "shot" ? Request::Shot : Request::Text);
+        return true;
+    }
+    if (command == "on" || command == "off") {
+        ui::ScreenStream::ask(command == "on" ? Request::On : Request::Off);
+        return true;
+    }
+    if (numbersAfter(command, "watch ", 10, seconds, 1) && seconds[0] > 0 && seconds[0] <= 600) {
+        ui::ScreenStream::ask(Request::Watch, static_cast<std::uint16_t>(seconds[0]));
+        return true;
+    }
+    return false;
 }
 
 // "fm tone tx|rx <tone>": off, a CTCSS tone in 0.1 Hz (600..2600), or a
@@ -500,6 +583,19 @@ void runCommand(std::string_view command)
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
+        log::info("console") << "tests: key <name> [long], knob <steps>, screen shot|text|on|off|watch <s>";
+    } else if (lib::startsWith(command, "key ")) {
+        if (!keyCommand(command)) {
+            log::info("console") << "key <name> [long]: a key as the log names it, not PTT";
+        }
+    } else if (lib::startsWith(command, "knob ")) {
+        if (!knobCommand(command)) {
+            log::info("console") << "knob <steps>, -100 to 100";
+        }
+    } else if (lib::startsWith(command, "screen ")) {
+        if (!screenCommand(command)) {
+            log::info("console") << "screen shot|text|on|off|watch <1-600 s>";
+        }
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();

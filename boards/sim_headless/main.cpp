@@ -2,7 +2,9 @@
 // Copyright (c) 2026 Tommi Tauriainen
 
 // Simulator without a window: runs the app on the PC and prints its log
-// (and optionally LED changes, as log lines) to standard output.
+// (and optionally LED changes, as log lines) to standard output. With
+// --stdin, standard input is the console; the program ends at its end and
+// on a restart.
 
 #include "dmm/app/app.h"
 #include "dmm/os/os.h"
@@ -27,6 +29,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <span>
+#include <thread>
+
+#include <unistd.h>
 
 namespace {
 
@@ -79,12 +84,16 @@ public:
     void holdPower() override {}
     void releasePower() override {}
     void feedWatchdog() override {}
-    void restart() override { dmm::os::requestStop(); }
+    void restart() override
+    {
+        dmm::os::requestStop();
+        QMetaObject::invokeMethod(QCoreApplication::instance(), &QCoreApplication::quit, Qt::QueuedConnection);
+    }
     dmm::services::ResetReport lastReset() override { return {"simulator start", 0, false, {}}; }
     void testFault() override { dmm::os::requestStop(); }
 };
 
-// Prints log lines; console input comes from --command, once.
+// Prints log lines; console input comes from --command or standard input.
 class ConsoleLog final : public dmm::services::LogSink
 {
 public:
@@ -142,6 +151,9 @@ int main(int argc, char *argv[])
         QStringLiteral("list"));
     parser.addOption(pressOption);
     parser.addOption(batteryOption);
+    const QCommandLineOption stdinOption(QStringLiteral("stdin"),
+        QStringLiteral("Read console commands from standard input, a line each; stop at its end."));
+    parser.addOption(stdinOption);
     parser.process(app);
 
     static ConsoleLeds leds(parser.isSet(ledsOption));
@@ -222,6 +234,19 @@ int main(int argc, char *argv[])
             }
         });
     }
+    if (parser.isSet(stdinOption)) {
+        // read() rather than std::cin: exit() would wait for the lock a
+        // blocked std::cin holds.
+        std::thread([&app] {
+            char buffer[256];
+            ssize_t n = 0;
+            while ((n = ::read(STDIN_FILENO, buffer, sizeof buffer)) > 0) {
+                logSink.addInput(QByteArray(buffer, static_cast<qsizetype>(n)));
+            }
+            dmm::os::requestStop();
+            QMetaObject::invokeMethod(&app, &QCoreApplication::quit, Qt::QueuedConnection);
+        }).detach();
+    }
     const int seconds = parser.value(secondsOption).toInt();
     const QString frame = parser.value(frameOption);
     if (seconds > 0) {
@@ -234,5 +259,8 @@ int main(int argc, char *argv[])
             app.quit();
         });
     }
-    return QCoreApplication::exec();
+    const int status = QCoreApplication::exec();
+    dmm::os::requestStop();
+    dmm::os::joinAll();
+    return status;
 }
