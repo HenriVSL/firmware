@@ -40,6 +40,14 @@ constexpr std::size_t FmMicGainAt = FieldsAt + 8;
 constexpr std::size_t FrequencyOffsetAt = FieldsAt + 9;
 constexpr std::size_t FieldsEnd = FieldsAt + 11;
 static_assert(FieldsEnd <= CrcAt);
+// This fork's own fields, from ForkFieldsAt on: far enough past the
+// shared ones that fields added to those later never reach them. A record
+// written here always holds the whole area, so a record without it gives
+// every fork field its default. Their places are listed in
+// docs/settings-storage.md.
+constexpr std::size_t ForkFieldsAt = FieldsAt + 64;
+constexpr std::size_t ForkFieldsEnd = ForkFieldsAt + 16;
+static_assert(FieldsEnd <= ForkFieldsAt && ForkFieldsEnd <= CrcAt);
 
 // The field bytes a record holds; a field past them reads as its default.
 class Fields
@@ -126,7 +134,7 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     std::fill(record.begin(), record.end(), std::uint8_t{0xFF});
     std::copy(std::begin(Mark), std::end(Mark), record.begin());
     record[VersionAt] = Version;
-    record[LengthAt] = static_cast<std::uint8_t>(FieldsEnd - FieldsAt);
+    record[LengthAt] = static_cast<std::uint8_t>(ForkFieldsEnd - FieldsAt);
     record[RoamingAt] = p.roaming ? 1 : 0;
     record[HomeTopAt] = static_cast<std::uint8_t>(p.home.top);
     record[HomeClockAt] = p.home.clock ? 1 : 0;
