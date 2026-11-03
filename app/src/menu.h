@@ -51,6 +51,8 @@ enum class Item : std::uint8_t
     AutoLock,
     BatterySave,
     TimeZone,
+    ClockShown,       // local time or UTC
+    ClockCalibration, // a run against GPS time; kept nowhere
     GpsSystems,
     HomePreset, // a whole home screen layout at once
     HomeTop,
@@ -173,6 +175,9 @@ struct Settings
     bool gps = false;
     std::uint8_t gpsSystems = 3;
     std::int16_t timeZoneMinutes = 0;
+    bool clockUtc = false;
+    /// The clock calibration under way, in minutes; 0 for none.
+    std::uint8_t clockCalibrationMinutes = 0;
     services::HomeLayout home;
     services::HomeUpDown upDown = services::HomeUpDown::Zone;
     bool menuHelp = true;
