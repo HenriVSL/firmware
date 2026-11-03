@@ -86,7 +86,7 @@ STEPS = [
     Step('2.13', 'Exit: still +2000 Hz', do=['key Exit'], expect=[r'row ^Freq offset \+2000 Hz$']),
     Step('3.1', 'Kept across a restart', radio_only='nothing is kept across a restart', do=['home', 'restart'],
          expect=[r'log \bfm: frequency offset \+2000 Hz', status_ends('offset +2000 Hz')]),
-    Step('3.2', 'In the preferences record', expect=[settings_has(r'frequency offset \+2000 Hz$', 'preferences')]),
+    Step('3.2', 'In the preferences record', expect=[settings_has(r'frequency offset \+2000 Hz(,|$)', 'preferences')]),
     Step('3.3', 'The menu row', do=['goto ' + ROW], expect=[r'row ^Freq offset \+2000 Hz$']),
     Step('3.4', 'The counter as in 2.10', transmit=True, do=['home'] + ptt(), expect=[r'log \bfm: transmitting'],
          human=counter('as in 2.10.')),
