@@ -267,7 +267,7 @@ TEST_CASE("screens open from their rows and the version row does nothing")
     CHECK(nav.hint() == "Menu: open   Exit: back");
     CHECK(nav.press(Key::Menu) == Step::Show);
     nav.open(Group::Tools);
-    moveTo(nav, 2);
+    moveTo(nav, info(Group::Tools).rows.size() - 1);
     REQUIRE(nav.current().item == Item::Version);
     CHECK(nav.press(Key::Menu) == Step::None);
     CHECK(nav.hint() == "Exit: back");
