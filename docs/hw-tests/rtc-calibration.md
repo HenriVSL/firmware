@@ -24,7 +24,7 @@ Exit, Up, Down). Each step starts where the one before ended.
 | 2 | Press Down; look | The panel reads `Home screen time: local,` / `or UTC with a Z` |
 | 3 | Press Menu, Down, Menu | `ui: clock shows UTC`; the row shows `UTC`; `settings kept` about 3 s later |
 | 4 | Press Exit until the standby screen is back | The clock shows UTC with a `Z`, such as `09:41Z`: the local time minus the time zone's offset |
-| 5 | Type `settings` | The `preferences record:` line ends `clock UTC` |
+| 5 | Type `settings` | The `preferences (fork):` line shows `clock UTC` |
 | 6 | Type `restart`; wait for the standby screen | The clock still shows UTC with a `Z` |
 | 7 | Open Settings > Clock as in 1.1; press Down, Menu, Up, Menu, then Exit until the standby screen is back | `ui: clock shows local time`; the standby clock shows local time without a `Z` |
 

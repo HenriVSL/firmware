@@ -1832,8 +1832,9 @@ void uiMain(void *)
                                                    << ' ' << static_cast<int>(h.beside) << ' ' << static_cast<int>(h.bottom)
                                                    << ", mic gain DMR " << keptGainText(p->dmrMicGainDb).view() << ", FM "
                                                    << keptGainText(p->fmMicGainDb).view() << ", frequency offset "
-                                                   << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view()
-                                                   << ", clock " << (p->clockUtc ? "UTC" : "local");
+                                                   << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view();
+                                   // This fork's own fields, on a line of their own.
+                                   log::info("ui") << "preferences (fork): clock " << (p->clockUtc ? "UTC" : "local");
                                } else {
                                    log::info("ui") << "no preferences record";
                                }
