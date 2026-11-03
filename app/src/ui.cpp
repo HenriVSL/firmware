@@ -507,7 +507,7 @@ void logMicrophoneGain()
 }
 
 // The frequency offset in use: a whole step of menu::OffsetSteps.
-std::int16_t frequencyOffsetHz = 0;
+std::int16_t frequencyOffsetHz = services::RadioPreferences{}.frequencyOffsetHz;
 
 // The step nearest @p hz, as the menu and the preferences record hold it.
 std::int16_t offsetStep(std::int32_t hz)
