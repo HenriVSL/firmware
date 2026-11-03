@@ -79,6 +79,29 @@ step starts where the one before ended.
 | 1 | Type `fm offset 0`; select a DMR channel on the repeater; call the talkgroup with PTT and listen for other calls | Note whether calls decode and the repeater answers |
 | 2 | Type `fm offset <-E>` as in 5.1 and repeat | Calls decode and the repeater answers; on a radio with a large error, only with the offset |
 
+## Results
+
+Run 2026-11-03 on a D878UVII PLUS, with this branch, the settings store,
+menu, home screen and microphone gain branches, the write stall branch
+and the loader in one image. No frequency counter was at hand, so the
+steps that read one are open.
+
+| # | Result |
+| --- | --- |
+| 1.1 | Pass |
+| 1.2 | Open: needs a frequency counter |
+| 2.1-2.9 | Pass |
+| 2.10 | Open: needs a frequency counter |
+| 2.11-2.13 | Pass |
+| 3.1-3.3 | Pass |
+| 3.4 | Open: needs a frequency counter |
+| 4.1 | Pass for the log line; the counter reading open |
+| 4.2-4.5 | Pass |
+| 5.1 | Open: needs a frequency counter |
+| 5.2, 5.3 | Open: needs a carrier on a known exact frequency |
+| 6.1 | Not run on this image; on this radio earlier builds without an offset had no call decoded |
+| 6.2 | Pass with +2000 Hz in place of a measured error (2026-11-02): a private call through a hotspot answered |
+
 ## Undo
 
 Set Menu > Settings > Radio > Freq offset to `0 Hz`, or type
