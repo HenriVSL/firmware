@@ -11,7 +11,7 @@ from _helpers import (log_is, now, panel, press_while_watching, remember, restor
 from radiotest.runner import Step
 
 TITLE = 'Menu: groups by use, large value screens, values kept'
-SOURCE = 'docs/hw-tests/menu.md (feat/mic-gain-db)'
+SOURCE = 'docs/hw-tests/menu.md (feat/offset-numeric)'
 
 # The values to put back, then a restart: the menu starts on the first
 # row of each group, as the checklist expects.
@@ -31,7 +31,9 @@ UNDO = [
     'home',
 ]
 
-TOP = ['Channel', 'Roaming', 'GPS', 'Settings', 'Tools']
+TOP = ['Channel', 'Roaming', 'GPS', 'Display', 'Settings', 'Tools']
+# The rows above the panel; Tools is scrolled to.
+SHOWN = TOP[:5]
 
 
 def level(text):
@@ -66,14 +68,14 @@ def roaming_on_first(ctx):
 
 STEPS = [
     Step(1, 'Menu from the standby screen', do=['home', 'key Menu'], expect=[
-        'title ^Menu$', 'place ^1/5$', 'row ^Channel >$',
-        'screen ' + r'\n'.join(r'%s\n>' % t for t in TOP),
+        'title ^Menu$', 'place ^1/6$', 'row ^Channel >$',
+        'screen ' + r'\n'.join(r'%s\n>' % t for t in SHOWN),
         'screen ' + panel('Squelch and power of the channel in use'),
         'hint ^Menu: open   Exit: back$']),
-    Step(2, 'Down four times, then the knob wraps round', do=[
-        'at Channel', 'keys Down Down Down Down',
-        'check row ^Tools >$', 'check place ^5/5$', 'check screen ' + panel('The log, the key test and the version'),
-        'knob 1'], expect=['row ^Channel >$', 'place ^1/5$']),
+    Step(2, 'Down five times, then the knob wraps round', do=[
+        'at Channel', 'keys Down Down Down Down Down',
+        'check row ^Tools >$', 'check place ^6/6$', 'check screen ' + panel('The log, the key test and the version'),
+        'knob 1'], expect=['row ^Channel >$', 'place ^1/6$']),
     Step(3, 'Menu opens Channel', do=['at Channel', 'key Menu'], expect=[
         'title ^Menu > Channel$', r'screen ^Squelch\n\d\nSquelch type\n\S+\nPower\n\S+',
         'screen ' + panel('Open, or 1 to 5: higher needs a stronger signal'),
@@ -113,62 +115,69 @@ STEPS = [
         'at Roaming/Status', 'keys Exit Down Menu Menu', 'shot gps',
         r'check screen ^GPS$', 'check hint ^Exit: back$', 'key Exit'], expect=[
         'title ^Menu > GPS$', 'row ^Status']),
-    Step(12, 'Settings: six groups and a scroll bar', do=['at GPS/Status', 'keys Exit Down Menu', 'shot settings'],
-         expect=['title ^Menu > Settings$', 'place ^1/[67]$', 'row ^Home screen >$',
-                 r'screen Home screen\n>\nDisplay\n>\nAudio\n>\n(Radio\n>\n)?Keys & battery\n>',
-                 'screen ' + panel('What each row of the home screen shows')]),
-    Step(13, 'Keys & battery: the long name alone', do=[
+    Step(12, 'Display at the top: Brightness and its value screen; Exit leaves it', do=[
+        'at GPS/Status', 'keys Exit Down Menu', 'shot display',
+        'check title ^Menu > Display$', 'check row ^Brightness', r'check screen ^Light time$',
+        'check screen ' + panel('Display brightness'), remember('brightness_12'),
+        'key Menu', 'check title ^Brightness$', 'check kind ^spinner$', 'key Exit'], expect=[
+        'title ^Menu > Display$', 'row ^Brightness', value_is(lambda p: p['brightness_12'])]),
+    Step(13, 'Settings: its groups, Display no longer among them', do=[
+        'at Display/Brightness', 'keys Exit Down Menu', 'shot settings'],
+         expect=['title ^Menu > Settings$', 'place ^1/[4-6]$', 'row ^Home screen >$',
+                 r'screen Home screen\n>\n(Audio\n>\n)?(Radio\n>\n)?Keys & battery\n>',
+                 'screen ' + panel('What each row of the home screen shows'), r'noscreen ^Display$']),
+    Step(14, 'Keys & battery: the long name alone', do=[
         'at Settings/Home screen', 'choose Keys & battery', 'key Menu',
         'check title ^Keys & battery$', 'key Exit'], expect=[
         'title ^Menu > Settings$', 'row ^Keys & battery >$']),
-    Step(14, 'Battery save as a list; Exit leaves it', do=[
+    Step(15, 'Battery save as a list; Exit leaves it', do=[
         'at Settings/Keys & battery', 'key Menu', 'choose Battery save', 'key Menu', 'shot battery-save',
         'check title ^Battery save$', 'check kind ^list$', r'check screen ^Off\nOn\n150 ms\nFast wake\n70 ms$',
         'check row ^<<battery_save>>', 'key Exit'], expect=[
         'title ^Keys & battery$', 'row ^Battery save <<battery_save>>', r'nolog \bpower: battery save\b']),
-    Step(15, 'Clock > Time zone: large zone, marker on a track', do=[
+    Step(16, 'Clock > Time zone: large zone, marker on a track', do=[
         'at Keys & battery/Battery save', 'keys Exit Down Menu Menu', 'shot time-zone'], expect=[
         'title ^Clock > Time zone$', 'kind ^spinner$', r'value ^UTC', r'place ^\d+/53$', r'in_use ^UTC']),
-    Step(16, 'Tools > Version: version and uptime; Menu does nothing', do=[
+    Step(17, 'Tools > Version: version and uptime; Menu does nothing', do=[
         'key Exit', 'goto Tools/Version',
         r'check screen ^\d+\.\d+\.\d+\S*\nup \d+ min$', 'check hint ^Exit: back$', 'key Menu'], expect=[
         'title ^Menu > Tools$', 'row ^Version']),
-    Step(17, 'The log, then held Exit: key test, then standby', do=[
+    Step(18, 'The log, then held Exit: key test, then standby', do=[
         'at Tools/Version', 'keys Up Up Menu', 'check screen console: >', 'key Exit long',
         r'check screen ^Keys \(Exit=log\)$', 'key Exit long'], expect=[standby]),
-    Step(18, 'P2 opens Channel; Exit goes straight back', do=['home', 'key P2', 'check title ^Menu > Channel$',
+    Step(19, 'P2 opens Channel; Exit goes straight back', do=['home', 'key P2', 'check title ^Menu > Channel$',
                                                               'key Exit'], expect=[standby]),
-    Step(19, 'P2 on the row last chosen; squelch one lower, back to standby', changes=True, timeout=8, do=[
+    Step(20, 'P2 on the row last chosen; squelch one lower, back to standby', changes=True, timeout=8, do=[
         'home', 'key P2', 'check row ^Power', 'keys Up Up', 'check row ^Squelch',
         remember('squelch_19'), 'keys Menu Down Menu'], expect=[
         log_is(lambda p: r'\bui: squelch %d\b' % ((level(p['squelch_19']) - 1) % 6)), standby]),
-    Step(20, 'P1: the zone list in the same style', do=[
+    Step(21, 'P1: the zone list in the same style', do=[
         'home', 'key P1', 'shot zones', 'check title ^Zone$', 'check kind ^list$',
         'check hint ^Menu: use   Exit: back$',
         'key Exit'], expect=[standby]),
-    Step(21, 'Everything drawn in place: no blank, no flash', timeout=8, do=[
+    Step(22, 'Everything drawn in place: no blank, no flash', timeout=8, do=[
         'home', press_while_watching(12, [
             'key P2', 'knob 3', 'knob -3', 'key Menu', 'knob 2', 'key Exit', 'key Exit', 'key P1', 'knob 1',
             'key Exit', 'key Menu', 'knob 1', 'knob -1', 'key Exit'])], expect=['flicker 0']),
-    Step(22, 'Squelch and power kept across a restart', radio_only='nothing is kept across a restart',
+    Step(23, 'Squelch and power kept across a restart', radio_only='nothing is kept across a restart',
          do=[remember('squelch_22', 'Channel/Squelch'), 'home', 'restart',
              now(lambda ctx: settings_has(r'squelch %d/' % level(ctx.params['squelch_22']))(ctx)),
              'goto Channel/Squelch'],
          expect=['title ^Menu > Channel$', 'screen ^Squelch\n<<squelch_22>>$', 'screen ^Power\n<<power>>$']),
-    Step('23a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'open Roaming/Roaming', 'set Off'],
+    Step('24a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'open Roaming/Roaming', 'set Off'],
          expect=[
         r'log \bui: roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
-    Step('23b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
+    Step('24b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
          do=['home', 'restart', 'goto Roaming/Roaming'], expect=[
              'row ^Roaming Off$', settings_has(r'roaming off', 'preferences')]),
-    Step(24, 'QDMR round trip keeps the menu\'s values', radio_only='no QDMR port', timeout=10, do=[
+    Step(25, 'QDMR round trip keeps the menu\'s values', radio_only='no QDMR port', timeout=10, do=[
         'home', 'qdmr read menu-a.yaml', 'qdmr write menu-a.yaml', 'goto Roaming/Roaming'], expect=[
         'row ^Roaming Off$', settings_has(r'roaming off', 'preferences')]),
-    Step(25, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
+    Step(26, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'home', 'qdmr read menu-b.yaml', 'qdmr diff menu-a.yaml menu-b.yaml'], expect=['nodiff']),
-    Step(26, 'Fast knob by hand: only what changes is redrawn',
+    Step(27, 'Fast knob by hand: only what changes is redrawn',
          human='Turn the knob fast in a list, on Power (without setting it: Exit) and on Time zone; '
                'only the rows, buttons and values that change are redrawn, nothing blanks or flashes.'),
-    Step(27, 'ui stack', radio_only='the simulator reports no stack words', timeout=75,
+    Step(28, 'ui stack', radio_only='the simulator reports no stack words', timeout=75,
          expect=['stack ui >50']),
 ]

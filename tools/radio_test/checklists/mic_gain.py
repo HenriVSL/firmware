@@ -130,23 +130,25 @@ STEPS = [
     Step(10, 'Back to the codeplug\'s levels', do=['home', 'cmd mic gain dmr codeplug', 'cmd mic gain fm codeplug'],
          expect=[gain_is(r'DMR \+\d+ dB \(codeplug\), FM \+\d+ dB \(codeplug\)$')]),
     Step('10b', 'The levels written in step 9', radio_only='no QDMR port', after=['9'], expect=[
-        gain_is(r'DMR \+12 dB \(codeplug\), FM \+20 dB \(codeplug\)$')]),
+        gain_is(r'DMR \+14 dB \(codeplug\), FM \+18 dB \(codeplug\)$')]),
     Step(11, 'QDMR reads the same levels', radio_only='no QDMR port', after=['9'], do=['qdmr read mic-b.yaml'], expect=[
         yaml_has('mic-b.yaml', {'micGain': 3, 'fmMicGain': 7})]),
-    Step(12, 'The menu shows Plug +N dB', do=['goto Settings/Audio/DMR mic gain'], expect=[
+    Step(12, 'FM voice gain at level 4, +18 dB', radio_only='no FM transceiver registers', after=['9'], expect=[
+        fm_register('0713')]),
+    Step(13, 'The menu shows Plug +N dB', do=['goto Settings/Audio/DMR mic gain'], expect=[
         r'screen ^DMR mic gain\nPlug \+\d+ dB\nFM mic gain\nPlug \+\d+ dB$']),
-    Step(13, 'FM +16 dB: the standard voice gain', radio_only='no FM transceiver registers', changes=True, do=[
+    Step(14, 'FM +16 dB: the standard voice gain', radio_only='no FM transceiver registers', changes=True, do=[
         'home', 'cmd mic gain fm 16'], expect=[fm_register('070f')]),
 ]
 
 # The calls: each transmits, and a person listens.
 _calls = [
-    ('14', 'DMR +8 dB: the parrot plays it back', 'dmr', [8], 'The parrot plays the call back.'),
-    ('15', 'Listen: DMR +16 and +24 dB', 'dmr', [16, 24], 'Each louder than the one before; no distortion at 24.'),
-    ('16', 'Listen: DMR +30 dB, spoken loudly', 'dmr', [30], 'Not clipped; the room between words louder.'),
-    ('17', 'Listen on the second radio: FM +8, +16, +24 dB', 'fm', [8, 16, 24],
+    ('15', 'DMR +8 dB: the parrot plays it back', 'dmr', [8], 'The parrot plays the call back.'),
+    ('16', 'Listen: DMR +16 and +24 dB', 'dmr', [16, 24], 'Each louder than the one before; no distortion at 24.'),
+    ('17', 'Listen: DMR +30 dB, spoken loudly', 'dmr', [30], 'Not clipped; the room between words louder.'),
+    ('18', 'Listen on the second radio: FM +8, +16, +24 dB', 'fm', [8, 16, 24],
      'Each louder than the one before, the steps about as large as on DMR.'),
-    ('18', 'Listen: FM +24 dB, spoken loudly', 'fm', [24], 'Clean, or distorted (over-deviation): note which.'),
+    ('19', 'Listen: FM +24 dB, spoken loudly', 'fm', [24], 'Clean, or distorted (over-deviation): note which.'),
 ]
 for _id, _title, _kind, _gains, _listen in _calls:
     _do = [channel('{%s}' % _kind)]
@@ -158,8 +160,8 @@ for _id, _title, _kind, _gains, _listen in _calls:
                       expect=[r'log \b(dmr|fm): transmitting'],
                       human='Speak the test sentence%s during each 4 s call. %s' % (
                           ' loudly' if 'loudly' in _title else '', _listen)))
-STEPS.append(Step('19', 'Listen: FM through the baseband, +8, +16, +24 dB', transmit=True, changes=True, timeout=10,
+STEPS.append(Step('20', 'Listen: FM through the baseband, +8, +16, +24 dB', transmit=True, changes=True, timeout=10,
                   do=[channel('{fm}'), 'cmd fm txaudio bb'] + call('fm', 8)[0] + call('fm', 16)[0] +
                   call('fm', 24)[0] + ['cmd fm txaudio direct'],
                   expect=[r'log \bfm: transmitting'], undo=['cmd fm txaudio direct'],
-                  human='The same steps as in 17, the voice through the baseband.'))
+                  human='The same steps as in 18, the voice through the baseband.'))

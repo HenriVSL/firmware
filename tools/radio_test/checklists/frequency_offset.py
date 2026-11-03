@@ -58,10 +58,10 @@ STEPS = [
     Step('1.2', 'The radio\'s own error', transmit=True, do=ptt(), expect=[r'log \bfm: transmitting'],
          human=counter('note measured minus nominal: the radio\'s own error E.')),
     Step('2.1', 'Settings with Radio', do=['goto Settings/Home screen'], expect=[
-        'title ^Menu > Settings$', 'place ^1/7$',
-        r'screen ^Home screen\n>\nDisplay\n>\nAudio\n>\nRadio\n>\nKeys & battery\n>']),
-    Step('2.2', 'Radio at 4/7', do=['choose Radio'], expect=[
-        'place ^4/7$', 'row ^Radio >$', 'screen ' + panel('Frequency offset for a drifted reference')]),
+        'title ^Menu > Settings$', 'place ^1/6$',
+        r'screen ^Home screen\n>\nAudio\n>\nRadio\n>\nKeys & battery\n>']),
+    Step('2.2', 'Radio at 3/6', do=['choose Radio'], expect=[
+        'place ^3/6$', 'row ^Radio >$', 'screen ' + panel('Frequency offset for a drifted reference')]),
     Step('2.3', 'Settings > Radio', do=['key Menu'], expect=[
         'title ^Settings > Radio$', 'row ^Freq offset 0 Hz$',
         'screen ' + panel('Shifts every frequency; Up and Down 500 Hz')]),
