@@ -164,6 +164,18 @@ struct UseChannel
     services::Channel channel;
     std::uint8_t squelch;
 };
+/// A dedicated mode holds the receiver (@c on) at @c hz, analog, or gives
+/// it back to the channel last given with UseChannel. While held, a
+/// UseChannel is kept for then (its squelch level applies at once), the
+/// receiver does not sleep for battery save, PTT gives no voice, and a
+/// signal opens the speaker only when @c audible.
+struct LockReceiver
+{
+    bool on;
+    std::uint32_t hz;
+    bool wide;
+    bool audible;
+};
 /// Looks for the best repeater of the roaming zone now.
 struct RoamNow
 {
@@ -215,7 +227,7 @@ struct PacketSettings
     std::uint8_t levelPercent;
 };
 
-using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, RoamNow, RoamingOn, FmOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
+using Message = std::variant<Info, Restart, ChipTone, SpeakerVolume, ChipCommand, Microphone, MicrophoneGain, FmReceive, FmIdle, FmSquelch, FmStatus, Ptt, PttFor, FmTransmitFrequency, FmTone, FmPower, FmTimeout, FmTransmitAudio, DmrReceive, DmrTarget, DmrOwnId, UseChannel, LockReceiver, RoamNow, RoamingOn, FmOffset, RoamingSetup, RoamStatus, RoamAutomatic, BatterySave, BatterySaveStatus, VoiceEnhancement, GpsPower, SendPacket, PacketSettings>;
 
 /// Starts the radio task, which owns @p fm, @p baseband and @p modem
 /// (each nullptr on a board without one) and brings them up.
