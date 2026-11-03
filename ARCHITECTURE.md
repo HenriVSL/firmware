@@ -118,9 +118,9 @@ last 8 bytes of a copy mark it: 55 55 AA AA in bytes 4-7 when valid, AA AA
 55 55 in bytes 0-3 once superseded. A write fills the other copy page by
 page from the valid one with the new data on top, marks it valid, then
 marks the old one superseded, so an interrupted write leaves the old
-block. Writes are limited to the codeplug's blocks, the contact ID table
-and callsign limits among them; calibration and the radio's own data are
-never written.
+block. Writes are limited to the codeplug's blocks (0x00800000 to below
+0x02F00000, and the contact ID table and callsign limits at 0x04800000);
+calibration and the radio's data above 0x02F00000 are never written.
 
 ## PC protocol
 
@@ -128,15 +128,18 @@ The radio has two USB serial ports: a data port and the log. The data
 port speaks DeltaMM's own binary protocol (`services/data_link.h`):
 requests start with 0xDD, which no command of the radio's programming
 protocol starts with. The same port speaks that programming protocol
-(`d878uv2_programming`). In program mode the port carries only that
-protocol, and the link task looks at it every millisecond.
+(`d878uv2_programming`), as observed: "PROGRAM" enters program mode,
+02 asks the identity, 'R' and 'W' read and write 16 bytes at big-endian
+codeplug addresses with a byte sum, "END" leaves. In program mode the
+port carries only that protocol, and the link task looks at it every
+millisecond.
 
 ## Update mode
 
 The vendor boot loader rewrites the firmware image when the radio is
 switched on holding PTT and PF3. `tools/dmm_radio` speaks its protocol
-(`dmm-radio flash`). The boot loader itself is never written.
-`docs/update-mode.md` describes update mode.
+(`dmm-radio flash`), for DeltaMM and factory images alike; the boot loader
+itself is never written. `docs/update-mode.md` describes the protocol.
 
 ## Data on the radio
 
