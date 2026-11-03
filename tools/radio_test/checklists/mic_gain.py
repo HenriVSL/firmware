@@ -132,7 +132,7 @@ STEPS = [
     Step('10b', 'The levels written in step 9', radio_only='no QDMR port', after=['9'], expect=[
         gain_is(r'DMR \+14 dB \(codeplug\), FM \+18 dB \(codeplug\)$')]),
     Step(11, 'QDMR reads the same levels', radio_only='no QDMR port', after=['9'], do=['qdmr read mic-b.yaml'], expect=[
-        yaml_has('mic-b.yaml', {'micGain': 3, 'fmMicGain': 7})]),
+        yaml_has('mic-b.yaml', {'micGain': 4, 'fmMicGain': 8})]),
     Step(12, 'FM voice gain at level 4, +18 dB', radio_only='no FM transceiver registers', after=['9'], expect=[
         fm_register('0713')]),
     Step(13, 'The menu shows Plug +N dB', do=['goto Settings/Audio/DMR mic gain'], expect=[

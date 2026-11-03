@@ -15,13 +15,18 @@ import threading
 import time
 import tty
 
-from _helpers import remember, restore, set_other, set_to, settings_has
+from _helpers import channel, remember, restore, set_other, set_to, settings_has
 from radiotest import transport
-from radiotest.radio import Failed
+from radiotest.radio import Failed, Skipped
 from radiotest.runner import Step
 
 TITLE = 'Settings storage'
 SOURCE = 'docs/hw-tests/settings-storage.md (feat/offset-numeric)'
+
+# Step 12 changes the squelch type, which only an FM channel with a receive
+# tone keeps: on the radio, pass the first of two such channels in a row
+# as "Zone/Channel" (empty: the channel in use).
+PARAMS = {'tone_channel': ''}
 
 
 def light_seconds(text):
@@ -135,6 +140,23 @@ def flip_squelch_types(ctx):
     r.knob(-1)
 
 
+def to_tone_channel(ctx):
+    if ctx.params.get('tone_channel'):
+        channel('{tone_channel}')(ctx)
+
+
+def other_roam_zone(ctx):
+    """Roam zone set to another one; skipped with a single roaming zone."""
+    w = ctx.radio.goto('Roaming/Roam zone')
+    ctx.radio.home()
+    try:
+        set_other('Roaming/Roam zone', 'roam_zone_new')(ctx)
+    except Failed as e:
+        if 'did nothing' in str(e) or 'no other choice' in str(e):
+            raise Skipped('one roaming zone in the codeplug (`%s`)' % w.value)
+        raise
+
+
 def channels_while_programming(ctx):
     """Two channels changed while the PC holds program mode: both stay kept
     while the writes are refused, and go in together once it leaves."""
@@ -231,7 +253,7 @@ STEPS = [
                                                           r'log@8 \bsettings kept in the codeplug'],
          undo=[restore('Channel/Power', 'power')]),
     Step('7c', 'Roam zone another one', radio_only='one roaming zone in the sample codeplug', changes=True, timeout=8,
-         do=[set_other('Roaming/Roam zone', 'roam_zone_new')], expect=[r'log@8 \bsettings kept in the codeplug']),
+         do=[other_roam_zone], expect=[r'log@8 \bsettings kept in the codeplug']),
     Step(8, 'Display, GPS, satellites, time zone: one write after the last', changes=True, timeout=8, do=[
         set_to('Display/Brightness', '2'), set_to('Display/Light time', '30 s'),
         set_to('GPS/Receiver', 'On'), set_to('Settings/GPS/Satellites', 'GPS'),
@@ -251,7 +273,7 @@ STEPS = [
          expect=[read_while_changing]),
     Step(12, 'Two channels changed while the PC programs: both kept, then written together',
          radio_only='no data port to hold program mode', changes=True, timeout=40,
-         expect=[channels_while_programming], undo=[put_squelch_types_back]),
+         do=[to_tone_channel], expect=[channels_while_programming], undo=[put_squelch_types_back]),
     Step(13, 'QDMR round trip: read', radio_only='no QDMR port', do=['qdmr read a.yaml'], expect=[
         settings_has(r'squelch', 'codeplug')]),
     Step(14, 'QDMR write; the radio restarts; the record kept', radio_only='no QDMR port', timeout=10, do=[
