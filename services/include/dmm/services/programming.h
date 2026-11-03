@@ -9,6 +9,7 @@
 #include <concepts>
 #include <cstdint>
 #include <span>
+#include <string_view>
 
 namespace dmm::services {
 
@@ -22,12 +23,15 @@ namespace dmm::services {
 ///   protocol's.
 /// - takeCodeplugChanged(): true once after the PC wrote the codeplug; the
 ///   radio then starts again to use it.
+/// - debugCommand(text): the protocol's console commands, answered in the
+///   log; false for one it does not know.
 template <typename T>
 concept Programming = requires(T &p, std::span<const std::uint8_t> bytes, os::Ticks now,
-    lib::FnRef<void(std::span<const std::uint8_t>)> write) {
+    lib::FnRef<void(std::span<const std::uint8_t>)> write, std::string_view text) {
     p.feed(bytes, now, write);
     { p.active(now) } -> std::same_as<bool>;
     { p.takeCodeplugChanged() } -> std::same_as<bool>;
+    { p.debugCommand(text) } -> std::same_as<bool>;
 };
 
 } // namespace dmm::services
