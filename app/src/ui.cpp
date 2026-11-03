@@ -8,6 +8,7 @@
 #include "gps.h"
 #include "menu.h"
 #include "menu_screen.h"
+#include "plug_screens.h"
 #include "radio.h"
 #include "screen_stream.h"
 #include "standby.h"
@@ -28,6 +29,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <iterator>
 #include <optional>
 #include <string_view>
@@ -46,6 +48,12 @@ Display *display = nullptr;
 CodeplugSource *codeplug = nullptr;
 const board::Input *input = nullptr;
 board::SettingsStore *settingsStore = nullptr;
+// The codeplug editor, and a console command waiting for it.
+board::PlugEditor *plugEditor = nullptr;
+lib::StaticString<128> plugCommandText;
+std::atomic<bool> plugCommandWaiting{false};
+// A record the radio reads only at start was saved: restart.
+std::atomic<bool> restartWanted{false};
 
 // A channel read from the codeplug, with the values still waiting in the
 // settings store laid over it.
@@ -403,6 +411,7 @@ enum class View : std::uint8_t
     Menu,       // the menu's lists and value screens
     Gps,        // the GPS receiver's state and fix, from the menu
     Activity,   // what happened lately, from the menu
+    Codeplug,   // the codeplug editor's screens
     Log,
     KeyTest,
     Message,
@@ -413,6 +422,7 @@ ChannelSelector *channels = nullptr;
 StandbyScreen standby;
 ListPicker zonePicker;
 menu::Navigator menuNav;
+PlugScreens *plugScreens = nullptr;
 
 // The screens that show a list; the roaming status screen borrows the
 // zone list's.
@@ -879,6 +889,11 @@ void uiMain(void *)
     quickKeys << keyText(Key::Menu) << "  " << keyText(Key::Front1) << " Zone  " << keyText(Key::Front2) << " Chan  "
               << keyText(Key::Hash) << " VFO";
 
+    if (plugEditor != nullptr) {
+        static PlugScreens screens(*plugEditor, menuNav.choices(), keyText(Key::Front2));
+        plugScreens = &screens;
+    }
+
     // The codeplug: settings, and the channel the radio starts on.
     if (codeplug != nullptr) {
         static ChannelSelector selector(*codeplug);
@@ -1301,7 +1316,8 @@ void uiMain(void *)
         // A full redraw covers any notice: the next one is drawn whole.
         noticeShown = false;
         volumeNoticeUp = false;
-        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Activity;
+        const bool radioScreen = view == View::Standby || isList(view) || view == View::Gps || view == View::Activity ||
+            view == View::Codeplug;
         barHeader(radioScreen);
         if (transmitShown()) {
             standby.drawStatus(d, standbyState());
@@ -1329,6 +1345,10 @@ void uiMain(void *)
             } else {
                 drawMenu();
             }
+        } else if (view == View::Codeplug) {
+            standby.drawStatus(d, standbyState());
+            drawBattery(d);
+            plugScreens->draw(d);
         } else if (isList(view)) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
@@ -1361,7 +1381,8 @@ void uiMain(void *)
     auto refreshLockMark = [&] {
         if (view == View::Log || view == View::KeyTest) {
             drawLockMark(d);
-        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity) {
+        } else if (view == View::Standby || isList(view) || view == View::Gps || view == View::Activity ||
+            view == View::Codeplug) {
             standby.drawStatus(d, standbyState());
             drawBattery(d);
         }
@@ -1570,6 +1591,104 @@ void uiMain(void *)
             out.add(services::RoamingSettings::NoZone, "None");
         }
     };
+    // What the settings store did, in the log.
+    auto logStoreResult = [&](services::SaveResult r) {
+        if (r == services::SaveResult::Saved) {
+            log::info("ui") << "settings kept in the codeplug";
+        } else if (r == services::SaveResult::Busy) {
+            log::info("ui") << "settings wait: the PC is programming";
+        } else if (r == services::SaveResult::Failed) {
+            log::warning("ui") << "settings not kept: the codeplug write failed";
+        }
+    };
+    // Lets the settings store write what it keeps at once, so the codeplug
+    // editor reads and saves over it: Saved or Unchanged once nothing is
+    // kept, else Busy or Failed.
+    auto writeKeptSettings = [&] {
+        if (settingsStore == nullptr || !settingsStore->pending()) {
+            return services::SaveResult::Unchanged;
+        }
+        const services::SaveResult r = settingsStore->flushNow();
+        logStoreResult(r);
+        if (!settingsStore->pending()) {
+            return services::SaveResult::Saved;
+        }
+        return r == services::SaveResult::Busy ? r : services::SaveResult::Failed;
+    };
+    // The codeplug editor's screen after a key, and its notice.
+    using PlugDo = PlugScreens::Do;
+    auto plugShow = [&](PlugScreens::Result r) {
+        switch (r.what) {
+        case PlugDo::Nothing:
+        case PlugDo::Save:
+            break;
+        case PlugDo::Redraw:
+            plugScreens->draw(d);
+            break;
+        case PlugDo::Show:
+            show(View::Codeplug);
+            break;
+        case PlugDo::Leave:
+            show(View::Menu);
+            break;
+        }
+        if (r.notice != nullptr) {
+            notice(r.notice);
+        }
+    };
+    // Saves the open record over what the settings store kept. A channel
+    // or a record it uses is read again; the settings, which the radio
+    // reads only at start, restart it.
+    auto savePlugRecord = [&] {
+        using services::SaveResult;
+        using Book = services::plug::Book;
+        const Book book = plugScreens->book();
+        const std::size_t record = plugEditor->index();
+        SaveResult r = writeKeptSettings();
+        if (r != SaveResult::Busy && r != SaveResult::Failed) {
+            r = plugScreens->save();
+        }
+        switch (r) {
+        case SaveResult::Saved:
+            log::info("ui") << "codeplug: saved " << menu::info(menu::itemOf(book)).label << ' ' << record + 1;
+            if (book == Book::Settings || book == Book::MoreSettings) {
+                notice("Saved: restarting");
+                restartWanted.store(true);
+                return;
+            }
+            if (channels != nullptr && (book == Book::Channels || book == Book::Zones || book == Book::Contacts || book == Book::GroupLists || book == Book::RadioIds)) {
+                channels->reload();
+                talkgroupFor = {services::dmr::CallType::All, 0xFFFFFFFF};
+                useChannel();
+            }
+            plugShow({plugScreens->closeRecord().what, "Saved"});
+            return;
+        case SaveResult::Unchanged:
+            plugShow(plugScreens->closeRecord());
+            return;
+        case SaveResult::Busy:
+            notice("The PC is writing");
+            return;
+        case SaveResult::Failed:
+            notice("Save failed");
+            return;
+        }
+    };
+    auto plugStep = [&](PlugScreens::Result r) {
+        if (r.what == PlugDo::Save) {
+            savePlugRecord();
+        } else {
+            plugShow(r);
+        }
+    };
+    auto openPlugBook = [&](services::plug::Book book) {
+        if (plugScreens == nullptr) {
+            notice("No codeplug editor");
+            return;
+        }
+        writeKeptSettings();
+        plugStep(plugScreens->openBook(book));
+    };
     // The screen a menu row opens.
     auto showItem = [&](menu::Item item) {
         switch (item) {
@@ -1592,6 +1711,9 @@ void uiMain(void *)
             show(View::KeyTest);
             break;
         default:
+            if (const services::plug::Book book = menu::bookOf(item); book != services::plug::Book::Count) {
+                openPlugBook(book);
+            }
             break;
         }
     };
@@ -1770,14 +1892,7 @@ void uiMain(void *)
 
     while (!os::stopRequested()) {
         if (settingsStore != nullptr) {
-            const services::SaveResult saved = settingsStore->flush(os::nowMs());
-            if (saved == services::SaveResult::Saved) {
-                log::info("ui") << "settings kept in the codeplug";
-            } else if (saved == services::SaveResult::Busy) {
-                log::info("ui") << "settings wait: the PC is programming";
-            } else if (saved == services::SaveResult::Failed) {
-                log::warning("ui") << "settings not kept: the codeplug write failed";
-            }
+            logStoreResult(settingsStore->flush(os::nowMs()));
         }
         Message m;
         // Whatever the last pass drew is one picture; a whole screen when
@@ -1887,6 +2002,11 @@ void uiMain(void *)
                                    } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
                                        show(View::Menu);
                                    }
+                                   return;
+                               }
+                               if (view == View::Codeplug) {
+                                   plugStep(plugScreens->key(e.key, e.type == Type::Press,
+                                       e.type == Type::Press || e.type == Type::Repeat));
                                    return;
                                }
                                if (channels != nullptr && (view == View::Standby || isList(view))) {
@@ -2033,6 +2153,13 @@ void uiMain(void *)
                                keepPreferences();
                            },
                            [&](const KeyLockReport &) { logLockSettings(); },
+                           [&](const PlugCommand &) {
+                               writeKeptSettings();
+                               if (!plugEditor->debugCommand(plugCommandText.view())) {
+                                   log::info("console") << "unknown command";
+                               }
+                               plugCommandWaiting.store(false);
+                           },
                            [&](const SettingsReport &) {
                                if (settingsStore != nullptr) {
                                    settingsStore->report();
@@ -2084,6 +2211,8 @@ void uiMain(void *)
                                if (channels != nullptr && moved != 0) {
                                    if (view == View::Menu) {
                                        menuStep(menuNav.turn(moved));
+                                   } else if (view == View::Codeplug) {
+                                       plugStep(plugScreens->knob(static_cast<int>(moved)));
                                    } else if (isList(view)) {
                                        zonePicker.move(moved);
                                        zonePicker.draw(d, listHint());
@@ -2281,11 +2410,12 @@ void uiMain(void *)
 
 } // namespace
 
-void start(Display &d, CodeplugSource *c, const board::Input *i, board::SettingsStore *k)
+void start(Display &d, CodeplugSource *c, const board::Input *i, board::PlugEditor *e, board::SettingsStore *k)
 {
     display = &d;
     codeplug = c;
     input = i;
+    plugEditor = e;
     settingsStore = k;
     log::setTap(onLogLine);
     uiTask.start("ui", 4, uiMain, nullptr);
@@ -2297,6 +2427,26 @@ bool post(const Message &message)
         return false;
     }
     return inbox.send(message);
+}
+
+bool takeRestart()
+{
+    return restartWanted.exchange(false);
+}
+
+bool plugCommand(std::string_view text)
+{
+    if (plugEditor == nullptr || plugCommandWaiting.load()) {
+        return false;
+    }
+    plugCommandText.clear();
+    plugCommandText << text;
+    plugCommandWaiting.store(true);
+    if (!post(PlugCommand{})) {
+        plugCommandWaiting.store(false);
+        return false;
+    }
+    return true;
 }
 
 } // namespace dmm::app::ui

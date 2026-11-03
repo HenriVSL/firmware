@@ -15,8 +15,10 @@
 #include "dmm/services/baseband.h"
 #include "dmm/services/casic_receiver.h"
 #include "dmm/services/d878uv2_calibration.h"
+#include "dmm/services/d878uv2_plug_editor.h"
 #include "dmm/services/d878uv2_programming.h"
 #include "dmm/services/d878uv2_settings_store.h"
+#include "dmm/services/plug_editor.h"
 #include "dmm/services/programming.h"
 #include "dmm/services/settings_store.h"
 #include "dmm/services/usb_channel.h"
@@ -28,6 +30,7 @@ using Baseband = services::NoBaseband;
 using Calibration = services::D878Uv2Calibration;
 using Programming = services::D878Uv2Programming;
 using SettingsStore = services::D878Uv2SettingsStore;
+using PlugEditor = services::D878Uv2PlugEditor;
 using Input = SimInput;
 using Battery = SimBattery;
 // No data port: the platform's pointer stays empty.
@@ -40,6 +43,7 @@ static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Calibration<Calibration>);
 static_assert(services::Programming<Programming>);
 static_assert(services::SettingsStore<SettingsStore>);
+static_assert(services::plug::Editor<PlugEditor>);
 static_assert(services::InputDevices<Input>);
 static_assert(services::BatterySensor<Battery>);
 static_assert(services::GpsPort<Gps>);

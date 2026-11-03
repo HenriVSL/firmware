@@ -368,9 +368,10 @@ void hal::boardMain()
     static dmm::services::D878Uv2Codeplug programmingCodeplug{storage};
     static dmm::services::D878Uv2CodeplugWriter codeplugWriter{storage, programmingCodeplug};
     static dmm::services::D878Uv2Programming programming{programmingCodeplug, codeplugWriter};
-    // Settings changed on the radio go through the same writer, never while
-    // the PC programs (beginLocalWrite); the ui task's reader then forgets
-    // which copies were valid.
+    // Settings changed on the radio and records saved in the codeplug editor
+    // go through the same writer, never while the PC programs
+    // (beginLocalWrite); the ui task's reader then forgets which copies were
+    // valid. Both write from the ui task, one at a time.
     static auto keepSettings = [](std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces) {
         using dmm::services::SaveResult;
         if (!programming.beginLocalWrite()) {
@@ -389,6 +390,11 @@ void hal::boardMain()
         return ok ? SaveResult::Saved : SaveResult::Failed;
     };
     static dmm::services::D878Uv2SettingsStore settingsStore{codeplug, keepSettings};
+    static auto writeRecord = [](std::uint32_t address, std::span<const std::uint8_t> data) {
+        const dmm::services::D878Uv2SettingsStore::Piece piece{address, data};
+        return keepSettings(std::span(&piece, 1));
+    };
+    static dmm::services::D878Uv2PlugEditor plugEditor{codeplug, writeRecord};
 
     adc().start();
     static BoardInput input;
@@ -476,6 +482,7 @@ void hal::boardMain()
         .audio = &audio,
         .calibration = &calibration,
         .codeplug = &codeplug,
+        .plugEditor = &plugEditor,
         .settingsStore = &settingsStore,
         .gps = &gps,
         .rtc = &rtc,

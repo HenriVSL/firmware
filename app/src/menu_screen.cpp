@@ -33,26 +33,6 @@ constexpr int ScrollW = 3;
 
 static_assert(4 + static_cast<int>(menu::TitleChars) * 6 + 4 + 5 * 6 <= 160, "a title and the place fit");
 
-// The title band: where the list is, and the place in it on the right.
-void drawTitleBand(Display &d, std::string_view title, std::size_t index, std::size_t count)
-{
-    lib::StaticString<10> place;
-    if (count > 1) {
-        place << index + 1 << '/' << count;
-    }
-    band(d, Top, TitleH,
-        {{4, Top + 1, cut(title, menu::TitleChars), &Body, p::Dim},
-            {d.width() - 4 - textWidth(Body, place.view()), Top + 1, place.view(), &Body, p::Rule}},
-        p::Panel);
-}
-
-void drawHintBar(Display &d, std::string_view hint)
-{
-    const int y = d.height() - StandbyScreen::HintH;
-    d.fillRect(0, y, d.width(), 1, p::Rule);
-    band(d, y + 1, StandbyScreen::HintH - 1, {{3, y + 2, hint, &Small, p::Dim}});
-}
-
 // A scroll bar at the right edge when @p count rows do not fit in @p shown;
 // the track and the bar are painted side by side, never one over the other.
 void drawScrollBar(Display &d, int top, int h, std::size_t first, int shown, std::size_t count)
@@ -81,7 +61,8 @@ void drawRow(Display &d, int y, const ListRow &row, bool on)
     const std::string_view shown = cut(value, room);
     band(d, y, RowH,
         {{6, y + 1, row.label, &Body, on ? p::Ground : p::Text},
-            {right - 4 - textWidth(Body, shown), y + 1, shown, &Body, on ? p::Ground : p::Dim}},
+            {right - 4 - textWidth(Body, shown), y + 1, shown, &Body, row.changed ? p::Warn : on ? p::Ground
+                                                                                                 : p::Dim}},
         fill, 0, right);
 }
 
@@ -207,6 +188,30 @@ void drawChoiceList(Display &d, const menu::Choices &choices, std::size_t cursor
 }
 
 } // namespace
+
+int bodyTop()
+{
+    return ListTop;
+}
+
+void drawTitleBand(Display &d, std::string_view title, std::size_t index, std::size_t count)
+{
+    lib::StaticString<10> place;
+    if (count > 1) {
+        place << index + 1 << '/' << count;
+    }
+    band(d, Top, TitleH,
+        {{4, Top + 1, cut(title, menu::TitleChars), &Body, p::Dim},
+            {d.width() - 4 - textWidth(Body, place.view()), Top + 1, place.view(), &Body, p::Rule}},
+        p::Panel);
+}
+
+void drawHintBar(Display &d, std::string_view hint)
+{
+    const int y = d.height() - StandbyScreen::HintH;
+    d.fillRect(0, y, d.width(), 1, p::Rule);
+    band(d, y + 1, StandbyScreen::HintH - 1, {{3, y + 2, hint, &Small, p::Dim}});
+}
 
 std::size_t firstShown(std::size_t cursor, std::size_t count, int rows)
 {

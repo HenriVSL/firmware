@@ -21,6 +21,7 @@ add_library(dmm_services STATIC
     src/channel_selector.cpp
     src/d878uv2_calibration.cpp
     src/d878uv2_codeplug.cpp
+    src/d878uv2_plug_editor.cpp
     src/d878uv2_preferences.cpp
     src/d878uv2_settings_store.cpp
     src/d878uv2_programming.cpp

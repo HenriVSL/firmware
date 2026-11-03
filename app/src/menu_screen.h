@@ -17,18 +17,30 @@
 /// pixel painted once per update, so nothing blanks before it is redrawn.
 namespace dmm::app::ui {
 
-/// One row of a list: a label, its value or empty, and whether Menu opens
-/// something from it (a ">" where it has no value).
+/// One row of a list: a label, its value or empty, whether Menu opens
+/// something from it (a ">" where it has no value), and whether the value
+/// is changed and not yet saved (drawn in the warning colour).
 struct ListRow
 {
     std::string_view label;
     std::string_view value;
     bool opens = false;
+    bool changed = false;
 };
 
 /// Rows a list screen shows at once, and a menu screen above its panel.
 inline constexpr int ListRows = 7;
 inline constexpr int MenuRows = 5;
+
+/// The y under the title band, where a screen's body starts.
+int bodyTop();
+
+/// The title band: @p title on the left, and on the right the place
+/// @p index + 1 of @p count where @p count is over one.
+void drawTitleBand(services::Display &d, std::string_view title, std::size_t index, std::size_t count);
+
+/// The hint bar at the bottom, naming the keys.
+void drawHintBar(services::Display &d, std::string_view hint);
 
 /// The first of @p rows rows shown when row @p cursor of @p count is chosen.
 std::size_t firstShown(std::size_t cursor, std::size_t count, int rows);

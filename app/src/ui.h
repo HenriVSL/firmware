@@ -11,6 +11,7 @@
 #include "dmm/services/nmea.h"
 
 #include <cstdint>
+#include <string_view>
 #include <variant>
 
 namespace dmm::app::ui {
@@ -125,6 +126,10 @@ struct KeyLockReport
 struct SettingsReport
 {
 };
+/// Runs the console command waiting for the codeplug editor (plugCommand).
+struct PlugCommand
+{
+};
 struct EncoderClicks
 {
     std::int32_t clicks; // since start
@@ -183,16 +188,25 @@ struct ClockCalibration
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration, PlugCommand>;
 
 /// Starts the ui task, which owns @p display.
-/// @p input (may be nullptr) gives the key labels; @p settingsStore (may
-/// be nullptr) keeps settings changed on the radio.
+/// @p input (may be nullptr) gives the key labels; @p plugEditor (may be
+/// nullptr) edits the codeplug; @p settingsStore (may be nullptr) keeps
+/// settings changed on the radio.
 void start(services::Display &display, services::CodeplugSource *codeplug, const board::Input *input,
-    board::SettingsStore *settingsStore);
+    board::PlugEditor *plugEditor, board::SettingsStore *settingsStore);
 
 /// Queues a message for the ui task; false when the queue is full or there
 /// is no display.
 bool post(const Message &message);
+
+/// True once after the codeplug editor saved a record the radio reads only
+/// at start: the radio should restart.
+bool takeRestart();
+
+/// Hands a console command to the codeplug editor (its debugCommand), run
+/// on the ui task; false while another is waiting or there is no editor.
+bool plugCommand(std::string_view text);
 
 } // namespace dmm::app::ui
