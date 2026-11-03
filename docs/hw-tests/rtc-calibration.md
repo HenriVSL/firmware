@@ -20,7 +20,7 @@ Exit, Up, Down). Each step starts where the one before ended.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | On the standby screen press Menu, Down four times, Menu, Down four times, Menu | `Settings > Clock`: Time zone, Shown as `Local`, Calibrate; the group's panel read `Time zone, local or UTC,` / `and calibration` before the last Menu |
+| 1 | On the standby screen press Menu, Up twice (Settings, the second row from the end), Menu, Down four times (Clock), Menu | `Settings > Clock`: Time zone, Shown as `Local`, Calibrate; the group's panel read `Time zone, local or UTC,` / `and calibration` before the last Menu |
 | 2 | Press Down; look | The panel reads `Home screen time: local,` / `or UTC with a Z` |
 | 3 | Press Menu, Down, Menu | `ui: clock shows UTC`; the row shows `UTC`; `settings kept` about 3 s later |
 | 4 | Press Exit until the standby screen is back | The clock shows UTC with a `Z`, such as `09:41Z`: the local time minus the time zone's offset |
