@@ -402,6 +402,12 @@ bool radioCommand(std::string_view command)
         posted = chipCommand(radio::ChipCommand::Chip::Fm, command, 3);
     } else if (lib::startsWith(command, "bb ")) {
         posted = chipCommand(radio::ChipCommand::Chip::Baseband, command, 3);
+    } else if (lib::startsWith(command, "plug ")) {
+        posted = ui::plugCommand(command.substr(5));
+    } else if (lib::startsWith(command, "prog ") && platform->programming != nullptr) {
+        if (!platform->programming->debugCommand(command.substr(5))) {
+            log::info("console") << "unknown command";
+        }
     } else {
         return false;
     }
@@ -494,6 +500,7 @@ void runCommand(std::string_view command)
             log::info("console") << "board: " << board;
         }
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
+        log::info("console") << "codeplug: plug peek <addr> [count], plug poke <addr> <byte>... (hex), prog watch on|off";
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
     } else if (command == "fault") {
@@ -681,6 +688,11 @@ void linkMain(void *)
         }
         // In program mode the PC waits for each answer: look often.
         const bool programming = platform->programming != nullptr && platform->programming->active(os::nowMs());
+        if (ui::takeRestart()) {
+            log::info("ui") << "codeplug edited on the radio: restarting";
+            flushLog();
+            platform->system.restart();
+        }
         if (platform->programming != nullptr && platform->programming->takeCodeplugChanged()) {
             log::info("programming") << "codeplug written from the PC: restarting";
             flushLog();
@@ -697,7 +709,7 @@ void start(Platform &p)
 {
     platform = &p;
     if (p.display != nullptr) {
-        ui::start(*p.display, p.codeplug, p.input, p.settingsStore);
+        ui::start(*p.display, p.codeplug, p.input, p.plugEditor, p.settingsStore);
     }
     if (p.input != nullptr) {
         input::start(*p.input);
