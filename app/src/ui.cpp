@@ -503,6 +503,9 @@ services::EventLog<LogRows> systemLog;
 constexpr int ActivityPages = 3;
 constexpr int HeardPage = 2;
 int activityPage = 0;
+// The activity pages were opened from the menu, so Exit goes back there;
+// else to the home screen.
+bool activityFromMenu = true;
 // The roaming repeater last logged as moved to, from 0; the uptime of the
 // last fix logged.
 int roamLogged = -1;
@@ -1740,6 +1743,7 @@ void uiMain(void *)
             show(View::Gps);
             break;
         case menu::Item::Activity:
+            activityFromMenu = true;
             openActivityPage(0);
             break;
         case menu::Item::AprsSend:
@@ -1748,6 +1752,7 @@ void uiMain(void *)
             notice("Position queued");
             break;
         case menu::Item::AprsHeard:
+            activityFromMenu = true;
             openHeard({});
             break;
         case menu::Item::Log:
@@ -1847,6 +1852,7 @@ void uiMain(void *)
             using Use = services::DedicatedModeState::KeyUse;
             const Use use = modeState.keyUse(key);
             if (use == Use::List && step) {
+                activityFromMenu = false;
                 openHeard({});
                 return;
             }
@@ -1866,6 +1872,7 @@ void uiMain(void *)
                 return;
             }
             if (press && key == Key::Front2) {
+                activityFromMenu = false;
                 openActivityPage(activityPage);
                 return;
             }
@@ -2082,11 +2089,17 @@ void uiMain(void *)
                                    return;
                                }
                                const bool step = e.type == Type::Press || e.type == Type::Repeat;
+                               // Back from the activity pages: to the menu they came
+                               // from, else home; P2 always home.
+                               auto leaveActivity = [&](Key key) {
+                                   show(activityFromMenu && key != Key::Front2 ? View::Menu : View::Standby);
+                               };
                                if (view == View::Activity) {
                                    if (step && (e.key == Key::Up || e.key == Key::Down)) {
                                        openActivityPage(activityPage + (e.key == Key::Up ? -1 : 1));
-                                   } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Menu)) {
-                                       show(View::Menu);
+                                   } else if (e.type == Type::Press &&
+                                       (e.key == Key::Exit || e.key == Key::Menu || e.key == Key::Front2)) {
+                                       leaveActivity(e.key);
                                    }
                                    return;
                                }
@@ -2097,8 +2110,8 @@ void uiMain(void *)
                                        openActivityPage(activityPage + (e.key == Key::Up ? -1 : 1));
                                    } else if (e.type == Type::Press && e.key == Key::Menu && stationShown < heardShownCount) {
                                        show(View::Station);
-                                   } else if (e.type == Type::Press && e.key == Key::Exit) {
-                                       show(View::Menu);
+                                   } else if (e.type == Type::Press && (e.key == Key::Exit || e.key == Key::Front2)) {
+                                       leaveActivity(e.key);
                                    }
                                    return;
                                }
@@ -2325,6 +2338,7 @@ void uiMain(void *)
                                            std::clamp(static_cast<int>(stationShown) + static_cast<int>(moved), 0, last));
                                        drawHeard();
                                    } else if (view == View::Standby && modeState.on()) {
+                                       activityFromMenu = false;
                                        openHeard({});
                                    } else if (view == View::Standby) {
                                        entryLength = 0;
