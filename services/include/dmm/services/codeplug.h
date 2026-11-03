@@ -143,8 +143,9 @@ struct RadioPreferences
     std::optional<std::uint8_t> dmrMicGainDb;
     std::optional<std::uint8_t> fmMicGainDb;
     /// Added to every receive and transmit frequency, for a radio whose
-    /// frequency reference has drifted (FrequencyOffset); 0 = none.
-    std::int16_t frequencyOffsetHz = 0;
+    /// frequency reference has drifted (FrequencyOffset); 0 = none. The
+    /// fork owner's radio is about 2 kHz off, so the fork starts at +2 kHz.
+    std::int16_t frequencyOffsetHz = 2000;
 };
 
 /// One repeater of a roaming zone.
