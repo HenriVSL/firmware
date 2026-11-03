@@ -2119,8 +2119,9 @@ void uiMain(void *)
                                                    << ' ' << static_cast<int>(h.beside) << ' ' << static_cast<int>(h.bottom)
                                                    << ", mic gain DMR " << keptGainText(p->dmrMicGainDb).view() << ", FM "
                                                    << keptGainText(p->fmMicGainDb).view() << ", frequency offset "
-                                                   << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view()
-                                                   << ", APRS receive " << (p->aprsReceive ? "on" : "off");
+                                                   << menu::valueText(menu::Item::FrequencyOffset, p->frequencyOffsetHz).view();
+                                   // This fork's own fields, on a line of their own.
+                                   log::info("ui") << "preferences (fork): APRS receive " << (p->aprsReceive ? "on" : "off");
                                } else {
                                    log::info("ui") << "no preferences record";
                                }
