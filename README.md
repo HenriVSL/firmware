@@ -61,6 +61,24 @@ short grouped settings menu. Settings changed on the radio are kept in
 the codeplug (`docs/settings-storage.md`). Key lock covers the keypad,
 side keys and knob, with auto lock and forced lock.
 
+**Codeplug editing.** Menu > Tools > Codeplug edits the codeplug on the
+radio: channels, zones, contacts, receive groups, the roaming repeaters
+and zones, radio IDs, the settings and APRS. Each record lists its known
+fields by name, on pages that P1 and P2 turn (a channel's Basic, DMR, FM
+and APRS), and then every one of its bytes, so a value without a named
+field can still be changed. Names are typed letter by letter (a key again
+for its next letter, `#` for capitals, `*` to delete, the knob through
+every character), frequencies and IDs on the keypad, and the rest chosen
+on the menu's value screens. Leaving a record with changes lists them,
+old and new; Menu saves, `#` drops them. A saved channel or zone takes
+effect at once; the settings restart the radio. Saving takes the same
+path as a write from the PC, never while one runs, after the settings
+kept on the radio, and reaches only the codeplug's own blocks. The
+console's `plug peek <address> [count]` and `plug poke <address>
+<byte>...` (hexadecimal) read and write codeplug bytes the same way.
+`prog watch on` logs each run of bytes a write from the PC changes, old
+and new, to learn where a setting lives.
+
 **Battery.** Battery save cycles the receiver while the radio is idle,
 with the codeplug's setting, and the backlight goes off after its light
 time. A battery monitor and auto power-off.
