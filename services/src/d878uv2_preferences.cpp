@@ -48,6 +48,7 @@ static_assert(FieldsEnd <= CrcAt);
 constexpr std::size_t ForkFieldsAt = FieldsAt + 64;
 constexpr std::size_t ForkFieldsEnd = ForkFieldsAt + 16;
 static_assert(FieldsEnd <= ForkFieldsAt && ForkFieldsEnd <= CrcAt);
+constexpr std::size_t AprsReceiveAt = ForkFieldsAt + 1; // 0 off, 1 on
 
 // The field bytes a record holds; a field past them reads as its default.
 class Fields
@@ -125,6 +126,7 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.home.bottom = f.choice(HomeBottomAt, d.home.bottom);
     p.dmrMicGainDb = f.upTo(DmrMicGainAt, microphone_gain::MaxDigitalDb);
     p.fmMicGainDb = f.upTo(FmMicGainAt, microphone_gain::MaxFmDb);
+    p.aprsReceive = f.flag(AprsReceiveAt, d.aprsReceive);
     p.frequencyOffsetHz = f.signed16(FrequencyOffsetAt, static_cast<std::int16_t>(FrequencyOffset::MaxHz), d.frequencyOffsetHz);
     return p;
 }
@@ -147,6 +149,7 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     const auto offset = static_cast<std::uint16_t>(p.frequencyOffsetHz);
     record[FrequencyOffsetAt] = static_cast<std::uint8_t>(offset);
     record[FrequencyOffsetAt + 1] = static_cast<std::uint8_t>(offset >> 8);
+    record[AprsReceiveAt] = p.aprsReceive ? 1 : 0;
     const std::uint32_t crc = lib::crc32(record.data(), CrcAt);
     for (std::size_t i = 0; i < 4; ++i) {
         record[CrcAt + i] = static_cast<std::uint8_t>(crc >> (8 * i));
