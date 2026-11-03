@@ -3,6 +3,7 @@
 
 #include "dmm/app/app.h"
 
+#include "aprs.h"
 #include "audio.h"
 #include "gps.h"
 #include "input.h"
@@ -494,8 +495,9 @@ void runCommand(std::string_view command)
             log::info("console") << "board: " << board;
         }
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
-        log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
+        log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>, gps fake <lat> <lon> (10^-4 degrees); clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
+        log::info("console") << aprs::consoleHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";
         flushLog();
@@ -559,12 +561,16 @@ void runCommand(std::string_view command)
     } else if (command == "gps" || lib::startsWith(command, "gps ")) {
         bool posted = false;
         std::int32_t needS[1] = {};
+        std::int32_t fakeE4[2] = {};
         if (command == "gps") {
             posted = gps::post(gps::Report{});
         } else if (command == "gps on" || command == "gps off") {
             posted = gps::post(gps::Power{command == "gps on"});
         } else if (command == "gps raw on" || command == "gps raw off") {
             posted = gps::post(gps::Raw{command == "gps raw on"});
+        } else if (numbersAfter(command, "gps fake ", 10, fakeE4, 2)) {
+            // A made-up position, in 10^-4 degrees, for tests.
+            posted = gps::post(gps::Fake{fakeE4[0] * 1000, fakeE4[1] * 1000});
         } else if (numbersAfter(command, "gps need ", 10, needS, 1)) {
             // The console's own need, for tests: a position every <seconds>, 0 = none.
             posted = gps::post(
@@ -578,6 +584,7 @@ void runCommand(std::string_view command)
             log::info("console") << "no GPS receiver";
         }
     } else if (radioCommand(command)) {
+    } else if (aprs::runCommand(command)) {
     } else if (!command.empty()) {
         log::info("console") << "unknown command, try help";
     }
@@ -705,7 +712,8 @@ void start(Platform &p)
     if (p.audio != nullptr) {
         audio::start(*p.audio);
     }
-    radio::start(p.fm, p.baseband);
+    radio::start(p.fm, p.baseband, p.modem);
+    aprs::start(p.aprsLink);
     if (p.gps != nullptr) {
         gps::start(*p.gps);
     }
