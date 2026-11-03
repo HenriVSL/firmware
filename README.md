@@ -75,7 +75,12 @@ it sleeps.
 
 **Clock.** The radio's real-time clock keeps UTC while the radio is off; a
 GPS fix corrects it. The home screen shows the local time from the
-codeplug's time zone.
+codeplug's time zone, or UTC as `HH:MMZ` (Menu > Settings > Clock >
+Shown as). Menu > Settings > Clock > Calibrate measures the clock against
+GPS time for 30 or 60 minutes and corrects its rate, so it keeps time
+between fixes and while the radio is off. The receiver's timing wanders
+by a few milliseconds, so a 30-minute run gets the rate to within about
+5 ppm (0.4 s a day); a 60-minute run does better.
 
 **Programming.** Codeplug tools that speak the radio's own programming
 protocol read and write the codeplug over USB. Tested with QDMR.
@@ -197,7 +202,8 @@ squelch type, power), Roaming (status, on or off, roaming zone), GPS
 Settings holds the setup in groups: Home screen (a preset, or what each
 row shows), Audio (DMR and FM microphone gain), Radio (frequency
 offset), Keys & battery (what the lock covers, auto lock, battery save),
-Clock (time zone) and GPS (satellite systems).
+Clock (time zone, local time or UTC, calibration) and GPS (satellite
+systems).
 Tools opens the log and the key test and shows the version. The panel
 under the list says what the chosen row does. Menu opens a group or a
 row's value screen, where Menu sets the value and Exit leaves it as it
@@ -207,8 +213,10 @@ Choosing GPS > Status opens the GPS screen, and Exit or Menu goes back to
 the list. The console's `gps raw on`
 logs every sentence the receiver sends; `gps query`, `gps restart` and
 `gps send` talk to the receiver itself; `gps need <s>` asks for a
-position every so many seconds (0: none). `time` logs the clock, and
-`time set YYYY-MM-DD HH:MM:SS` sets it (UTC).
+position every so many seconds (0: none). `time` logs the clock and its
+rate correction, `time set YYYY-MM-DD HH:MM:SS` sets it (UTC),
+`time cal <min>` calibrates it against GPS time for so many minutes (0
+stops a run), and `time cal reset` removes the rate correction.
 
 The GPS mark in the status bar, shown while the GPS is on:
 
