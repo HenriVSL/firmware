@@ -44,6 +44,8 @@ Fed feedAll(D878Uv2LinkBoardReader &r, const std::vector<std::uint8_t> &bytes)
         case Result::Line:
             out.lines.emplace_back(r.line());
             break;
+        case Result::BadFrame:
+        case Result::Byte:
         case Result::None:
             break;
         }
@@ -102,4 +104,118 @@ TEST_CASE("link board: a damaged frame is dropped and the next one still read")
     const Fed fed = feedAll(r, next);
     REQUIRE(fed.frames.size() == 1);
     CHECK(fed.frames[0] == good);
+}
+
+TEST_CASE("link board: other text lines and control bytes")
+{
+    std::vector<std::uint8_t> stream{0x06};
+    append(stream, "OK\r\nnoise");
+    stream.push_back(0x01); // spoils the line
+    append(stream, "x+VER:1\r\n");
+
+    D878Uv2LinkBoardReader r;
+    std::vector<std::string> lines;
+    std::vector<std::uint8_t> bytes;
+    for (std::uint8_t b : stream) {
+        const Result result = r.feed(b);
+        if (result == Result::Line) {
+            lines.emplace_back(r.line());
+        } else if (result == Result::Byte) {
+            bytes.push_back(r.byte());
+        }
+    }
+    REQUIRE(lines.size() == 2);
+    CHECK(lines[0] == "OK");
+    CHECK(lines[1] == "+VER:1");
+    CHECK(bytes == std::vector<std::uint8_t>{0x06});
+}
+
+TEST_CASE("link board: console commands")
+{
+    using CommandResult = D878Uv2LinkBoardReader::CommandResult;
+    std::array<std::uint8_t, D878Uv2LinkBoardReader::MaxCommand> out{};
+    std::size_t n = 0;
+    auto bytes = [&] { return std::vector<std::uint8_t>(out.begin(), out.begin() + static_cast<std::ptrdiff_t>(n)); };
+
+    CHECK(D878Uv2LinkBoardReader::command("AT+VER?", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{'A', 'T', '+', 'V', 'E', 'R', '?', '\r', '\n'});
+    CHECK(D878Uv2LinkBoardReader::command("hex EE 01 6", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{0xEE, 0x01, 0x06});
+    CHECK(D878Uv2LinkBoardReader::command("hex ee  0a", out, n) == CommandResult::Ok);
+    CHECK(bytes() == std::vector<std::uint8_t>{0xEE, 0x0A});
+
+    CHECK(D878Uv2LinkBoardReader::command("UPDATE", out, n) == CommandResult::Refused);
+    CHECK(n == 0);
+    CHECK(D878Uv2LinkBoardReader::command("program now", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("AT+Update", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("AT+UARTE=115200", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("at+atest=1", out, n) == CommandResult::Refused);
+    // "PROGRAM" in hex.
+    CHECK(D878Uv2LinkBoardReader::command("hex 50 52 4f 47 52 41 4d", out, n) == CommandResult::Refused);
+    CHECK(D878Uv2LinkBoardReader::command("hex 01 75 70 64 61 74 65 02", out, n) == CommandResult::Refused);
+
+    CHECK(D878Uv2LinkBoardReader::command("", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex 123", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex zz", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex ", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command("hex", out, n) == CommandResult::Invalid);
+    CHECK(D878Uv2LinkBoardReader::command(std::string(80, 'A'), out, n) == CommandResult::Invalid);
+}
+
+TEST_CASE("link board: frames counted by their check")
+{
+    const auto good = encodedFrame(">ok");
+    auto bad = encodedFrame("!6010.25N/02456.30E>Test");
+    const std::size_t badLength = bad.size();
+    bad[20] ^= 0x40;
+    const std::uint16_t received = static_cast<std::uint16_t>(bad[badLength - 2] | bad[badLength - 1] << 8);
+    const std::uint16_t computed = ax25::frameCheck({bad.data(), badLength - 2});
+
+    D878Uv2LinkBoardReader r;
+    std::vector<D878Uv2LinkBoardReader::BadFrame> failed;
+    auto feed = [&](const std::vector<std::uint8_t> &bytes) {
+        for (std::uint8_t b : bytes) {
+            if (r.feed(b) == Result::BadFrame) {
+                failed.push_back(r.badFrame());
+            }
+        }
+    };
+    auto packet = [](const std::vector<std::uint8_t> &frame) {
+        std::vector<std::uint8_t> s;
+        append(s, "+APRS:~");
+        s.insert(s.end(), frame.begin(), frame.end());
+        s.push_back(0x7E);
+        return s;
+    };
+
+    // A failed frame, ended by the next packet's header.
+    feed(packet(bad));
+    feed(packet(good));
+    REQUIRE(failed.size() == 1);
+    CHECK(failed[0].closed);
+    CHECK(failed[0].length == badLength);
+    CHECK(failed[0].receivedCheck == received);
+    CHECK(failed[0].computedCheck == computed);
+    CHECK(r.goodFrames() == 1);
+    CHECK(r.badFrames() == 1);
+
+    // A failed frame, ended by a pause.
+    feed(packet(bad));
+    CHECK(r.reset() == Result::BadFrame);
+    CHECK(r.badFrame().length == badLength);
+    CHECK(r.badFrames() == 2);
+    CHECK(r.reset() == Result::None);
+
+    // A frame cut off: no closing flag.
+    std::vector<std::uint8_t> cut;
+    append(cut, "+APRS:~");
+    cut.insert(cut.end(), good.begin(), good.begin() + 10);
+    feed(cut);
+    CHECK(r.reset() == Result::BadFrame);
+    CHECK_FALSE(r.badFrame().closed);
+    CHECK(r.badFrame().length == 10);
+
+    feed(packet(good));
+    CHECK(r.goodFrames() == 2);
+    CHECK(r.badFrames() == 3);
 }

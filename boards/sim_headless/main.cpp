@@ -183,6 +183,7 @@ int main(int argc, char *argv[])
     static SimRtc rtc;
     static SimModem modem;
     static SimAprsLink aprsLink;
+    static SimAudioSampler audioSampler;
     static dmm::app::Platform platform{
         .leds = leds,
         .logSink = logSink,
@@ -202,6 +203,7 @@ int main(int argc, char *argv[])
         .rtc = &rtc,
         .modem = &modem,
         .aprsLink = &aprsLink,
+        .audioSampler = &audioSampler,
     };
     dmm::app::start(platform);
     dmm::os::runScheduler();

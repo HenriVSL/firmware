@@ -93,6 +93,15 @@ inline constexpr Pin BatterySense{Port::C, 1};
 inline constexpr unsigned BatteryChannel = 11;
 inline constexpr int BatteryFullScaleMv = 13200;
 
+// The ADC's full scale (4095) is the 3.3 V supply.
+inline constexpr int AdcFullScaleMv = 3300;
+
+// Received audio from the FM transceiver on PC0, ADC channel 10, biased to
+// about a third of the supply. Measured with ADC2 paced by TIMER0 channel
+// 2, whose pin (PA10) is the PTT input, so the trigger reaches no pin.
+inline constexpr Pin ReceiveAudioSense{Port::C, 0};
+inline constexpr unsigned ReceiveAudioChannel = 10;
+
 // Held low from the first instructions on: the transmit path and power
 // amplifier enables, the speaker amplifier, its receive-audio switch and
 // the BT+APRS board's power.

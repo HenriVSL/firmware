@@ -44,6 +44,7 @@ add_library(dmm_services STATIC
     src/power.cpp
     src/roaming.cpp
     src/audio.cpp
+    src/audio_meter.cpp
     src/rda1846_transceiver.cpp
     src/sct3258_baseband.cpp
     src/text.cpp

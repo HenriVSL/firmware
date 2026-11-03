@@ -6,11 +6,13 @@
 // The D878UVII's parts that the app uses as concrete types.
 
 #include "dmm/board/board_aprs_link.h"
+#include "dmm/board/board_audio_sampler.h"
 #include "dmm/board/board_battery.h"
 #include "dmm/board/board_gps.h"
 #include "dmm/board/board_input.h"
 #include "dmm/board/board_modem.h"
 #include "dmm/board/board_rtc.h"
+#include "dmm/services/audio_meter.h"
 #include "dmm/services/casic_receiver.h"
 #include "dmm/services/d878uv2_calibration.h"
 #include "dmm/services/d878uv2_link_board.h"
@@ -43,6 +45,7 @@ using Rtc = ::board::BoardRtc;
 using Modem = ::board::BoardModem;
 using AprsLink = ::board::BoardAprsLink;
 using AprsLinkReader = services::D878Uv2LinkBoardReader;
+using AudioSampler = ::board::BoardAudioSampler;
 
 static_assert(services::FmTransceiver<Fm>);
 static_assert(services::Baseband<Baseband>);
@@ -58,5 +61,6 @@ static_assert(services::GpsReceiver<GpsReceiver>);
 static_assert(services::RealTimeClock<Rtc>);
 static_assert(services::PacketModem<Modem>);
 static_assert(services::SerialLink<AprsLink>);
+static_assert(services::AudioSampler<AudioSampler>);
 
 } // namespace dmm::board
