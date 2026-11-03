@@ -148,6 +148,8 @@ void setStation(const services::AprsSettings &settings);
 
 /// The console's APRS commands, for its help.
 const char *consoleHelp();
+/// The console's APRS receive commands, for its help.
+const char *receiveHelp();
 
 /// Runs an "aprs ..." console command; false if @p command is not one.
 bool runCommand(std::string_view command);
