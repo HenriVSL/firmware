@@ -4,6 +4,7 @@
 #include "dmm/services/d878uv2_codeplug.h"
 
 #include "d878uv2_layout.h"
+#include "dmm/os/os.h"
 #include "dmm/services/d878uv2_preferences.h"
 #include "dmm/services/microphone_gain.h"
 
@@ -719,7 +720,19 @@ bool D878Uv2CodeplugWriter::programPage()
             m_buffer[PageBytes - 4 + i] = ValidMark[i];
         }
     }
-    return m_storage.program(m_target + m_page * PageBytes, m_buffer) == StorageResult::Ok;
+    if (m_storage.program(m_target + m_page * PageBytes, m_buffer) != StorageResult::Ok) {
+        return false;
+    }
+    if (++m_sincePause >= PagesPerPause) {
+        m_sincePause = 0;
+        m_pause();
+    }
+    return true;
+}
+
+void D878Uv2CodeplugWriter::sleepOneTick()
+{
+    os::sleepMs(1);
 }
 
 bool D878Uv2CodeplugWriter::finishBlock()
