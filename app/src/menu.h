@@ -42,6 +42,7 @@ enum class Item : std::uint8_t
     RoamZone,
     GpsStatus, // opens the GPS screen
     Gps,
+    AprsMode, // holds the receiver on the APRS frequency
     AprsSend, // sends the position once
     AprsBeacon,
     AprsHeard, // opens the stations heard
@@ -59,6 +60,7 @@ enum class Item : std::uint8_t
     GpsSystems,
     AprsPower,
     AprsReceive,
+    AprsAudible,
     HomePreset, // a whole home screen layout at once
     HomeTop,
     HomeClock,
@@ -211,6 +213,9 @@ struct Settings
     std::uint16_t beaconIntervalS = 0;
     services::PowerLevel beaconPower = services::PowerLevel::Low;
     bool aprsReceive = true;
+    /// APRS mode on, and packets heard on the speaker meanwhile.
+    bool aprsMode = false;
+    bool aprsAudible = false;
 };
 
 /// A microphone gain choice of FromCodeplug + N follows the codeplug's

@@ -193,6 +193,11 @@ struct Packet
 {
     bool sent;
 };
+/// Turns a dedicated receive mode on (or Off), as the menu does (console).
+struct SetMode
+{
+    services::DedicatedMode mode;
+};
 /// The APRS heard list changed.
 struct AprsHeard
 {
@@ -211,7 +216,7 @@ struct AprsProblem
 };
 
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration, PlugCommand, Packet, AprsProblem, AprsHeard>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration, PlugCommand, Packet, AprsProblem, AprsHeard, SetMode>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels; @p plugEditor (may be

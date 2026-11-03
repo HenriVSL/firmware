@@ -508,7 +508,8 @@ TEST_CASE("preferences record: the fork's area follows the shared fields, unused
             continue;
         }
         // The fork's fields hold their defaults.
-        CHECK(r[i] == (i == 6 + 65 ? 1 : 0xFF));
+        CHECK(r[i] == (i == 6 + 65 ? 1 : i == 6 + 66 || i == 6 + 67 ? 0
+                                                                    : 0xFF));
     }
     // A record with only the shared fields still reads.
     Record shared = r;
@@ -565,6 +566,33 @@ TEST_CASE("preferences record: APRS receive at the fork's field byte 65")
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
     CHECK(q->aprsReceive);
+}
+
+TEST_CASE("preferences record: the dedicated mode and packet sound at field bytes 67 and 66")
+{
+    RadioPreferences p;
+    p.mode = dmm::services::DedicatedMode::Aprs;
+    p.aprsAudible = true;
+    Record r = encoded(p);
+    CHECK(r[6 + 66] == 1);
+    CHECK(r[6 + 67] == 1);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->mode == dmm::services::DedicatedMode::Aprs);
+    CHECK(q->aprsAudible);
+    // Out of range: none.
+    r[6 + 67] = 9;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->mode == dmm::services::DedicatedMode::Off);
+    // A record without the fork's area: none, and quiet.
+    r[5] = 11;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->mode == dmm::services::DedicatedMode::Off);
+    CHECK_FALSE(q->aprsAudible);
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")

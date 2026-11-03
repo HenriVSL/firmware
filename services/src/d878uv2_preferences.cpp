@@ -51,6 +51,8 @@ static_assert(FieldsEnd <= ForkFieldsAt && ForkFieldsEnd <= CrcAt);
 // The clock shown: 0 local time, 1 UTC.
 constexpr std::size_t ClockUtcAt = ForkFieldsAt + 0;
 constexpr std::size_t AprsReceiveAt = ForkFieldsAt + 1; // 0 off, 1 on
+constexpr std::size_t AprsAudibleAt = ForkFieldsAt + 2; // 0 off, 1 on
+constexpr std::size_t ModeAt = ForkFieldsAt + 3;        // DedicatedMode
 
 // The field bytes a record holds; a field past them reads as its default.
 class Fields
@@ -129,6 +131,8 @@ std::optional<RadioPreferences> decodePreferences(std::span<const std::uint8_t, 
     p.dmrMicGainDb = f.upTo(DmrMicGainAt, microphone_gain::MaxDigitalDb);
     p.fmMicGainDb = f.upTo(FmMicGainAt, microphone_gain::MaxFmDb);
     p.aprsReceive = f.flag(AprsReceiveAt, d.aprsReceive);
+    p.aprsAudible = f.flag(AprsAudibleAt, d.aprsAudible);
+    p.mode = f.choice(ModeAt, d.mode);
     p.frequencyOffsetHz = f.signed16(FrequencyOffsetAt, static_cast<std::int16_t>(FrequencyOffset::MaxHz), d.frequencyOffsetHz);
     p.clockUtc = f.flag(ClockUtcAt, d.clockUtc);
     return p;
@@ -154,6 +158,8 @@ void encodePreferences(const RadioPreferences &p, std::span<std::uint8_t, Prefer
     record[FrequencyOffsetAt + 1] = static_cast<std::uint8_t>(offset >> 8);
     record[ClockUtcAt] = p.clockUtc ? 1 : 0;
     record[AprsReceiveAt] = p.aprsReceive ? 1 : 0;
+    record[AprsAudibleAt] = p.aprsAudible ? 1 : 0;
+    record[ModeAt] = static_cast<std::uint8_t>(p.mode);
     const std::uint32_t crc = lib::crc32(record.data(), CrcAt);
     for (std::size_t i = 0; i < 4; ++i) {
         record[CrcAt + i] = static_cast<std::uint8_t>(crc >> (8 * i));

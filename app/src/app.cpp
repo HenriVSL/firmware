@@ -596,6 +596,7 @@ void runCommand(std::string_view command)
         log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
+        log::info("console") << aprs::receiveHelp();
         log::info("console") << probe::consoleHelp();
         log::info("console") << "tests: key <name> [long], knob <steps>, screen shot|text|on|off|watch <s>";
     } else if (lib::startsWith(command, "key ")) {
