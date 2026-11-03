@@ -26,7 +26,7 @@ constexpr Row HomeRows[] = {Item::HomePreset, Item::HomeTop, Item::HomeClock, It
 constexpr Row AudioRows[] = {Item::DmrMicGain, Item::FmMicGain};
 constexpr Row RadioRows[] = {Item::FrequencyOffset};
 constexpr Row KeysRows[] = {Item::KeyLock, Item::AutoLock, Item::BatterySave};
-constexpr Row ClockRows[] = {Item::TimeZone};
+constexpr Row ClockRows[] = {Item::TimeZone, Item::ClockShown, Item::ClockCalibration};
 constexpr Row GpsSettingsRows[] = {Item::GpsSystems};
 
 constexpr GroupInfo Groups[] = {
@@ -41,7 +41,7 @@ constexpr GroupInfo Groups[] = {
     {"Audio", "The microphone gain on DMR and FM", AudioRows},
     {"Radio", "Frequency offset for a drifted reference", RadioRows},
     {"Keys & battery", "The key lock and battery save", KeysRows},
-    {"Clock", "The time zone", ClockRows},
+    {"Clock", "Time zone, local or UTC, and calibration", ClockRows},
     {"GPS", "The satellite systems the receiver uses", GpsSettingsRows},
 };
 static_assert(std::size(Groups) == static_cast<std::size_t>(Group::Count));
@@ -64,6 +64,8 @@ constexpr ItemInfo Items[] = {
     {"Auto lock", "Lock the keys after this long without use", Kind::Value},
     {"Battery save", "Sleep between checks for a signal while quiet", Kind::Value},
     {"Time zone", "Local time's offset from UTC", Kind::Value},
+    {"Shown as", "Home screen time: local, or UTC with a Z", Kind::Value},
+    {"Calibrate", "Times the clock against GPS and corrects its rate", Kind::Value},
     {"Satellites", "Satellite systems the receiver uses", Kind::Value},
     {"Preset", "A whole layout at once; rows can then change", Kind::Value},
     {"Top line", "Small line at the top: talkgroup, zone, place", Kind::Value},
@@ -91,6 +93,9 @@ constexpr Fixed SquelchModes[] = {{static_cast<std::int32_t>(services::SquelchMo
 constexpr Fixed Powers[] = {{0, "Low"}, {1, "Mid"}, {2, "High"}, {3, "Turbo"}};
 constexpr Fixed LockCovers[] = {{0, "All"}, {1, "Keys+PTT"}, {2, "Keypad"}, {3, "Side+PTT"}};
 constexpr Fixed AutoLocks[] = {{0, "Off"}, {10, "10 s"}, {30, "30 s"}, {60, "60 s"}};
+constexpr Fixed ClockShowns[] = {{0, "Local"}, {1, "UTC"}};
+// Calibration runs in minutes; 0 stops the one under way.
+constexpr Fixed Calibrations[] = {{30, "30 min"}, {60, "60 min"}, {0, "Stop"}};
 constexpr Fixed BatterySaves[] = {{0, "Off"}, {1, "On", "150 ms"}, {2, "Fast wake", "70 ms"}};
 namespace g = services::gps_systems;
 constexpr Fixed GpsSystems[] = {{g::Gps | g::Beidou, "GPS + BeiDou"}, {g::Gps, "GPS"}, {g::Beidou, "BeiDou"},
@@ -154,6 +159,10 @@ std::span<const Fixed> fixedChoices(Item item)
         return BatterySaves;
     case Item::GpsSystems:
         return GpsSystems;
+    case Item::ClockShown:
+        return ClockShowns;
+    case Item::ClockCalibration:
+        return Calibrations;
     default:
         return {};
     }
@@ -320,6 +329,7 @@ Kept keptIn(Item item)
     case Item::DmrMicGain:
     case Item::FmMicGain:
     case Item::FrequencyOffset:
+    case Item::ClockShown:
         return Kept::Preferences;
     case Item::Squelch:
     case Item::RoamZone:
@@ -332,6 +342,7 @@ Kept keptIn(Item item)
     case Item::TimeZone:
     case Item::GpsSystems:
         return Kept::Settings;
+    case Item::ClockCalibration:
     case Item::RoamStatus:
     case Item::GpsStatus:
     case Item::Log:
@@ -377,6 +388,10 @@ std::int32_t choiceOf(Item item, const Settings &s)
         return s.batterySave;
     case Item::TimeZone:
         return s.timeZoneMinutes;
+    case Item::ClockShown:
+        return s.clockUtc ? 1 : 0;
+    case Item::ClockCalibration:
+        return s.clockCalibrationMinutes;
     case Item::GpsSystems:
         return s.gpsSystems;
     case Item::HomePreset:
@@ -453,6 +468,12 @@ void setChoice(Item item, std::int32_t value, Settings &s)
         break;
     case Item::TimeZone:
         s.timeZoneMinutes = static_cast<std::int16_t>(value);
+        break;
+    case Item::ClockShown:
+        s.clockUtc = value != 0;
+        break;
+    case Item::ClockCalibration:
+        s.clockCalibrationMinutes = byte;
         break;
     case Item::GpsSystems:
         s.gpsSystems = byte;
@@ -625,6 +646,14 @@ bool listChoices(Item item, Choices &out, const Settings &s)
         }
         return true;
     }
+    case Item::ClockCalibration:
+        // Stop only while a run is under way.
+        for (const Fixed &f : Calibrations) {
+            if (f.value != 0 || s.clockCalibrationMinutes != 0) {
+                out.add(f.value, f.text);
+            }
+        }
+        return true;
     case Item::FrequencyOffset:
         out.make(2 * static_cast<std::size_t>(OffsetSteps.maxSteps()) + 1, offsetChoiceValue, offsetChoiceText);
         out.setScale(OffsetCoarseSteps);

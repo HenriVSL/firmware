@@ -107,8 +107,10 @@ Age ageOf(std::uint32_t seconds);
 /// precision a row shows it.
 struct HomeReadings
 {
-    /// The local time in minutes, or -1 while it is not known.
+    /// The time shown in minutes, or -1 while it is not known; local time,
+    /// or UTC when @c clockUtc.
     std::int64_t clockMinutes = -1;
+    bool clockUtc = false;
     bool signalKnown = false;
     int signalDbm = 0;
     /// The battery voltage in 10 mV steps, 0 while it is not known.

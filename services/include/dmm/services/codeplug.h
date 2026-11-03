@@ -145,6 +145,8 @@ struct RadioPreferences
     /// Added to every receive and transmit frequency, for a radio whose
     /// frequency reference has drifted (FrequencyOffset); 0 = none.
     std::int16_t frequencyOffsetHz = 0;
+    /// The clock shows UTC rather than local time.
+    bool clockUtc = false;
 };
 
 /// One repeater of a roaming zone.

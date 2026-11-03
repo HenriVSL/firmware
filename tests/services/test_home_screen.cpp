@@ -116,6 +116,19 @@ TEST_CASE("the clock is redrawn each minute, only while it is shown")
     CHECK(changed(l, a, b) == 0);
 }
 
+TEST_CASE("the clock is redrawn when it changes between local time and UTC")
+{
+    HomeLayout l;
+    HomeReadings a;
+    a.clockMinutes = 600;
+    HomeReadings b = a;
+    b.clockUtc = true;
+    CHECK(changed(l, a, b) == rows::Clock);
+    CHECK(changed(l, b, b) == 0);
+    l.clock = false;
+    CHECK(changed(l, a, b) == 0);
+}
+
 TEST_CASE("a new signal level redraws only the rows that show it")
 {
     HomeReadings a;

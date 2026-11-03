@@ -63,7 +63,7 @@ std::uint8_t changedRows(const HomeLayout &layout, const HomeReadings &shown, co
 {
     const bool signal = shown.signalKnown != now.signalKnown || (now.signalKnown && shown.signalDbm != now.signalDbm);
     std::uint8_t rows = 0;
-    if (layout.clock && shown.clockMinutes != now.clockMinutes) {
+    if (layout.clock && (shown.clockMinutes != now.clockMinutes || shown.clockUtc != now.clockUtc)) {
         rows |= home_rows::Clock;
     }
     if (layout.middle == HomeLayout::Middle::Signal && signal) {
