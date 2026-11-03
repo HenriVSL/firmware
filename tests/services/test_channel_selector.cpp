@@ -280,3 +280,18 @@ TEST_CASE("each memory channel loaded goes through the adjust, the VFO not")
     CHECK(sel.current()->power == dmm::services::PowerLevel::High);
     CHECK(seen == std::vector<std::uint16_t>{11, 12, 11, 11});
 }
+
+TEST_CASE("reload reads the zone and the channel in use again")
+{
+    FakeCodeplug cp = sample();
+    ChannelSelector sel(cp);
+    REQUIRE(sel.load());
+    REQUIRE(name(sel) == "RPT");
+    cp.addChannel(11, 145'612'500, "RPT B");
+    cp.names[0] = "Home";
+    REQUIRE(sel.reload());
+    CHECK(name(sel) == "RPT B");
+    CHECK(sel.current()->receiveHz == 145'612'500);
+    CHECK(std::string(sel.zoneName()) == "Home");
+    CHECK(sel.position() == 2);
+}
