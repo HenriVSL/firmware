@@ -42,6 +42,9 @@ enum class Item : std::uint8_t
     RoamZone,
     GpsStatus, // opens the GPS screen
     Gps,
+    AprsSend, // sends the position once
+    AprsBeacon,
+    AprsHeard, // opens the stations heard
     Backlight,
     BacklightTime,
     DmrMicGain,
@@ -54,6 +57,8 @@ enum class Item : std::uint8_t
     ClockShown,       // local time or UTC
     ClockCalibration, // a run against GPS time; kept nowhere
     GpsSystems,
+    AprsPower,
+    AprsReceive,
     HomePreset, // a whole home screen layout at once
     HomeTop,
     HomeClock,
@@ -87,6 +92,7 @@ enum class Group : std::uint8_t
     Channel,
     Roaming,
     Gps,
+    Aprs,
     Display,
     Settings,
     Tools,
@@ -97,6 +103,7 @@ enum class Group : std::uint8_t
     Clock,
     GpsSettings,
     Codeplug,
+    AprsSettings,
     Count,
 };
 
@@ -106,6 +113,7 @@ enum class Kind : std::uint8_t
     Value,  // opens a screen to choose the value
     Screen, // opens a screen of its own
     Info,   // nothing; the about text says it all
+    Action, // does it at once, such as sending the position
 };
 
 /// One row of a group: an item, or a group that opens from it.
@@ -198,6 +206,11 @@ struct Settings
     std::uint8_t plugDmrMicGainDb = services::microphone_gain::StandardDb;
     std::uint8_t plugFmMicGainDb = services::microphone_gain::StandardDb;
     std::int16_t frequencyOffsetHz = 0; // a whole step of OffsetSteps
+    /// APRS: the time between automatic beacons (0 off), their power, and
+    /// receiving through the APRS receiver.
+    std::uint16_t beaconIntervalS = 0;
+    services::PowerLevel beaconPower = services::PowerLevel::Low;
+    bool aprsReceive = true;
 };
 
 /// A microphone gain choice of FromCodeplug + N follows the codeplug's
@@ -211,12 +224,13 @@ services::plug::Book bookOf(Item item);
 Item itemOf(services::plug::Book book);
 
 /// Where a setting is kept: the general settings, the radio's own
-/// preferences, the channel in use, or nowhere.
+/// preferences, the channel in use, the APRS settings, or nowhere.
 enum class Kept : std::uint8_t
 {
     Settings,
     Preferences,
     Channel,
+    Aprs,
     No,
 };
 Kept keptIn(Item item);

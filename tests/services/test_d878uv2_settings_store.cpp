@@ -228,6 +228,20 @@ TEST_CASE("settings store: zone, channel and preferences go out in one write, in
     CHECK_FALSE(q->roaming);
 }
 
+TEST_CASE("settings store: the APRS beacon interval and power go to the APRS settings")
+{
+    Radio r;
+    r.store.keepAprs(300, PowerLevel::High, 0);
+    CHECK(r.store.flush(D878Uv2SettingsStore::QuietMs) == SaveResult::Saved);
+    REQUIRE(r.writes.size() == 1);
+    CHECK(r.writes[0] == std::vector<std::uint32_t>{Settings + 0x100B, Settings + 0x103B});
+    CHECK(r.byte(Settings + 0x100B) == 10);
+    CHECK((r.byte(Settings + 0x103B) & 3) == 2);
+    // The same values again write nothing.
+    r.store.keepAprs(300, PowerLevel::High, 0);
+    CHECK(r.store.flush(D878Uv2SettingsStore::QuietMs) == SaveResult::Unchanged);
+}
+
 TEST_CASE("settings store: changes on several channels are kept and written together")
 {
     Radio r;
@@ -489,11 +503,12 @@ TEST_CASE("preferences record: the fork's area follows the shared fields, unused
     RadioPreferences p;
     const Record r = encoded(p);
     CHECK(r[5] == 80);
-    for (std::size_t i = 6 + 11; i < 6 + 64; ++i) {
-        CHECK(r[i] == 0xFF);
-    }
-    for (std::size_t i = 6 + 65; i < 6 + 80; ++i) {
-        CHECK(r[i] == 0xFF);
+    for (std::size_t i = 6 + 11; i < 6 + 80; ++i) {
+        if (i == 6 + 64) {
+            continue;
+        }
+        // The fork's fields hold their defaults.
+        CHECK(r[i] == (i == 6 + 65 ? 1 : 0xFF));
     }
     // A record with only the shared fields still reads.
     Record shared = r;
@@ -533,6 +548,23 @@ TEST_CASE("preferences record: the clock in UTC, at the fork's first field byte"
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
     CHECK_FALSE(q->clockUtc);
+}
+
+TEST_CASE("preferences record: APRS receive at the fork's field byte 65")
+{
+    RadioPreferences p;
+    p.aprsReceive = false;
+    Record r = encoded(p);
+    CHECK(r[6 + 65] == 0);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->aprsReceive);
+    // A record without the fork's area: on.
+    r[5] = 11;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->aprsReceive);
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")

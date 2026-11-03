@@ -79,3 +79,9 @@ SPDX-License-Identifier = "MIT"
 path = ["docs/hw-tests/plug-editor.md", "docs/plug-edit-status.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
+
+# Docs added with APRS.
+[[annotations]]
+path = ["docs/hw-tests/aprs.md"]
+SPDX-FileCopyrightText = "2026 Henri Lavikainen"
+SPDX-License-Identifier = "MIT"

@@ -57,7 +57,8 @@ struct KeyEvent
 struct Transmitting
 {
     bool on;
-    /// A call or an FM transmission of the user's, not a repeater wake-up.
+    /// A call or an FM transmission of the user's, not a repeater wake-up
+    /// or a packet.
     bool call;
 };
 /// A DMR call is heard (active) or over: who is calling and whom.
@@ -187,8 +188,30 @@ struct ClockCalibration
     std::uint8_t minutes;
 };
 
+/// Whether a queued packet went out, or was given up.
+struct Packet
+{
+    bool sent;
+};
+/// The APRS heard list changed.
+struct AprsHeard
+{
+};
+/// An APRS beacon could not be queued.
+struct AprsProblem
+{
+    enum class Kind : std::uint8_t
+    {
+        NoCallsign,
+        NoFrequency,
+        NoFix,
+        Busy,
+    };
+    Kind kind;
+};
+
 using Message = std::variant<Backlight, BacklightTime, ShowTestPattern, ShowLog, ShowKeyTest, ToggleView, PanelPower, Keys, KeyEvent, EncoderClicks,
-    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration, PlugCommand>;
+    EncoderRaw, Volume, Battery, SwitchingOff, Transmitting, Receiving, DmrCall, Roaming, ShowStandby, SetKeyLock, BatterySave, MicrophoneGain, KeyLockSettings, FrequencyOffset, KeyLockReport, SettingsReport, Notice, Gps, ClockRate, ClockCalibration, PlugCommand, Packet, AprsProblem, AprsHeard>;
 
 /// Starts the ui task, which owns @p display.
 /// @p input (may be nullptr) gives the key labels; @p plugEditor (may be
