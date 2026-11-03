@@ -29,8 +29,9 @@ when the transmission ends.
   channel, as in `home-screen.md`.
 - The log port open for the console commands; keys named as on the key
   test, "look" means looking at the radio's screen.
-- `A`, after a restart: press Menu, Down five times, Menu, Menu (Menu,
-  Tools, Activity). The menu remembers the row last chosen in each group.
+- `A`, after a restart: press Menu, Up (Tools, the last row), Menu, then
+  Down until Activity is chosen, Menu. The menu remembers the row last
+  chosen in each group.
 
 ## Steps
 
