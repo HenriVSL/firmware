@@ -23,6 +23,8 @@ BEFORE = [
     remember('battery_save', 'Settings/Keys & battery/Battery save'),
     'home',
     'restart',
+    'home',
+    lambda ctx: learn_top(ctx),
 ]
 
 UNDO = [
@@ -32,8 +34,21 @@ UNDO = [
 ]
 
 TOP = ['Channel', 'Roaming', 'GPS', 'Display', 'Settings', 'Tools']
-# The rows above the panel; Tools is scrolled to.
-SHOWN = TOP[:5]
+# The rows above the panel, first; a build with an APRS group lists it
+# after GPS, and has more rows in Tools.
+SHOWN = r'^Channel\n>\nRoaming\n>\nGPS\n>\n(APRS\n>\n)?Display\n>'
+TOOLS_ABOUT = ['The log, the key test and the version', 'Activity, the log, the key test and the version',
+               'Codeplug, activity, the log, key test and version']
+
+
+def learn_top(ctx):
+    """The top of the menu's row count, as <<top_n>>."""
+    r = ctx.radio
+    r.key('Menu')
+    w = r.where(fresh=True)
+    ctx.params['top_n'] = w.place.split('/')[1] if w.place else str(len(TOP))
+    ctx.evidence('the menu has %s rows at the top' % ctx.params['top_n'])
+    r.home()
 
 
 def level(text):
@@ -68,14 +83,15 @@ def roaming_on_first(ctx):
 
 STEPS = [
     Step(1, 'Menu from the standby screen', do=['home', 'key Menu'], expect=[
-        'title ^Menu$', 'place ^1/6$', 'row ^Channel >$',
-        'screen ' + r'\n'.join(r'%s\n>' % t for t in SHOWN),
+        'title ^Menu$', 'place ^1/<<top_n>>$', 'row ^Channel >$',
+        'screen ' + SHOWN,
         'screen ' + panel('Squelch and power of the channel in use'),
         'hint ^Menu: open   Exit: back$']),
-    Step(2, 'Down five times, then the knob wraps round', do=[
-        'at Channel', 'keys Down Down Down Down Down',
-        'check row ^Tools >$', 'check place ^6/6$', 'check screen ' + panel('The log, the key test and the version'),
-        'knob 1'], expect=['row ^Channel >$', 'place ^1/6$']),
+    Step(2, 'Tools last, then the knob wraps round', do=[
+        'at Channel', 'choose Tools',
+        'check row ^Tools >$', 'check place ^<<top_n>>/<<top_n>>$',
+        'check screen (?:' + '|'.join(panel(t) for t in TOOLS_ABOUT) + ')',
+        'knob 1'], expect=['row ^Channel >$', 'place ^1/<<top_n>>$']),
     Step(3, 'Menu opens Channel', do=['at Channel', 'key Menu'], expect=[
         'title ^Menu > Channel$', r'screen ^Squelch\n\d\nSquelch type\n\S+\nPower\n\S+',
         'screen ' + panel('Open, or 1 to 5: higher needs a stronger signal'),
@@ -116,14 +132,14 @@ STEPS = [
         r'check screen ^GPS$', 'check hint ^Exit: back$', 'key Exit'], expect=[
         'title ^Menu > GPS$', 'row ^Status']),
     Step(12, 'Display at the top: Brightness and its value screen; Exit leaves it', do=[
-        'at GPS/Status', 'keys Exit Down Menu', 'shot display',
+        'at GPS/Status', 'key Exit', 'choose Display', 'key Menu', 'shot display',
         'check title ^Menu > Display$', 'check row ^Brightness', r'check screen ^Light time$',
         'check screen ' + panel('Display brightness'), remember('brightness_12'),
         'key Menu', 'check title ^Brightness$', 'check kind ^spinner$', 'key Exit'], expect=[
         'title ^Menu > Display$', 'row ^Brightness', value_is(lambda p: p['brightness_12'])]),
     Step(13, 'Settings: its groups, Display no longer among them', do=[
         'at Display/Brightness', 'keys Exit Down Menu', 'shot settings'],
-         expect=['title ^Menu > Settings$', 'place ^1/[4-6]$', 'row ^Home screen >$',
+         expect=['title ^Menu > Settings$', 'place ^1/[4-7]$', 'row ^Home screen >$',
                  r'screen Home screen\n>\n(Audio\n>\n)?(Radio\n>\n)?Keys & battery\n>',
                  'screen ' + panel('What each row of the home screen shows'), r'noscreen ^Display$']),
     Step(14, 'Keys & battery: the long name alone', do=[
