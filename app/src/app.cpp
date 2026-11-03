@@ -471,6 +471,7 @@ void runCommand(std::string_view command)
         log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>, gps fake <lat> <lon> (10^-4 degrees); clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << aprs::consoleHelp();
+        log::info("console") << aprs::receiveHelp();
         log::info("console") << probe::consoleHelp();
     } else if (command == "fault") {
         log::info("console") << "crashing on purpose";

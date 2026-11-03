@@ -832,7 +832,12 @@ bool lendSampler(bool lent)
 const char *consoleHelp()
 {
     return "aprs, aprs mode on|off, aprs send [here], aprs every <s> (0 = off), aprs lead <ms>, aprs level <%>, "
-           "aprs board <text>|hex <bytes>, aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
+           "aprs board <text>|hex <bytes>";
+}
+
+const char *receiveHelp()
+{
+    return "aprs rx, aprs rx mcu on|off|any, aprs rx repair on|off";
 }
 
 bool runCommand(std::string_view command)
