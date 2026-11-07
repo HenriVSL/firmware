@@ -52,15 +52,18 @@ def gain_is(pattern):
     return expectation
 
 
-def fm_register(value):
-    """Expectation: the FM transceiver's voice gain register reads @p value
-    on the FM channel, selected again so the gain is applied."""
+def fm_registers(voice, transmit):
+    """Expectation: the FM transceiver's voice gain register (41) and its
+    transmit gain register (44) read @p voice and @p transmit on the FM
+    channel, selected again so the gain is applied."""
     def expectation(ctx):
         channel('{fm}')(ctx)
         ctx.radio.knob(1)
         ctx.radio.knob(-1)
-        line = ctx.radio.ask('fm 41', r'register 41 = ')
-        return value in line.text, '`%s` (want %s)' % (line.text, value)
+        a = ctx.radio.ask('fm 41', r'register 41 = ')
+        b = ctx.radio.ask('fm 44', r'register 44 = ')
+        ok = voice in a.text and transmit in b.text
+        return ok, '`%s`, `%s` (want %s, %s)' % (a.text, b.text, voice, transmit)
     return expectation
 
 
@@ -115,9 +118,11 @@ STEPS = [
         'cmd mic gain dmr 30', 'cmd mic gain fm 24', 'wait 5'], expect=[
         gain_is(r'DMR \+30 dB, FM \+24 dB$'), r'log \bsettings kept in the codeplug',
         settings_has(r'mic gain DMR \+30 dB, FM \+24 dB', 'preferences')]),
-    Step(4, 'FM voice gain at +24 dB', radio_only='no FM transceiver registers', expect=[fm_register('0726')]),
+    Step(4, 'FM at +24 dB: the top level and 3 dB of voice gain', radio_only='no FM transceiver registers',
+         expect=[fm_registers('0715', '0cf9')]),
     Step('5a', 'FM +8 dB', changes=True, do=['cmd mic gain fm 8'], expect=[gain_is(r'DMR \+30 dB, FM \+8 dB$')]),
-    Step('5b', 'FM voice gain at +8 dB', radio_only='no FM transceiver registers', expect=[fm_register('0706')]),
+    Step('5b', 'FM at +8 dB: the lowest level, 4 dB less voice gain', radio_only='no FM transceiver registers',
+         expect=[fm_registers('0709', '07f9')]),
     Step(6, 'Settings > Audio shows the dB', do=['goto Settings/Audio/DMR mic gain'], expect=[
         'title Audio$', r'screen ^DMR mic gain\n\+30 dB\nFM mic gain\n\+8 dB$']),
     Step(7, 'DMR mic gain\'s value screen', do=['at Settings/Audio/DMR mic gain', 'key Menu'], expect=[
@@ -133,12 +138,12 @@ STEPS = [
         gain_is(r'DMR \+14 dB \(codeplug\), FM \+18 dB \(codeplug\)$')]),
     Step(11, 'QDMR reads the same levels', radio_only='no QDMR port', after=['9'], do=['qdmr read mic-b.yaml'], expect=[
         yaml_has('mic-b.yaml', {'micGain': 4, 'fmMicGain': 8})]),
-    Step(12, 'FM voice gain at level 4, +18 dB', radio_only='no FM transceiver registers', after=['9'], expect=[
-        fm_register('0713')]),
+    Step(12, 'FM at level 4, +18 dB', radio_only='no FM transceiver registers', after=['9'], expect=[
+        fm_registers('070f', '0af9')]),
     Step(13, 'The menu shows Plug +N dB', do=['goto Settings/Audio/DMR mic gain'], expect=[
         r'screen ^DMR mic gain\nPlug \+\d+ dB\nFM mic gain\nPlug \+\d+ dB$']),
-    Step(14, 'FM +16 dB: the standard voice gain', radio_only='no FM transceiver registers', changes=True, do=[
-        'home', 'cmd mic gain fm 16'], expect=[fm_register('070f')]),
+    Step(14, 'FM +16 dB: the standard gains', radio_only='no FM transceiver registers', changes=True, do=[
+        'home', 'cmd mic gain fm 16'], expect=[fm_registers('070f', '09f9')]),
 ]
 
 # The calls: each transmits, and a person listens.
