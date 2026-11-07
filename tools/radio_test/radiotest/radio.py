@@ -27,15 +27,17 @@ DMRCONF = os.environ.get('DMRCONF') or os.path.expanduser(
 # The older build, whose write and read back change two more fields.
 OLD_QDMR = 'build-0.15.1'
 
-# Console commands that key the transmitter or change its power.
+# Console commands that key the transmitter or change its power. A roaming
+# search wakes the zone's repeaters.
 TRANSMIT_COMMANDS = [
     re.compile(p) for p in (
         r'^ptt\b', r'^key\s+ptt\b', r'^aprs\s+(send|beacon)\b', r'^dmr\s+pc\b', r'^fm\s+tx\s+(?!off\b)',
-        r'^fm\s+power\b', r'^bbtone\b', r'^beacon\b')
+        r'^fm\s+power\b', r'^bbtone\b', r'^beacon\b', r'^roam\s+now\b')
 ]
 # Log lines that show the transmitter keyed or its power changed.
 TRANSMIT_LINES = re.compile(
-    r'\b(dmr|fm): transmitting\b|\bfm: transmit (on|power)\b|\bui: power \d|\baprs: (sending|beacon sent)')
+    r'\b(dmr|fm): transmitting\b|\bfm: transmit (on|power)\b|\bui: power \d|\baprs: (sending|beacon sent)'
+    r'|\bdmr: repeater wake-up \d')
 # Log lines that show a setting changed.
 SETTING_LINES = re.compile(r'\bsettings: pending: settings|\bsettings kept in the codeplug')
 
