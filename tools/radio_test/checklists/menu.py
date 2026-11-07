@@ -108,9 +108,10 @@ STEPS = [
         'at Channel/Squelch', 'keys Menu Up Menu'], expect=[
         log_is(lambda p: r'\bui: squelch %d\b' % up(p['squelch'])),
         value_is(lambda p: shown(up(p['squelch']))), r'log@8 \bsettings kept in the codeplug']),
-    Step(7, 'Squelch type: two buttons, the one in use starred', do=[
+    Step(7, 'Squelch type: Carrier and CTCSS/DCS as buttons, the one in use starred', do=[
         'at Channel/Squelch', 'keys Down Menu', 'shot squelch-type'], expect=[
-        'title ^Squelch type$', 'kind ^buttons$', r'in_use ^\S', rows_count(2)]),
+        'title ^Squelch type$', 'kind ^buttons$', r'in_use ^\S', rows_count(2),
+        r'screen \bCarrier\n(\*\n)?CTCSS/DCS\b']),
     Step('8a', 'Power: four buttons, the power in use starred and chosen; Exit leaves it', do=[
         'key Exit', 'at Channel/Power', 'key Menu', 'shot power',
         'check title Power$', 'check kind ^buttons$', now(rows_count(4)),
