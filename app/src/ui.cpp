@@ -1980,6 +1980,10 @@ void uiMain(void *)
                                    roamLogged = r.site;
                                    logEvent(services::EventKind::RoamMove, static_cast<std::uint32_t>(r.site) + 1);
                                }
+                               // So is the repeater in use going lost.
+                               if (r.lost && !roam.lost && r.site >= 0) {
+                                   logEvent(services::EventKind::RoamLost, static_cast<std::uint32_t>(r.site) + 1);
+                               }
                                roam.searching = r.searching;
                                roam.lost = r.lost;
                                roam.site = r.site;
