@@ -53,14 +53,14 @@ def quiet_meter(ctx):
 
 
 def roaming_answers(pattern, what):
-    """Expectation: on the roaming channel, with roaming on, the screen
-    shows @p pattern within 30 s. Skips the step when roaming is off or no
+    """Expectation: on the roaming channel the screen shows @p pattern
+    within 30 s. Skips the step when the channel does not roam or no
     repeater answers."""
     def expectation(ctx):
         r = ctx.radio
         line = r.ask('roam', r'\broam: ')
-        if re.search(r'\broam: (off|roaming off)\b', line.text):
-            raise Skipped('roaming is off: `%s`' % line.text)
+        if re.search(r'\broam: (off\b|roaming off\b|not a roaming channel)', line.text):
+            raise Skipped('not roaming: `%s`' % line.text)
         end = time.monotonic() + 30
         rx = re.compile(pattern, re.M)
         while time.monotonic() < end:

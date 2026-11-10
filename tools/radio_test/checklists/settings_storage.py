@@ -262,10 +262,10 @@ STEPS = [
     Step(9, 'Another zone, two channels on: all in the codeplug line', changes=True, timeout=8, do=[
         'home', 'key P1', 'key Down', 'key Menu', 'knob 2', 'wait 4'], expect=[
         settings_has(r'squelch 4/\d+, zone \d+/\d+, light 2 30 s, .*GPS on systems 1\b', 'codeplug'),
-        settings_has(r'roaming off', 'preferences')]),
+        settings_has(r'auto roaming off', 'codeplug')]),
     Step(10, 'Kept across a restart: zone, channel, light, power, squelch type, roaming',
          radio_only='nothing is kept across a restart', do=['restart'], expect=[
-             r'log \broam: roaming off', settings_has(r'squelch 4/\d+, zone \d+/\d+, light 2 30 s', 'codeplug'),
+             r'log \broam: .*\bautomatic off', settings_has(r'squelch 4/\d+, zone \d+/\d+, light 2 30 s', 'codeplug'),
              lambda ctx: (ctx.radio.goto('Roaming/Roaming').value == 'Off', ctx.radio.where().summary())],
          human='The screen is dimmer (level 2) and on the zone and channel of step 9; the channel of step 7 has '
                'its new power and squelch type.'),
@@ -276,8 +276,8 @@ STEPS = [
          do=[to_tone_channel], expect=[channels_while_programming], undo=[put_squelch_types_back]),
     Step(13, 'QDMR round trip: read', radio_only='no QDMR port', do=['qdmr read a.yaml'], expect=[
         settings_has(r'squelch', 'codeplug')]),
-    Step(14, 'QDMR write; the radio restarts; the record kept', radio_only='no QDMR port', timeout=10, do=[
-        'qdmr write a.yaml'], expect=[settings_has(r'roaming off', 'preferences')]),
+    Step(14, 'QDMR write; the radio restarts; Auto Roaming still off', radio_only='no QDMR port', timeout=10, do=[
+        'qdmr write a.yaml'], expect=[settings_has(r'auto roaming off', 'codeplug')]),
     Step(15, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'qdmr read b.yaml', 'qdmr diff a.yaml b.yaml'], expect=['nodiff']),
     Step(16, 'ui stack', radio_only='the simulator reports no stack words', timeout=75, expect=['stack ui >50']),

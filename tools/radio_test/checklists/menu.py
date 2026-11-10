@@ -183,13 +183,13 @@ STEPS = [
          expect=['title ^Menu > Channel$', 'screen ^Squelch\n<<squelch_22>>$', 'screen ^Power\n<<power>>$']),
     Step('24a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'open Roaming/Roaming', 'set Off'],
          expect=[
-        r'log \bui: roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
+        r'log \bui: auto roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
     Step('24b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
          do=['home', 'restart', 'goto Roaming/Roaming'], expect=[
-             'row ^Roaming Off$', settings_has(r'roaming off', 'preferences')]),
+             'row ^Roaming Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(25, 'QDMR round trip keeps the menu\'s values', radio_only='no QDMR port', timeout=10, do=[
         'home', 'qdmr read menu-a.yaml', 'qdmr write menu-a.yaml', 'goto Roaming/Roaming'], expect=[
-        'row ^Roaming Off$', settings_has(r'roaming off', 'preferences')]),
+        'row ^Roaming Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(26, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'home', 'qdmr read menu-b.yaml', 'qdmr diff menu-a.yaml menu-b.yaml'], expect=['nodiff']),
     Step(27, 'Fast knob by hand: only what changes is redrawn',
