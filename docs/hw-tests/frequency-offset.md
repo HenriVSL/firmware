@@ -84,18 +84,20 @@ step starts where the one before ended.
 Run 2026-11-03 on a D878UVII PLUS, with this branch, the settings store,
 menu, home screen and microphone gain branches, the write stall branch
 and the loader in one image. No frequency counter was at hand, so the
-steps that read one are open.
+steps that read one are open. Run again 2026-11-14 (release build, with
+the menu's review changes, the test tools and the loader), by the radio
+test runner: steps 1.1, 2.1-2.9, 2.11-2.13, 3.1-3.3 and 4.1-4.5 pass.
 
 | # | Result |
 | --- | --- |
 | 1.1 | Pass |
 | 1.2 | Open: needs a frequency counter |
-| 2.1 | To be run again (Keys and Battery in Settings) |
+| 2.1 | Pass (2026-11-14): Home screen, Audio, Radio, Keys, Battery |
 | 2.2-2.4 | Pass |
-| 2.5-2.9 | To be run again (the offset tried while it is chosen) |
+| 2.5-2.9 | Pass (2026-11-14): `fm: frequency offset` at each knob click and with the fourth Up, before Menu; Exit puts `0 Hz` back with no `settings kept`; Menu keeps `+2000 Hz` |
 | 2.10 | Open: needs a frequency counter |
 | 2.11, 2.12 | Pass |
-| 2.13 | To be run again (Exit puts the offset back) |
+| 2.13 | Pass (2026-11-14): `fm: frequency offset +2000 Hz` again on Exit |
 | 3.1-3.3 | Pass |
 | 3.4 | Open: needs a frequency counter |
 | 4.1 | Pass for the log line; the counter reading open |
