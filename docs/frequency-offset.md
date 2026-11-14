@@ -34,7 +34,9 @@ most; a radio used on both bands alike takes a value between the two.
 
 Menu > Settings > Radio > Freq offset opens the offset large, with its
 place on a scale. The knob moves it one step (62.5 Hz), Up and Down
-500 Hz; it stops at either end. Menu sets it, Exit leaves it as it was.
+500 Hz; it stops at either end. The radio tunes with each step at once,
+so a signal can be listened to while the offset is chosen; Menu keeps
+the offset, Exit puts back the one in use before.
 
 The console's `fm offset <Hz>` sets it too: `fm offset -1500`,
 `fm offset +62`, `fm offset 0`. `fm status` shows the offset applied.

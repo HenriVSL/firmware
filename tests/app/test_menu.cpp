@@ -346,6 +346,7 @@ TEST_CASE("a value screen tries its value while chosen where that is harmless, a
     CHECK(previews(Item::Backlight));
     CHECK(previews(Item::SquelchMode));
     CHECK(previews(Item::TimeZone));
+    CHECK(previews(Item::FrequencyOffset));
     // Not where a step would transmit, search, switch a receiver or lock
     // the keys.
     CHECK(!previews(Item::Power));

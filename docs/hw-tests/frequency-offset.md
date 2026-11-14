@@ -31,19 +31,19 @@ step starts where the one before ended.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | On the standby screen press Menu, Down four times, Menu | `Menu > Settings`, `1/6`: Home screen, Audio, Radio, Keys & battery, Clock, and a scroll bar for GPS |
+| 1 | On the standby screen press Menu, Down four times, Menu | `Menu > Settings`, `1/6`: Home screen, Audio, Radio, Keys, Battery, and a scroll bar for Clock |
 | 2 | Press Down twice; look | Radio at `3/6`, with `>`; the panel reads `Frequency offset for a` / `drifted reference` |
 | 3 | Press Menu; look | `Settings > Radio`: the row Freq offset with `0 Hz`; the panel `Shifts every frequency;` / `Up and Down 500 Hz` |
 | 4 | Press Menu; look | Title `Freq offset`; `0 Hz` large between arrows; a marker in the middle of a track; `In use: 0 Hz` under it |
-| 5 | Knob 1 on; look; knob 2 back; look | `+62.5 Hz`, then `-62.5 Hz`; the marker moves a little each click |
+| 5 | Knob 1 on; look; knob 2 back; look | `+62.5 Hz`, then `-62.5 Hz`; the marker moves a little each click; the radio tunes with each at once: `fm: frequency offset +62.5 Hz`, `0 Hz`, `-62.5 Hz` |
 | 6 | Press Up four times; look | `+1937.5 Hz` |
-| 7 | Press Exit; look | The list shows `0 Hz`; no `frequency offset` line in the log |
-| 8 | Press Menu, then Up four times; look | `+2000 Hz` |
-| 9 | Press Menu; look | `fm: frequency offset +2000 Hz`; the list shows `+2000 Hz`; `settings kept` about 3 s later |
+| 7 | Press Exit; look | `fm: frequency offset 0 Hz` (the offset in use before, back); the list shows `0 Hz`; no `settings kept` |
+| 8 | Press Menu, then Up four times; look | `+2000 Hz`; `fm: frequency offset +2000 Hz` with the last press |
+| 9 | Press Menu; look | The list shows `+2000 Hz`; `settings kept` about 3 s later |
 | 10 | Hold PTT for about 3 s; read the counter | 2000 Hz above the reading of 1.2, within the counter's accuracy |
 | 11 | Press Menu, then Up eight times; look; knob 1 on; look | `+5000 Hz` after the sixth press, and it stays there: neither Up nor the knob goes round to the other end |
 | 12 | Press Down twenty times; look; knob 1 back; look | `-5000 Hz`, and it stays there |
-| 13 | Press Exit | The list still shows `+2000 Hz` |
+| 13 | Press Exit | `fm: frequency offset +2000 Hz`; the list still shows `+2000 Hz` |
 
 ## 3. Kept across a restart
 
@@ -90,9 +90,12 @@ steps that read one are open.
 | --- | --- |
 | 1.1 | Pass |
 | 1.2 | Open: needs a frequency counter |
-| 2.1-2.9 | Pass |
+| 2.1 | To be run again (Keys and Battery in Settings) |
+| 2.2-2.4 | Pass |
+| 2.5-2.9 | To be run again (the offset tried while it is chosen) |
 | 2.10 | Open: needs a frequency counter |
-| 2.11-2.13 | Pass |
+| 2.11, 2.12 | Pass |
+| 2.13 | To be run again (Exit puts the offset back) |
 | 3.1-3.3 | Pass |
 | 3.4 | Open: needs a frequency counter |
 | 4.1 | Pass for the log line; the counter reading open |
