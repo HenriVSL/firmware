@@ -120,7 +120,11 @@ def satellites_one_font(ctx):
     heights = {}
     for _ in range(7):
         w = r.where(fresh=True)
-        big = [run for run in w.runs if run.text.strip() == w.value]
+        # The value between the arrows, not a status bar mark of the
+        # same text (GPS).
+        arrows = [run for run in w.runs if run.text in ('<', '>') and run.height == 24]
+        top = arrows[0].y if arrows else 20
+        big = [run for run in w.runs if run.text.strip() == w.value and top <= run.y < top + 24]
         if big:
             heights[w.value] = big[0].height
         r.knob(1)
