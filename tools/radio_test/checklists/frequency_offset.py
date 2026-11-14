@@ -59,7 +59,7 @@ STEPS = [
          human=counter('note measured minus nominal: the radio\'s own error E.')),
     Step('2.1', 'Settings with Radio', do=['goto Settings/Home screen'], expect=[
         'title ^Menu > Settings$', 'place ^1/[67]$',
-        r'screen ^Home screen\n>\nAudio\n>\nRadio\n>\nKeys & battery\n>']),
+        r'screen ^Home screen\n>\nAudio\n>\nRadio\n>\nKeys\n>\nBattery\n>']),
     Step('2.2', 'Radio at 3/6', do=['choose Radio'], expect=[
         'place ^3/[67]$', 'row ^Radio >$', 'screen ' + panel('Frequency offset for a drifted reference')]),
     Step('2.3', 'Settings > Radio', do=['key Menu'], expect=[
@@ -67,15 +67,15 @@ STEPS = [
         'screen ' + panel('Shifts every frequency; Up and Down 500 Hz')]),
     Step('2.4', 'The value screen', do=['key Menu', 'shot offset'], expect=[
         'title ^Freq offset$', 'kind ^spinner$', 'value ^0 Hz$', 'in_use ^0 Hz$']),
-    Step('2.5', 'The knob: 62.5 Hz a click', do=['knob 1', r'check value ^\+62\.5 Hz$', 'knob -2'], expect=[
-        r'value ^-62\.5 Hz$']),
+    Step('2.5', 'The knob: 62.5 Hz a click, tuned at once', do=['knob 1', r'check value ^\+62\.5 Hz$', 'knob -2'],
+         expect=[r'value ^-62\.5 Hz$', r'log \bfm: frequency offset \+62\.5 Hz', r'log \bfm: frequency offset -62\.5 Hz']),
     Step('2.6', 'Up four times', do=['keys Up Up Up Up'], expect=[r'value ^\+1937\.5 Hz$']),
-    Step('2.7', 'Exit leaves it', do=['key Exit'], expect=['row ^Freq offset 0 Hz$', r'nolog \bfrequency offset\b']),
-    Step('2.8', 'Up four times from 0', do=['at ' + ROW, 'key Menu', 'keys Up Up Up Up'], expect=[
-        r'value ^\+2000 Hz$']),
+    Step('2.7', 'Exit puts it back', do=['key Exit', 'wait 4'], expect=[
+        'row ^Freq offset 0 Hz$', r'log \bfm: frequency offset 0 Hz', r'nolog \bsettings kept in the codeplug']),
+    Step('2.8', 'Up four times from 0, tuned at once', do=['at ' + ROW, 'key Menu', 'keys Up Up Up Up'], expect=[
+        r'value ^\+2000 Hz$', r'log \bfm: frequency offset \+2000 Hz']),
     Step('2.9', 'Set +2000 Hz', changes=True, timeout=8, do=['key Menu'], expect=[
-        r'log \bfm: frequency offset \+2000 Hz', r'row ^Freq offset \+2000 Hz$',
-        r'log@8 \bsettings kept in the codeplug']),
+        r'row ^Freq offset \+2000 Hz$', r'log@8 \bsettings kept in the codeplug']),
     Step('2.10', '2000 Hz above the radio\'s own error', transmit=True, do=ptt(), expect=[r'log \bfm: transmitting'],
          human=counter('2000 Hz above the reading of 1.2.')),
     Step('2.11', 'The top end: +5000 Hz, no wrap', do=[
@@ -83,7 +83,8 @@ STEPS = [
          expect=[r'value ^\+5000 Hz$']),
     Step('2.12', 'The bottom end: -5000 Hz, no wrap', do=['keys ' + ' '.join(['Down'] * 20), 'knob -1'], expect=[
         r'value ^-5000 Hz$']),
-    Step('2.13', 'Exit: still +2000 Hz', do=['key Exit'], expect=[r'row ^Freq offset \+2000 Hz$']),
+    Step('2.13', 'Exit: +2000 Hz back', do=['key Exit'], expect=[
+        r'row ^Freq offset \+2000 Hz$', r'log \bfm: frequency offset \+2000 Hz']),
     Step('3.1', 'Kept across a restart', radio_only='nothing is kept across a restart', do=['home', 'restart'],
          expect=[r'log \bfm: frequency offset \+2000 Hz', status_ends('offset +2000 Hz')]),
     Step('3.2', 'In the preferences record', expect=[settings_has(r'frequency offset \+2000 Hz(,|$)', 'preferences')]),

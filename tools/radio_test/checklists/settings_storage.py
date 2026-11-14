@@ -205,8 +205,8 @@ BEFORE = [
     remember('roam_zone', 'Roaming/Roam zone'),
     remember('brightness', 'Display/Brightness'),
     remember('light_menu', 'Display/Light time'),
-    remember('gps', 'GPS/Receiver'),
-    remember('satellites', 'Settings/GPS/Satellites', 'in_use'),
+    remember('gps', 'GPS/Enabled'),
+    remember('satellites', 'GPS/Satellites', 'in_use'),
     remember('time_zone', 'Settings/Clock/Time zone'),
     'home',
 ]
@@ -218,8 +218,8 @@ UNDO = [
     restore('Roaming/Roam zone', 'roam_zone'),
     restore('Display/Brightness', 'brightness'),
     restore('Display/Light time', 'light_menu'),
-    restore('GPS/Receiver', 'gps'),
-    restore('Settings/GPS/Satellites', 'satellites'),
+    restore('GPS/Enabled', 'gps'),
+    restore('GPS/Satellites', 'satellites'),
     restore('Settings/Clock/Time zone', 'time_zone'),
     put_console_values,
     'home',
@@ -256,7 +256,7 @@ STEPS = [
          do=[other_roam_zone], expect=[r'log@8 \bsettings kept in the codeplug']),
     Step(8, 'Display, GPS, satellites, time zone: one write after the last', changes=True, timeout=8, do=[
         set_to('Display/Brightness', '2'), set_to('Display/Light time', '30 s'),
-        set_to('GPS/Receiver', 'On'), set_to('Settings/GPS/Satellites', 'GPS'),
+        set_to('GPS/Enabled', 'On'), set_to('GPS/Satellites', 'GPS'),
         'open Settings/Clock/Time zone', 'key Up', 'key Menu', 'home'], expect=[
         r'log@8 \bsettings kept in the codeplug']),
     Step(9, 'Another zone, two channels on: all in the codeplug line', changes=True, timeout=8, do=[

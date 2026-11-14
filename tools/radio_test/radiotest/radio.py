@@ -251,7 +251,7 @@ class Radio:
     def on_log_or_key_test(w):
         """The key test, or the log page (lines of the small font from the
         left edge), which held Exit leaves."""
-        if any(r.text.startswith('Keys (Exit=log)') for r in w.runs):
+        if any(r.text.startswith(('Keys (hold Exit)', 'Keys (Exit=log)')) for r in w.runs):
             return True
         return not w.title and sum(1 for r in w.runs if r.x == 0 and r.height == 8) >= 5
 

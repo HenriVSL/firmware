@@ -6,12 +6,17 @@ Each step checks the screen with `screen text` after its keys. A step
 starts with `at` where the checklist relies on where the step before
 ended, so a step that failed does not lead the next one astray.
 """
-from _helpers import (log_is, now, panel, press_while_watching, remember, restore, rows_count, settings_has,
-                      standby, value_is)
+from _helpers import (channel, log_is, now, panel, press_while_watching, remember, restore, rows_count,
+                      settings_has, standby, value_is)
 from radiotest.runner import Step
 
 TITLE = 'Menu: groups by use, large value screens, values kept'
 SOURCE = 'docs/hw-tests/menu.md (feat/offset-numeric)'
+
+PARAMS = {
+    'fm': 'UHF/Calling 70cm',  # an FM channel (step 31)
+    'roam': 'UHF/TG244 Finland',  # a roaming DMR channel (step 32)
+}
 
 # The values to put back, then a restart: the menu starts on the first
 # row of each group, as the checklist expects.
@@ -20,7 +25,7 @@ BEFORE = [
     remember('squelch_type', 'Channel/Squelch type'),
     remember('power', 'Channel/Power'),
     remember('roaming', 'Roaming/Roaming'),
-    remember('battery_save', 'Settings/Keys & battery/Battery save'),
+    remember('battery_save', 'Settings/Battery/Battery save'),
     'home',
     'restart',
     'home',
@@ -37,8 +42,8 @@ TOP = ['Channel', 'Roaming', 'GPS', 'Display', 'Settings', 'Tools']
 # The rows above the panel, first; a build with an APRS group lists it
 # after GPS, and has more rows in Tools.
 SHOWN = r'^Channel\n>\nRoaming\n>\nGPS\n>\n(APRS\n>\n)?Display\n>'
-TOOLS_ABOUT = ['The log, the key test and the version', 'Activity, the log, the key test and the version',
-               'Codeplug, activity, the log, key test and version']
+TOOLS_ABOUT = ['The log and the version', 'The log, the key test and the version',
+               'Activity, the log, the key test and the version', 'Codeplug, activity, the log, key test and version']
 
 
 def learn_top(ctx):
@@ -81,6 +86,48 @@ def roaming_on_first(ctx):
         r.home()
     ctx.since = r.mark()
 
+def log_after_exit(ctx):
+    """Expectation: Exit put the squelch noted at the start back."""
+    return log_is(lambda p: r'\bui: squelch %d\b' % level(p['squelch']))(ctx)
+
+
+def key_test_or_standby(ctx):
+    """Action: from the log, held Exit: the key test in a debug build
+    (its title naming held Exit, then held Exit again), else standby."""
+    r = ctx.radio
+    r.key('Exit', long=True)
+    w = r.where(fresh=True)
+    if any(run.text.startswith('Keys (hold Exit)') for run in w.runs):
+        ctx.evidence('a debug build: the key test, `Keys (hold Exit)`')
+        r.key('Exit', long=True)
+    else:
+        ctx.evidence('no key test (a release build): %s' % w.summary()[:60])
+
+
+def remember_in_use(key):
+    """Action: keeps the value screen's value in use as ctx.params[key]."""
+    def action(ctx):
+        ctx.params[key] = ctx.radio.where(fresh=True).in_use
+        ctx.evidence('remembered %s = `%s`' % (key, ctx.params[key]))
+    action.__name__ = 'remember %s' % key
+    return action
+
+
+def satellites_one_font(ctx):
+    """Expectation: on the Satellites screen, the knob through every
+    choice shows each in the same font, one of them All types."""
+    r = ctx.radio
+    heights = {}
+    for _ in range(7):
+        w = r.where(fresh=True)
+        big = [run for run in w.runs if run.text.strip() == w.value]
+        if big:
+            heights[w.value] = big[0].height
+        r.knob(1)
+    ok = 'All types' in heights and len(set(heights.values())) == 1
+    return ok, 'font heights %s' % heights
+
+
 STEPS = [
     Step(1, 'Menu from the standby screen', do=['home', 'key Menu'], expect=[
         'title ^Menu$', 'place ^1/<<top_n>>$', 'row ^Channel >$',
@@ -99,11 +146,14 @@ STEPS = [
     Step(4, 'Squelch value screen', do=['at Channel/Squelch', 'key Menu', 'shot squelch'], expect=[
         'title ^Channel > Squelch$', 'kind ^spinner$', r'in_use ^(\d|Open)$', value_is(lambda p: p['squelch']),
         'screen ^In use: <<squelch>>$']),
-    Step(5, 'Up, knob 2 back, Exit leaves the squelch', do=[
+    Step(5, 'Up and the knob try the squelch at once; Exit puts it back', do=[
         'key Up', now(value_is(lambda p: shown(up(p['squelch'])))),
+        now(log_is(lambda p: r'\bui: squelch %d\b' % up(p['squelch']))),
         'knob -2', now(value_is(lambda p: shown((up(p['squelch']) - 2) % 6))),
-        'key Exit'], expect=[
-        'title ^Menu > Channel$', 'row ^Squelch <<squelch>>$', r'nolog \bui: squelch\b']),
+        now(log_is(lambda p: r'\bui: squelch %d\b' % ((up(p['squelch']) - 2) % 6))),
+        'mark', 'key Exit', 'wait 4'], expect=[
+        'title ^Menu > Channel$', 'row ^Squelch <<squelch>>$', log_after_exit,
+        r'nolog \bsettings kept in the codeplug']),
     Step(6, 'Menu, Up, Menu sets the squelch', changes=True, timeout=8, do=[
         'at Channel/Squelch', 'keys Menu Up Menu'], expect=[
         log_is(lambda p: r'\bui: squelch %d\b' % up(p['squelch'])),
@@ -124,44 +174,57 @@ STEPS = [
         undo=[restore('Channel/Power', 'power')]),
     Step(9, 'Exit back to Menu, on Channel', do=['at Channel/Power', 'key Exit'], expect=[
         'title ^Menu$', 'row ^Channel >$']),
-    Step(10, 'Roaming status in the menu\'s style', do=[
-        'at Channel', 'keys Down Menu Menu', 'shot roaming-status',
+    Step(10, 'Roaming: the switch first; the status in the menu\'s style', do=[
+        'at Channel', 'keys Down Menu', 'check title ^Menu > Roaming$', 'check row ^Roaming (On|Off)$',
+        r'check screen ^Roaming\n(On|Off)\nStatus\n\S.*\nRoam zone\n', 'keys Down Menu', 'shot roaming-status',
         'check hint ^Menu: search   Exit: back$', 'key Exit'], expect=[
         'title ^Menu > Roaming$', 'row ^Status']),
-    Step(11, 'GPS screen; Exit back on Status', do=[
-        'at Roaming/Status', 'keys Exit Down Menu Menu', 'shot gps',
-        r'check screen ^GPS$', 'check hint ^Exit: back$', 'key Exit'], expect=[
+    Step(11, 'GPS: Enabled, Status, Satellites; the GPS screen', do=[
+        'at Roaming/Status', 'keys Exit Down', 'check screen ' + panel('On or off, the fix and the satellite systems'),
+        'key Menu', 'check title ^Menu > GPS$', 'check row ^Enabled (On|Off)$',
+        r'check screen ^Enabled\n(On|Off)\nStatus\n\S.*\nSatellites\n',
+        'check screen ' + panel('The GPS receiver on or off'),
+        'keys Down Menu', 'shot gps', r'check screen ^GPS$', 'check hint ^Exit: back$', 'key Exit'], expect=[
         'title ^Menu > GPS$', 'row ^Status']),
-    Step(12, 'Display at the top: Brightness and its value screen; Exit leaves it', do=[
-        'at GPS/Status', 'key Exit', 'choose Display', 'key Menu', 'shot display',
+    Step('11b', 'Satellites: the systems named, All types; Exit leaves them', do=[
+        'at GPS/Status', 'key Down', 'check screen ' + panel('Satellite systems used: GPS, GLONASS, BeiDou'),
+        'key Menu', 'check title ^GPS > Satellites$', 'check kind ^spinner$', 'shot satellites',
+        now(satellites_one_font), 'mark', 'key Exit'], expect=[
+        'title ^Menu > GPS$', 'row ^Satellites', r'nolog \bgps: ']),
+    Step(12, 'Display: Brightness tried at once; Exit puts it back', do=[
+        'at GPS/Satellites', 'key Exit', 'choose Display', 'key Menu', 'shot display',
         'check title ^Menu > Display$', 'check row ^Brightness', r'check screen ^Light time$',
         'check screen ' + panel('Display brightness'), remember('brightness_12'),
-        'key Menu', 'check title ^Brightness$', 'check kind ^spinner$', 'key Exit'], expect=[
-        'title ^Menu > Display$', 'row ^Brightness', value_is(lambda p: p['brightness_12'])]),
-    Step(13, 'Settings: its groups, Display no longer among them', do=[
+        'key Menu', 'check title ^Brightness$', 'check kind ^spinner$',
+        'key Up', now(log_is(lambda p: r'\bui: brightness %d\b' % (int(p['brightness_12']) % 5 + 1))),
+        'mark', 'key Exit', 'wait 4'], expect=[
+        'title ^Menu > Display$', 'row ^Brightness', value_is(lambda p: p['brightness_12']),
+        log_is(lambda p: r'\bui: brightness %s\b' % p['brightness_12']), r'nolog \bsettings kept in the codeplug']),
+    Step(13, 'Settings: its groups, Keys and Battery apart', do=[
         'at Display/Brightness', 'keys Exit Down Menu', 'shot settings'],
          expect=['title ^Menu > Settings$', 'place ^1/[4-7]$', 'row ^Home screen >$',
-                 r'screen Home screen\n>\n(Audio\n>\n)?(Radio\n>\n)?Keys & battery\n>',
+                 r'screen Home screen\n>\n(Audio\n>\n)?(Radio\n>\n)?Keys\n>\nBattery\n>',
                  'screen ' + panel('What each row of the home screen shows'), r'noscreen ^Display$']),
-    Step(14, 'Keys & battery: the long name alone', do=[
-        'at Settings/Home screen', 'choose Keys & battery', 'key Menu',
-        'check title ^Keys & battery$', 'key Exit'], expect=[
-        'title ^Menu > Settings$', 'row ^Keys & battery >$']),
+    Step(14, 'Keys: Lock covers and Auto lock', do=[
+        'at Settings/Home screen', 'choose Keys', 'key Menu',
+        'check title ^Settings > Keys$', r'check screen ^Lock covers\n\S.*\nAuto lock\n', 'key Exit'], expect=[
+        'title ^Menu > Settings$', 'row ^Keys >$']),
     Step(15, 'Battery save as a list; Exit leaves it', do=[
-        'at Settings/Keys & battery', 'key Menu', 'choose Battery save', 'key Menu', 'shot battery-save',
+        'at Settings/Keys', 'keys Down Menu', 'check title ^Settings > Battery$', 'key Menu', 'shot battery-save',
         'check title ^Battery save$', 'check kind ^list$', r'check screen ^Off\nOn\n150 ms\nFast wake\n70 ms$',
         'check row ^<<battery_save>>', 'key Exit'], expect=[
-        'title ^Keys & battery$', 'row ^Battery save <<battery_save>>', r'nolog \bpower: battery save\b']),
-    Step(16, 'Clock > Time zone: large zone, marker on a track', do=[
-        'at Keys & battery/Battery save', 'keys Exit Down Menu Menu', 'shot time-zone'], expect=[
-        'title ^Clock > Time zone$', 'kind ^spinner$', r'value ^UTC', r'place ^\d+/53$', r'in_use ^UTC']),
+        'title ^Settings > Battery$', 'row ^Battery save <<battery_save>>', r'nolog \bpower: battery save\b']),
+    Step(16, 'Clock > Time zone: large zone, tried at once; Exit puts it back', do=[
+        'at Battery/Battery save', 'keys Exit Down Menu Menu', 'shot time-zone', remember_in_use('zone_16'),
+        'check title ^Clock > Time zone$', 'check kind ^spinner$', r'check place ^\d+/53$',
+        'key Up', now(r'log \bui: time zone UTC'), 'mark', 'key Exit', 'wait 4'], expect=[
+        'title ^Settings > Clock$', r'log \bui: time zone <<zone_16>>$', r'nolog \bsettings kept in the codeplug']),
     Step(17, 'Tools > Version: version and uptime; Menu does nothing', do=[
-        'key Exit', 'goto Tools/Version',
+        'key Exit', 'key Exit', 'choose Tools', 'key Menu', 'key Up',
         r'check screen ^\d+\.\d+\.\d+\S*\nup \d+ min$', 'check hint ^Exit: back$', 'key Menu'], expect=[
         'title ^Menu > Tools$', 'row ^Version']),
-    Step(18, 'The log, then held Exit: key test, then standby', do=[
-        'at Tools/Version', 'keys Up Up Menu', 'check screen console: >', 'key Exit long',
-        r'check screen ^Keys \(Exit=log\)$', 'key Exit long'], expect=[standby]),
+    Step(18, '1 opens the log; held Exit: the key test in a debug build, then standby', do=[
+        'at Tools/Version', 'key 1', 'check screen console: >', key_test_or_standby], expect=[standby]),
     Step(19, 'P2 opens Channel; Exit goes straight back', do=['home', 'key P2', 'check title ^Menu > Channel$',
                                                               'key Exit'], expect=[standby]),
     Step(20, 'P2 on the row last chosen; squelch one lower, back to standby', changes=True, timeout=8, do=[
@@ -181,7 +244,7 @@ STEPS = [
              now(lambda ctx: settings_has(r'squelch %d/' % level(ctx.params['squelch_22']))(ctx)),
              'goto Channel/Squelch'],
          expect=['title ^Menu > Channel$', 'screen ^Squelch\n<<squelch_22>>$', 'screen ^Power\n<<power>>$']),
-    Step('24a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'open Roaming/Roaming', 'set Off'],
+    Step('24a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'home', 'keys Menu 2 1', 'set Off'],
          expect=[
         r'log \bui: auto roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
     Step('24b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
@@ -197,4 +260,22 @@ STEPS = [
                'only the rows, buttons and values that change are redrawn, nothing blanks or flashes.'),
     Step(28, 'ui stack', radio_only='the simulator reports no stack words', timeout=75,
          expect=['stack ui >50']),
+    Step(29, 'Digits open the rows at their places', do=[
+        'home', 'keys Menu 1', 'check title ^Menu > Channel$', 'key 3', 'check title Power$',
+        'check kind ^buttons$', 'key 9', 'check title Power$', 'keys Exit Exit Exit'], expect=[
+        standby, r'nolog \bui: power\b']),
+    Step(30, 'Up and Down do nothing on the standby screen', do=[
+        'home', 'mark', 'keys Up Down'], expect=[
+        standby, r'nolog \b(fm: receiving|ui: )', r'nolog \bdmr: ']),
+    Step(31, 'An FM channel: Roaming > Status says DMR only', do=[
+        channel('{fm}'), 'keys Menu 2', r'check screen ^Status\nDMR only$', 'key 2', 'shot roaming-fm'], expect=[
+        'title ^Roaming$', r'screen ^In use\nDMR only$'], undo=['home']),
+    Step(32, 'A roaming channel: repeaters by name, the one in use marked', radio_only='no repeaters heard',
+         do=[channel('{roam}'), 'wait 10', 'keys Menu 2 2', 'shot roaming-names'], expect=[
+             'title ^Roaming$', r'noscreen ^\d+[ *]\d{3}\.\d+', r'screen ^In use\n(Excellent|Good|Fair|Weak|Poor|Quiet|Lost|Search)$'],
+         human='Look at the roaming status: the repeaters by name, a green pointer left of the one in use.'),
+    Step(33, 'Help text Off: lists without the panel; On again', changes=True, timeout=8, do=[
+        'home', 'keys Menu 4 3', 'set Off', 'check row ^Help text Off$', 'check noscreen ' + panel('These two lines'),
+        'shot no-help', 'keys Exit 6 Up', r'check row ^Version \d+\.\d+', 'keys Exit 4 3', 'set On', 'home'], expect=[
+        r'log \bui: menu help hidden', r'log \bui: menu help shown', r'log@8 \bsettings kept in the codeplug']),
 ]

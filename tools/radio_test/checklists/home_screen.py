@@ -88,16 +88,26 @@ def gps_fix(ctx):
     raise Skipped('no GPS fix within %d s: place the radio by a window, or give it longer with '
                   '--param gps_wait=<s>' % seconds)
 
+def nothing_beside(ctx):
+    """Expectation: nothing on the right half of the power row."""
+    w = ctx.radio.where(fresh=True)
+    pwr = [r for r in w.runs if r.text.strip() == 'PWR']
+    if not pwr:
+        return False, 'no PWR: ' + w.summary()
+    beside = [r.text.strip() for r in w.runs if abs(r.y - pwr[0].y) <= 4 and r.x >= 90 and r.text.strip()]
+    return not beside, 'next to the power: %s' % (beside or 'nothing')
+
+
 HOME = 'Settings/Home screen/'
 ROWS = ['Preset', 'Top line', 'Clock', 'Large name', 'Middle row', 'Next to power', 'Bottom row']
 
 BEFORE = [remember('home_' + r.replace(' ', '_'), HOME + r) for r in ROWS] + [
-    remember('gps', 'GPS/Receiver'),
+    remember('gps', 'GPS/Enabled'),
     'home',
 ]
 
 UNDO = [restore(HOME + r, 'home_' + r.replace(' ', '_')) for r in ROWS] + [
-    restore('GPS/Receiver', 'gps'),
+    restore('GPS/Enabled', 'gps'),
     'home',
 ]
 
@@ -118,9 +128,11 @@ STEPS = [
         'screen ' + panel('A whole layout at once; rows can then change')]),
     Step(4, 'Preset: three buttons, Detailed starred', do=['at ' + HOME + 'Preset', 'key Menu'], expect=[
         'title ^Preset$', 'kind ^buttons$', r'screen ^Detailed\n(\*\n)?Simple\n(\*\n)?Roaming$', 'in_use ^Detailed$']),
-    Step(5, 'Preset Simple', changes=True, timeout=8, do=['set Simple', 'home', 'shot simple'], expect=[
-        r'log \bui: home screen Simple', top_line(None), large(r'.'), r'screen ^TG \d+$',
-        r'screen ^No call heard yet$', r'log@8 \bsettings kept in the codeplug']),
+    Step(5, 'Preset Simple: the channel, its frequency, the power', changes=True, timeout=8, do=[
+        'set Simple', 'home', 'shot simple'], expect=[
+        r'log \bui: home screen Simple', top_line(None), large(r'.'), r'screen ^MHz$', r'screen ^PWR$',
+        r'noscreen ^(BAT|VOL|SIG)$', r'noscreen ^No call heard yet$', r'noscreen  \d+/\d+$',
+        r'log@8 \bsettings kept in the codeplug']),
     Step(6, 'Preset Roaming on a quiet DMR channel', changes=True, timeout=8, do=[
         'open ' + HOME + 'Preset', 'set Roaming', channel('{dmr}'), 'shot roaming-quiet'], expect=[
         r'log \bui: home screen Roaming', 'screen ^SIG$', 'screen ^dBm$', quiet_meter]),
@@ -173,4 +185,8 @@ STEPS = [
     Step(20, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'qdmr read home-b.yaml', 'qdmr diff home-a.yaml home-b.yaml'], expect=['nodiff']),
     Step(21, 'ui stack', radio_only='the simulator reports no stack words', timeout=75, expect=['stack ui >50']),
+    Step(22, 'Next to power None', changes=True, timeout=8, do=[
+        'open ' + HOME + 'Next to power', r'check screen ^Voltage\n(\*\n)?Volume\n(\*\n)?Signal\n(\*\n)?None$',
+        'set None', 'home', 'shot beside-none', 'wait 4'], expect=[
+        r'screen ^PWR$', nothing_beside, settings_has(r'home screen \d \d \d \d 3 \d\b', 'preferences')]),
 ]
