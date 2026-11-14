@@ -350,6 +350,7 @@ bool previews(Item item)
     case Item::SquelchMode:
     case Item::Backlight:
     case Item::TimeZone:
+    case Item::FrequencyOffset:
         return true;
     default:
         return false;
