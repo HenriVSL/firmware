@@ -20,7 +20,8 @@ the remembered rows the checklist's H and M sequences depend on.
 import re
 import time
 
-from _helpers import channel, large, panel, press_while_watching, remember, restore, settings_has, top_line
+from _helpers import (channel, large, log_is, panel, press_while_watching, remember, remember_log, restore, set_to,
+                      settings_has, top_line)
 from radiotest.radio import Skipped
 from radiotest.runner import Step
 
@@ -99,14 +100,42 @@ def nothing_beside(ctx):
 
 
 HOME = 'Settings/Home screen/'
-ROWS = ['Preset', 'Top line', 'Clock', 'Large name', 'Middle row', 'Next to power', 'Bottom row']
+UP_DOWN = HOME + r'Up\/Down'
+ROWS = ['Preset', 'Top line', 'Clock', 'Large name', 'Middle row', 'Next to power', 'Bottom row', r'Up\/Down']
+# The channel helper finds a channel by its name shown large.
+DETAILED = set_to(HOME + 'Preset', 'Detailed')
+# The `channel` answer: the zone and the channel in use.
+PLACE = r'\bui: (zone \d+ \(.*\), channel \d+ of \d+: [^,]*)'
 
-BEFORE = [remember('home_' + r.replace(' ', '_'), HOME + r) for r in ROWS] + [
+
+def row_key(row):
+    return 'home_' + re.sub(r'\W+', '_', row)
+
+
+def zone_of(place):
+    return place.split(' (', 1)[0]
+
+
+def vfo_up_steps(ctx):
+    """Expectation: in the VFO, Up changes the frequency shown (as knob 1
+    on does); # then goes back to the channel."""
+    r = ctx.radio
+    r.key('#')
+    before = r.where(fresh=True)
+    r.key('Up')
+    after = r.where(fresh=True)
+    r.key('#')
+    return before.text() != after.text() and 'VFO' in before.text(), 'before `%s`, after `%s`' % (
+        before.summary(), after.summary())
+
+
+BEFORE = [remember(row_key(r), HOME + r) for r in ROWS] + [
     remember('gps', 'GPS/Enabled'),
+    set_to(UP_DOWN, 'Zone'),
     'home',
 ]
 
-UNDO = [restore(HOME + r, 'home_' + r.replace(' ', '_')) for r in ROWS] + [
+UNDO = [restore(HOME + r, row_key(r)) for r in ROWS] + [
     restore('GPS/Enabled', 'gps'),
     'home',
 ]
@@ -123,7 +152,7 @@ STEPS = [
         channel('{fm}'), 'shot detailed-fm-simplex'], expect=[
         top_line('^CHANNEL$'), 'screen ^FM$', r'screen ^\S.*  \d+/\d+$', r'noscreen [-+]\d+\.\d{3}$']),
     Step(3, 'Settings > Home screen', do=[channel('{dmr}'), 'goto ' + HOME + 'Preset'], expect=[
-        'title ^Home screen$', 'place ^1/7$', 'row ^Preset Detailed$',
+        'title ^Home screen$', 'place ^1/8$', 'row ^Preset Detailed$',
         r'screen ^Top line\nTalkgroup\nClock\nOn\nLarge name\nChannel\nMiddle row\nFrequency$',
         'screen ' + panel('A whole layout at once; rows can then change')]),
     Step(4, 'Preset: three buttons, Detailed starred', do=['at ' + HOME + 'Preset', 'key Menu'], expect=[
@@ -189,4 +218,39 @@ STEPS = [
         'open ' + HOME + 'Next to power', r'check screen ^Voltage\n(\*\n)?Volume\n(\*\n)?Signal\n(\*\n)?None$',
         'set None', 'home', 'shot beside-none', 'wait 4'], expect=[
         r'screen ^PWR$', nothing_beside, settings_has(r'home screen \d \d \d \d 3 \d\b', 'preferences')]),
+    Step(23, 'The # hint names the other mode', changes=True, do=[
+        DETAILED, channel('{dmr}'), r'check screen # VFO$', 'key #', r'check screen ^VFO$', 'shot hint-vfo',
+        r'check screen # MEM$', 'key #'], expect=[r'screen # VFO$', r'noscreen ^VFO$']),
+    Step(24, 'Up/Down: Zone, Channel, Off as buttons, Zone in use', do=[
+        'goto ' + UP_DOWN, 'check screen ' + panel('Up and Down: next zone, next channel or off'),
+        'check row ^Up/Down Zone$', 'key Menu', 'shot up-down'], expect=[
+        'kind ^buttons$', r'screen ^Zone\n(\*\n)?Channel\n(\*\n)?Off$', 'in_use ^Zone$'], undo=['home'],
+         undo_now=True),
+    Step(25, 'Up: the next zone, on its channel; Down: back on the channel left', changes=True, timeout=8, do=[
+        DETAILED, channel('{dmr}'), 'knob 1', 'wait 5', remember_log('place', PLACE, 'channel'), 'mark', 'key Up',
+        remember_log('place_up', PLACE), 'mark', 'key Down'], expect=[
+        lambda ctx: (zone_of(ctx.params['place_up']) != zone_of(ctx.params['place']),
+                     'before `%s`, after Up `%s`' % (ctx.params['place'], ctx.params['place_up'])),
+        log_is(lambda p: r'\bui: ' + re.escape(p['place']))]),
+    Step(26, 'In the VFO Up and Down do nothing', changes=True, do=[
+        DETAILED, channel('{dmr}'), 'key #', r'check screen ^VFO$', 'mark', 'keys Up Down', 'wait 1'], expect=[
+        r'screen ^VFO$', r'nolog \bui: zone'], undo=['key #'], undo_now=True),
+    Step(27, 'Up/Down Channel: steps as the knob, in the VFO too', changes=True, timeout=8, do=[
+        DETAILED, set_to(UP_DOWN, 'Channel'), r'check log \bui: up/down Channel', channel('{dmr}'),
+        remember_log('place', PLACE, 'channel'), 'key Up', remember_log('place_up', PLACE, 'channel'),
+        'key Down', remember_log('place_down', PLACE, 'channel')], expect=[
+        lambda ctx: (zone_of(ctx.params['place_up']) == zone_of(ctx.params['place']) and
+                     ctx.params['place_up'] != ctx.params['place'] and ctx.params['place_down'] == ctx.params['place'],
+                     '`%s`, Up `%s`, Down `%s`' % (ctx.params['place'], ctx.params['place_up'],
+                                                    ctx.params['place_down'])),
+        vfo_up_steps, r'log@8 \bsettings kept in the codeplug']),
+    Step(28, 'Up/Down Off: nothing', changes=True, timeout=8, do=[
+        DETAILED, set_to(UP_DOWN, 'Off'), r'check log \bui: up/down Off', channel('{dmr}'),
+        remember_log('place', PLACE, 'channel'), 'keys Up Down', 'wait 1',
+        remember_log('place_after', PLACE, 'channel')], expect=[
+        lambda ctx: (
+            ctx.params['place_after'] == ctx.params['place'], '`%s`, then `%s`' % (
+                ctx.params['place'], ctx.params['place_after'])), r'log@8 \bsettings kept in the codeplug']),
+    Step(29, 'Up/Down Off kept across a restart', radio_only='nothing kept across a restart', do=['restart'],
+         expect=[settings_has(r'up/down 2\b', 'preferences')]),
 ]

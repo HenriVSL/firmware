@@ -201,7 +201,7 @@ BEFORE = [
     remember('squelch', 'Channel/Squelch'),
     remember('squelch_type', 'Channel/Squelch type'),
     remember('power', 'Channel/Power'),
-    remember('roaming', 'Roaming/Roaming'),
+    remember('roaming', 'Roaming/Automatic'),
     remember('roam_zone', 'Roaming/Roam zone'),
     remember('brightness', 'Display/Brightness'),
     remember('light_menu', 'Display/Light time'),
@@ -214,7 +214,7 @@ BEFORE = [
 UNDO = [
     restore('Channel/Squelch', 'squelch'),
     restore('Channel/Squelch type', 'squelch_type'),
-    restore('Roaming/Roaming', 'roaming'),
+    restore('Roaming/Automatic', 'roaming'),
     restore('Roaming/Roam zone', 'roam_zone'),
     restore('Display/Brightness', 'brightness'),
     restore('Display/Light time', 'light_menu'),
@@ -247,7 +247,7 @@ STEPS = [
          human='The backlight goes off 15 s after the last key.'),
     Step('7a', 'Channel and roaming in the menu: one write after the last', changes=True, timeout=8, do=[
         set_to('Channel/Squelch', '4'), set_other('Channel/Squelch type', 'squelch_type_new'),
-        set_to('Roaming/Roaming', 'Off')], expect=[r'log@8 \bsettings kept in the codeplug']),
+        set_to('Roaming/Automatic', 'Off')], expect=[r'log@8 \bsettings kept in the codeplug']),
     Step('7b', 'Power the other one', transmit=True, changes=True, timeout=8, do=[
         set_other('Channel/Power', 'power_new')], expect=[r'log \bui: power \d',
                                                           r'log@8 \bsettings kept in the codeplug'],
@@ -266,7 +266,7 @@ STEPS = [
     Step(10, 'Kept across a restart: zone, channel, light, power, squelch type, roaming',
          radio_only='nothing is kept across a restart', do=['restart'], expect=[
              r'log \broam: .*\bautomatic off', settings_has(r'squelch 4/\d+, zone \d+/\d+, light 2 30 s', 'codeplug'),
-             lambda ctx: (ctx.radio.goto('Roaming/Roaming').value == 'Off', ctx.radio.where().summary())],
+             lambda ctx: (ctx.radio.goto('Roaming/Automatic').value == 'Off', ctx.radio.where().summary())],
          human='The screen is dimmer (level 2) and on the zone and channel of step 9; the channel of step 7 has '
                'its new power and squelch type.'),
     Step(11, 'A codeplug read waits for a setting to be kept', radio_only='no QDMR port', changes=True, timeout=600,

@@ -51,6 +51,12 @@ def clean_output(text):
     return '\n'.join(lines)
 
 
+def split_path(path):
+    """The rows of a menu path ("Settings/Home screen/Preset"); a row
+    whose name holds '/' writes it as '\\/' ("Up\\/Down")."""
+    return [p.replace('\\/', '/') for p in re.split(r'(?<!\\)/', path) if p]
+
+
 class Failed(Exception):
     """An expectation not met; the step fails."""
 
@@ -308,7 +314,7 @@ class Radio:
         in @p path ("Settings/Home screen/Preset"), choosing each row and
         opening all but the last (the last too with @p open_last). Does
         not depend on the rows the menu remembers."""
-        parts = [p for p in path.split('/') if p]
+        parts = split_path(path)
         self.home()
         self.key('Menu')
         w = self.where(fresh=True)
@@ -327,7 +333,7 @@ class Radio:
     def at(self, path):
         """goto(path) unless the screen is already the list of the group
         that holds the last row of @p path, with that row chosen."""
-        parts = [p for p in path.split('/') if p]
+        parts = split_path(path)
         w = self.where(fresh=True)
         group = parts[-2] if len(parts) > 1 else 'Menu'
         if w.kind == 'list' and w.chosen == parts[-1] and (w.title == group or w.title.endswith('> ' + group)):

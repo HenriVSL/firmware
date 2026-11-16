@@ -6,7 +6,7 @@ Each step checks the screen with `screen text` after its keys. A step
 starts with `at` where the checklist relies on where the step before
 ended, so a step that failed does not lead the next one astray.
 """
-from _helpers import (channel, log_is, now, panel, press_while_watching, remember, restore, rows_count,
+from _helpers import (channel, log_is, now, panel, press_while_watching, remember, restore, rows_count, set_to,
                       settings_has, standby, value_is)
 from radiotest.runner import Step
 
@@ -18,14 +18,19 @@ PARAMS = {
     'roam': 'UHF/TG244 Finland',  # a roaming DMR channel (step 32)
 }
 
+# Up/Down on the home screen (step 30 expects Zone).
+UP_DOWN = r'Settings/Home screen/Up\/Down'
+
 # The values to put back, then a restart: the menu starts on the first
 # row of each group, as the checklist expects.
 BEFORE = [
     remember('squelch', 'Channel/Squelch'),
     remember('squelch_type', 'Channel/Squelch type'),
     remember('power', 'Channel/Power'),
-    remember('roaming', 'Roaming/Roaming'),
+    remember('roaming', 'Roaming/Automatic'),
     remember('battery_save', 'Settings/Battery/Battery save'),
+    remember('up_down', UP_DOWN),
+    set_to(UP_DOWN, 'Zone'),
     'home',
     'restart',
     'home',
@@ -34,7 +39,8 @@ BEFORE = [
 
 UNDO = [
     restore('Channel/Squelch', 'squelch'),
-    restore('Roaming/Roaming', 'roaming'),
+    restore('Roaming/Automatic', 'roaming'),
+    restore(UP_DOWN, 'up_down'),
     'home',
 ]
 
@@ -72,13 +78,13 @@ def up(squelch):
 
 
 def roaming_on_first(ctx):
-    """Roaming On first when it is Off already, kept before going on, so
+    """Automatic On first when it is Off already, kept before going on, so
     that setting Off is a change the log shows and writes (the checklist's
     UNDO puts the old value back)."""
     r = ctx.radio
-    w = r.goto('Roaming/Roaming')
+    w = r.goto('Roaming/Automatic')
     if w.value == 'Off':
-        ctx.evidence('Roaming was Off already: set On first')
+        ctx.evidence('Automatic was Off already: set On first')
         r.key('Menu')
         at = r.mark()
         r.set_value('On')
@@ -179,8 +185,8 @@ STEPS = [
     Step(9, 'Exit back to Menu, on Channel', do=['at Channel/Power', 'key Exit'], expect=[
         'title ^Menu$', 'row ^Channel >$']),
     Step(10, 'Roaming: the switch first; the status in the menu\'s style', do=[
-        'at Channel', 'keys Down Menu', 'check title ^Menu > Roaming$', 'check row ^Roaming (On|Off)$',
-        r'check screen ^Roaming\n(On|Off)\nStatus\n\S.*\nRoam zone\n', 'keys Down Menu', 'shot roaming-status',
+        'at Channel', 'keys Down Menu', 'check title ^Menu > Roaming$', 'check row ^Automatic (On|Off)$',
+        r'check screen ^Automatic\n(On|Off)\nStatus\n\S.*\nRoam zone\n', 'keys Down Menu', 'shot roaming-status',
         'check hint ^Menu: search   Exit: back$', 'key Exit'], expect=[
         'title ^Menu > Roaming$', 'row ^Status']),
     Step(11, 'GPS: Enabled, Status, Satellites; the GPS screen', do=[
@@ -248,15 +254,15 @@ STEPS = [
              now(lambda ctx: settings_has(r'squelch %d/' % level(ctx.params['squelch_22']))(ctx)),
              'goto Channel/Squelch'],
          expect=['title ^Menu > Channel$', 'screen ^Squelch\n<<squelch_22>>$', 'screen ^Power\n<<power>>$']),
-    Step('24a', 'Roaming Off', changes=True, timeout=8, do=[roaming_on_first, 'home', 'keys Menu 2 1', 'set Off'],
+    Step('24a', 'Automatic Off', changes=True, timeout=8, do=[roaming_on_first, 'home', 'keys Menu 2 1', 'set Off'],
          expect=[
-        r'log \bui: auto roaming off', 'row ^Roaming Off$', r'log@8 \bsettings kept in the codeplug']),
-    Step('24b', 'Roaming Off kept across a restart', radio_only='nothing is kept across a restart',
+        r'log \bui: auto roaming off', 'row ^Automatic Off$', r'log@8 \bsettings kept in the codeplug']),
+    Step('24b', 'Automatic Off kept across a restart', radio_only='nothing is kept across a restart',
          do=['home', 'restart', 'goto Roaming/Roaming'], expect=[
-             'row ^Roaming Off$', settings_has(r'auto roaming off', 'codeplug')]),
+             'row ^Automatic Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(25, 'QDMR round trip keeps the menu\'s values', radio_only='no QDMR port', timeout=10, do=[
         'home', 'qdmr read menu-a.yaml', 'qdmr write menu-a.yaml', 'goto Roaming/Roaming'], expect=[
-        'row ^Roaming Off$', settings_has(r'auto roaming off', 'codeplug')]),
+        'row ^Automatic Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(26, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'home', 'qdmr read menu-b.yaml', 'qdmr diff menu-a.yaml menu-b.yaml'], expect=['nodiff']),
     Step(27, 'Fast knob by hand: only what changes is redrawn',
@@ -268,9 +274,8 @@ STEPS = [
         'home', 'keys Menu 1', 'check title ^Menu > Channel$', 'key 3', 'check title Power$',
         'check kind ^buttons$', 'key 9', 'check title Power$', 'keys Exit Exit Exit'], expect=[
         standby, r'nolog \bui: power\b']),
-    Step(30, 'Up and Down do nothing on the standby screen', do=[
-        'home', 'mark', 'keys Up Down'], expect=[
-        standby, r'nolog \b(fm: receiving|ui: )', r'nolog \bdmr: ']),
+    Step(30, 'Up and Down step the zone on the standby screen', do=[
+        'home', 'mark', 'keys Up Down'], expect=[standby, r'log \bui: zone \d+ \(']),
     Step(31, 'An FM channel: Roaming > Status says DMR only', do=[
         channel('{fm}'), 'keys Menu 2', r'check screen ^Status\nDMR only$', 'key 2', 'shot roaming-fm'], expect=[
         'title ^Roaming$', r'screen ^In use\nDMR only$'], undo=['home']),
