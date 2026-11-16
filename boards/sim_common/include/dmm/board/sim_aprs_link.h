@@ -13,6 +13,7 @@
 #include <deque>
 #include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 
 /// A BT+APRS board that hears made-up stations near the simulated GPS
@@ -49,7 +50,23 @@ public:
         }
         return n;
     }
-    void write(std::span<const std::uint8_t>) {}
+    /// Echoes each text line sent to it as "+SIM:<line>".
+    void write(std::span<const std::uint8_t> data)
+    {
+        std::lock_guard guard(m_lock);
+        for (std::uint8_t b : data) {
+            if (b == '\n') {
+                if (m_on) {
+                    put("+SIM:");
+                    put(m_typed);
+                    put("\r\n");
+                }
+                m_typed.clear();
+            } else if (b >= ' ' && b <= '~' && m_typed.size() < 64) {
+                m_typed += static_cast<char>(b);
+            }
+        }
+    }
     std::uint32_t lostBytes() const { return 0; }
 
 private:
@@ -87,6 +104,7 @@ private:
 
     std::mutex m_lock;
     std::deque<std::uint8_t> m_out;
+    std::string m_typed;
     bool m_on = false;
     std::chrono::steady_clock::time_point m_last;
     unsigned m_next = 0;

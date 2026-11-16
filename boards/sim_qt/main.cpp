@@ -38,6 +38,7 @@ int main(int argc, char *argv[])
     static SimRtc rtc;
     static SimModem modem;
     static SimAprsLink aprsLink;
+    static SimAudioSampler audioSampler;
     static dmm::services::D878Uv2Calibration calibration;
     static dmm::services::D878Uv2Codeplug codeplug{bridge->storage()};
     static auto keep = [](std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces) {
@@ -69,6 +70,7 @@ int main(int argc, char *argv[])
         .rtc = &rtc,
         .modem = &modem,
         .aprsLink = &aprsLink,
+        .audioSampler = &audioSampler,
     };
 
     QQmlApplicationEngine engine;

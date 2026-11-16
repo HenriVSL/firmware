@@ -62,6 +62,8 @@ struct Platform
     board::Modem *modem = nullptr;
     /// The link to a board that decodes received APRS, or nullptr.
     board::AprsLink *aprsLink = nullptr;
+    /// Samples the received audio for measurements, or nullptr.
+    board::AudioSampler *audioSampler = nullptr;
 };
 
 /// The board has a baseband processor.
