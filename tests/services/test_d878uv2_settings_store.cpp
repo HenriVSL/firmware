@@ -481,7 +481,7 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     seal(r);
     auto q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
     CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(12));
     CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
 
@@ -492,7 +492,7 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     seal(r);
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
 
     // An offset past 5 kHz.
     r = encoded(p);
@@ -501,7 +501,7 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     seal(r);
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
-    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")
