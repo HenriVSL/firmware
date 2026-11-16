@@ -1427,7 +1427,7 @@ void uiMain(void *)
     // chosen.
     auto openHeard = [&](std::string_view keep) {
         char kept[aprs::HeardStation::CallBytes + 1] = {};
-        keep.copy(kept, sizeof kept - 1);
+        std::copy_n(keep.data(), std::min(keep.size(), sizeof kept - 1), kept);
         heardShownCount = 0;
         stationShown = 0;
         aprs::HeardStation st;
