@@ -20,9 +20,16 @@ tools/radio_test/radio_test.py list
 tools/radio_test/radio_test.py run menu --no-human --out /tmp/menu-run
 tools/radio_test/radio_test.py run home-screen --param dmr="Zone/Name" \
     --param roam="Zone/Name" --param fm="Zone/Name"
+tools/radio_test/radio_test.py run menu --param fm="Zone/Name" --param roam="Zone/Name"
 tools/radio_test/radio_test.py run menu --steps 1-5,8a
 tools/radio_test/radio_test.py run menu --allow-qdmr-write   # with the QDMR round trip
 ```
+
+A channel parameter is a zone and a channel as the radio shows their
+names (not a contact's name), the zone up to the first `/`; without one
+a checklist uses the simulator's sample codeplug. `menu` takes `fm`, an
+FM channel (step 31), and `roam`, a roaming DMR channel (step 32);
+`home-screen` names its own in its description.
 
 On the simulator (`build/host/boards/sim_headless/sim` unless a path is
 given); it is started with `--stdin` and started again after a restart:

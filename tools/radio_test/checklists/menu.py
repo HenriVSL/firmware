@@ -5,6 +5,12 @@
 Each step checks the screen with `screen text` after its keys. A step
 starts with `at` where the checklist relies on where the step before
 ended, so a step that failed does not lead the next one astray.
+
+On the radio, pass an FM channel (step 31) and a roaming DMR channel
+(step 32), each as its zone and its channel's name on the screen; the
+defaults are the simulator's sample codeplug:
+
+  --param fm="Zone/Name" --param roam="Zone/Name"
 """
 from _helpers import (channel, log_is, now, panel, press_while_watching, remember, restore, rows_count, set_to,
                       settings_has, standby, value_is)
@@ -258,10 +264,10 @@ STEPS = [
          expect=[
         r'log \bui: auto roaming off', 'row ^Automatic Off$', r'log@8 \bsettings kept in the codeplug']),
     Step('24b', 'Automatic Off kept across a restart', radio_only='nothing is kept across a restart',
-         do=['home', 'restart', 'goto Roaming/Roaming'], expect=[
+         do=['home', 'restart', 'goto Roaming/Automatic'], expect=[
              'row ^Automatic Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(25, 'QDMR round trip keeps the menu\'s values', radio_only='no QDMR port', timeout=10, do=[
-        'home', 'qdmr read menu-a.yaml', 'qdmr write menu-a.yaml', 'goto Roaming/Roaming'], expect=[
+        'home', 'qdmr read menu-a.yaml', 'qdmr write menu-a.yaml', 'goto Roaming/Automatic'], expect=[
         'row ^Automatic Off$', settings_has(r'auto roaming off', 'codeplug')]),
     Step(26, 'QDMR read back: no differences', radio_only='no QDMR port', do=[
         'home', 'qdmr read menu-b.yaml', 'qdmr diff menu-a.yaml menu-b.yaml'], expect=['nodiff']),

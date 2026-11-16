@@ -15,7 +15,7 @@ import threading
 import time
 import tty
 
-from _helpers import channel, remember, restore, set_other, set_to, settings_has
+from _helpers import channel, kept_or_unchanged, remember, restore, set_other, set_to, settings_has
 from radiotest import transport
 from radiotest.radio import Failed, Skipped
 from radiotest.runner import Step
@@ -247,7 +247,7 @@ STEPS = [
          human='The backlight goes off 15 s after the last key.'),
     Step('7a', 'Channel and roaming in the menu: one write after the last', changes=True, timeout=8, do=[
         set_to('Channel/Squelch', '4'), set_other('Channel/Squelch type', 'squelch_type_new'),
-        set_to('Roaming/Automatic', 'Off')], expect=[r'log@8 \bsettings kept in the codeplug']),
+        set_to('Roaming/Automatic', 'Off')], expect=[kept_or_unchanged()]),
     Step('7b', 'Power the other one', transmit=True, changes=True, timeout=8, do=[
         set_other('Channel/Power', 'power_new')], expect=[r'log \bui: power \d',
                                                           r'log@8 \bsettings kept in the codeplug'],

@@ -112,6 +112,33 @@ def set_to(path, value, back_home=True):
     return action
 
 
+def kept_or_unchanged(timeout=8.0):
+    """Expectation: after the step's changes were pending, the settings
+    store wrote them (`settings kept in the codeplug`) or found the
+    codeplug's bytes as they were (`last write unchanged`): the codeplug
+    may hold a value already that the radio shows as another, such as a
+    tone squelch on a channel without a receive tone."""
+    def expectation(ctx):
+        r = ctx.radio
+        end = time.monotonic() + timeout
+        seen_pending = False
+        while True:
+            try:
+                line = r.wait(r'\bsettings kept in the codeplug', 0.5, ctx.since)
+                return True, '`%s`' % line.text
+            except Failed:
+                pass
+            pending = r.settings().get('pending', '')
+            if 'nothing pending' not in pending:
+                seen_pending = True
+            elif seen_pending and 'last write unchanged' in pending:
+                return True, 'the codeplug held these values already: `%s`' % pending
+            if time.monotonic() > end:
+                return False, 'neither `settings kept` nor an unchanged write within %g s: `%s`' % (timeout, pending)
+            time.sleep(1.0)
+    return expectation
+
+
 def restore(path, key):
     """Action: sets @p path back to ctx.params[key]; nothing when the
     value was never remembered."""
@@ -217,6 +244,8 @@ def channel(spec):
         zone, _, name = spec.format(**ctx.params).partition('/')
         if not name:
             zone, name = '', zone
+        zone, name = zone.strip(), name.strip()
+        seen = []
         r.home()
         if zone:
             r.key('P1')
@@ -227,11 +256,17 @@ def channel(spec):
             r.key('Menu')
         for _ in range(64):
             w = r.home()
-            if any(run.text.strip() == name or run.text.strip().endswith(' ' + name) for run in w.runs):
+            texts = [run.text.strip() for run in w.runs]
+            if any(t == name or t.endswith(' ' + name) for t in texts):
                 ctx.evidence('on channel `%s`' % spec.format(**ctx.params))
                 return
+            names = [run for run in w.runs if not re.fullmatch(r'\d\d:\d\d', run.text.strip())]
+            big = max(names, key=lambda run: run.height, default=None)
+            if big is not None and big.text.strip() not in seen:
+                seen.append(big.text.strip())
             r.knob(1)
-        raise Failed('no channel %r in zone %r (set it with --param)' % (name, zone))
+        raise Failed('no channel %r in zone %r (set it with --param); the large names seen: %s' % (
+            name, zone, ', '.join(seen) or 'none'))
     action.__name__ = 'channel %s' % spec
     return action
 

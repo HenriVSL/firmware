@@ -184,8 +184,25 @@ class Radio:
 
     def restart(self, timeout=60.0, command='restart'):
         """Restarts the radio and waits for its start line; the log port
-        is opened again when it comes back."""
+        is opened again when it comes back. A plain restart first waits
+        for the settings store to write what is pending, so that a change
+        still in its quiet time is not lost."""
+        if command == 'restart':
+            self.wait_settings_kept()
         return self.wait_boot(timeout, self.cmd(command))
+
+    def wait_settings_kept(self, timeout=10.0):
+        """Waits until `settings` reports nothing pending; returns its
+        line (None when the build has no settings store)."""
+        end = time.monotonic() + timeout
+        while True:
+            pending = self.settings().get('pending')
+            if pending is None or 'nothing pending' in pending:
+                return pending
+            if time.monotonic() > end:
+                self.note('settings still pending before the restart: `%s`' % pending)
+                return pending
+            time.sleep(1.0)
 
     def wait_boot(self, timeout=90.0, since=None):
         """Waits for a start line, then for the radio's chips to be up:
