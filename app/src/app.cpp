@@ -611,7 +611,8 @@ void runCommand(std::string_view command)
             log::info("console") << "board: " << board;
         }
         withBaseband(platform->baseband, [](auto &b) { log::info("console") << "baseband chip: " << b.debugHelp(); });
-        log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>; clock: time, time set YYYY-MM-DD HH:MM:SS (UTC)";
+        log::info("console") << "gps: gps, gps on|off, gps raw on|off, gps need <s>";
+        log::info("console") << "clock: time, time set YYYY-MM-DD HH:MM:SS (UTC), time cal <min> (0 stops), time cal reset";
         log::info("console") << "GPS receiver: " << gps::debugHelp();
         log::info("console") << "tests: key <name> [long], knob <steps>, screen shot|text|on|off|watch <s>";
     } else if (lib::startsWith(command, "key ")) {
@@ -679,6 +680,12 @@ void runCommand(std::string_view command)
         ui::post(ui::PanelPower{command == "panel on"});
     } else if (command == "time") {
         system::reportClock();
+    } else if (command == "time cal reset") {
+        system::setClockRate(0);
+    } else if (std::int32_t calMinutes[1] = {}; numbersAfter(command, "time cal ", 10, calMinutes, 1) && calMinutes[0] <= 120) {
+        if (!gps::post(gps::CalibrateClock{static_cast<std::uint8_t>(calMinutes[0])})) {
+            log::info("console") << "no GPS receiver";
+        }
     } else if (lib::startsWith(command, "time set ")) {
         const auto utc = parseDateTime(std::string_view(command.data() + 9, command.size() - 9));
         if (utc) {
