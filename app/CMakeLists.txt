@@ -13,3 +13,4 @@ endif()
 # builds, and in others with DMM_KEY_TEST on.
 option(DMM_KEY_TEST "The key test screen in every build, not only debug builds" OFF)
 target_compile_definitions(dmm_app PRIVATE $<$<OR:$<BOOL:${DMM_KEY_TEST}>,$<CONFIG:Debug>>:DMM_KEY_TEST>)
+target_sources(dmm_app PRIVATE src/screen_stream.cpp src/screen_stream.h)

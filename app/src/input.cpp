@@ -9,6 +9,8 @@
 #include "dmm/os/os.h"
 #include "dmm/services/log.h"
 
+#include <atomic>
+
 namespace dmm::app::input {
 
 namespace {
@@ -18,6 +20,8 @@ namespace log = services::log;
 
 os::Task<384> inputTask;
 board::Input *devices = nullptr;
+// Clicks asked for by turnKnob(), not yet passed on.
+std::atomic<std::int32_t> askedClicks{0};
 
 constexpr os::Ticks StepMs = 10;
 constexpr os::Ticks VolumeEveryMs = 50;
@@ -102,6 +106,12 @@ void inputMain(void *)
                 ui::post(ui::EncoderClicks{totalClicks});
             }
         }
+        if (const std::int32_t asked = askedClicks.exchange(0); asked != 0) {
+            system::noteActivity();
+            totalClicks += asked;
+            log::info("input") << "knob " << (asked > 0 ? "+" : "") << asked << " (" << totalClicks << ") from the console";
+            ui::post(ui::EncoderClicks{totalClicks});
+        }
 
         sinceVolume += StepMs;
         if (sinceVolume >= VolumeEveryMs) {
@@ -124,6 +134,11 @@ void start(board::Input &d)
 {
     devices = &d;
     inputTask.start("input", 5, inputMain, nullptr);
+}
+
+void turnKnob(std::int32_t clicks)
+{
+    askedClicks.fetch_add(clicks);
 }
 
 } // namespace dmm::app::input

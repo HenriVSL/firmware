@@ -70,6 +70,9 @@ void setTap(Tap tap);
 /// queue keeps the other lines longer while nothing reads it.
 void setDebugQueued(bool on);
 bool debugQueued();
+/// Room left in the queue, in bytes. A caller that must not lose lines can
+/// wait for room before logging.
+std::size_t room();
 
 /// Moves every queued line to @p sink, oldest first. Lines that did not fit
 /// the queue are reported as one summary line. Returns the lines written.

@@ -9,6 +9,7 @@
 #include "menu.h"
 #include "menu_screen.h"
 #include "radio.h"
+#include "screen_stream.h"
 #include "standby.h"
 #include "system.h"
 
@@ -181,6 +182,10 @@ LogView logView;
 
 void onLogLine(Level level, std::string_view line)
 {
+    // The screen's own drawing, streamed, would draw itself again.
+    if (line.find(" scr: ") != std::string_view::npos) {
+        return;
+    }
     logView.add(level, line);
 }
 
@@ -829,7 +834,8 @@ void useLight(Display &d)
 
 void uiMain(void *)
 {
-    Display &d = *display;
+    static ScreenStream stream(*display);
+    Display &d = stream;
     d.start();
     logView.configure(d.width() / LogFont.width, (d.height() - HeaderFont.height) / LogFont.height);
     drawStartScreen(d);
@@ -908,8 +914,12 @@ void uiMain(void *)
         c.nowMs = os::nowMs();
         return c;
     };
+    // The notice up, drawn again over a whole screen streamed for a test.
+    lib::StaticString<24> noticeText;
     auto notice = [&](std::string_view text) {
         volumeNoticeUp = false;
+        noticeText.clear();
+        noticeText << text;
         drawNotice(d, text);
         noticeShown = true;
         noticeUntil = os::nowMs() + NoticeMs;
@@ -1176,6 +1186,10 @@ void uiMain(void *)
             showLog(d);
         } else if (HasKeyTest && view == View::KeyTest) {
             keyTest.draw(d);
+        } else if (view == View::Start) {
+            drawStartScreen(d);
+        } else if (view == View::TestPattern) {
+            drawTestPattern(d);
         }
     };
     auto show = [&](View v) {
@@ -1652,6 +1666,22 @@ void uiMain(void *)
             }
         }
         Message m;
+        // Whatever the last pass drew is one picture; a whole screen when
+        // one was asked for.
+        // A notice up is drawn again and keeps its time.
+        if (stream.passDone()) {
+            const bool noticeUp = noticeShown;
+            const bool volumeUp = volumeNoticeUp;
+            redrawView();
+            if (noticeUp && volumeUp) {
+                drawVolumeNotice(d, volumeLevel, true);
+            } else if (noticeUp) {
+                drawNotice(d, noticeText.view());
+            }
+            noticeShown = noticeUp;
+            volumeNoticeUp = volumeUp;
+            stream.passDone();
+        }
         if (inbox.receive(m, RedrawStepMs)) {
             auto refreshValues = [&] {
                 if (HasKeyTest && view == View::KeyTest) {
