@@ -73,3 +73,9 @@ SPDX-License-Identifier = "MIT"
 path = ["docs/loader.md", "docs/hw-tests/loader.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
+
+# Docs added with the codeplug editor.
+[[annotations]]
+path = ["docs/hw-tests/plug-editor.md", "docs/plug-edit-status.md"]
+SPDX-FileCopyrightText = "2026 Henri Lavikainen"
+SPDX-License-Identifier = "MIT"

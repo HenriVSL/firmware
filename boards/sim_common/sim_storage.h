@@ -36,7 +36,8 @@ private:
     std::map<std::uint32_t, std::uint8_t> m_bytes;
 };
 
-/// Writes the settings store's pieces into the valid copies of their
+/// Writes pieces of the codeplug where the radio's writer would leave them:
+/// into the valid copies of their blocks, only within the codeplug's own
 /// blocks, for this run only.
-dmm::services::SaveResult writeSettings(SimStorage &storage, dmm::services::D878Uv2Codeplug &codeplug,
+dmm::services::SaveResult writeCodeplug(SimStorage &storage, dmm::services::D878Uv2Codeplug &codeplug,
     std::span<const dmm::services::D878Uv2SettingsStore::Piece> pieces);

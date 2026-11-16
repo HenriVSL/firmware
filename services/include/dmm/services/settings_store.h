@@ -46,6 +46,8 @@ struct KeptChannel
 ///   its own.
 /// - pending(): something is kept and not yet written.
 /// - flush(nowMs): writes what is due; called often from one task.
+/// - flushNow(): writes what is kept at once, from the same task: before
+///   another write to the codeplug, so the kept values never land over it.
 /// - report(): logs what is kept and the last write's outcome.
 template <typename T>
 concept SettingsStore = requires(T &s, const CodeplugSettings &settings, const RadioPreferences &preferences, bool sideB,
@@ -57,6 +59,7 @@ concept SettingsStore = requires(T &s, const CodeplugSettings &settings, const R
     { s.keptChannel(index) } -> std::same_as<std::optional<KeptChannel>>;
     { s.pending() } -> std::same_as<bool>;
     { s.flush(nowMs) } -> std::same_as<SaveResult>;
+    { s.flushNow() } -> std::same_as<SaveResult>;
     s.report();
 };
 
