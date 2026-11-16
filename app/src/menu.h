@@ -3,14 +3,20 @@
 
 #pragma once
 
+#include "dmm/board/parts.h"
 #include "dmm/lib/format.h"
 #include "dmm/services/codeplug.h"
+#include "dmm/services/frequency_offset.h"
+#include "dmm/services/home_screen.h"
 #include "dmm/services/input.h"
 #include "dmm/services/key_lock.h"
+#include "dmm/services/microphone_gain.h"
 #include "dmm/services/power_level.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -37,13 +43,25 @@ enum class Item : std::uint8_t
     Gps,
     Backlight,
     BacklightTime,
+    MenuHelp, // the panel about the chosen row, shown or not
+    DmrMicGain,
+    FmMicGain,
+    FrequencyOffset,
     KeyLock,
     AutoLock,
     BatterySave,
     TimeZone,
     GpsSystems,
-    Log,     // opens the log
-    KeyTest, // opens the key test
+    HomePreset, // a whole home screen layout at once
+    HomeTop,
+    HomeClock,
+    HomeBig,
+    HomeMiddle,
+    HomeBeside,
+    HomeBottom,
+    HomeUpDown, // what Up and Down do on the home screen
+    Log,        // opens the log
+    KeyTest,    // opens the key test
     Version,
     Count,
 };
@@ -59,6 +77,9 @@ enum class Group : std::uint8_t
     Display,
     Settings,
     Tools,
+    Home,
+    Audio,
+    Radio,
     Keys,
     Battery,
     Clock,
@@ -152,13 +173,28 @@ struct Settings
     bool gps = false;
     std::uint8_t gpsSystems = 3;
     std::int16_t timeZoneMinutes = 0;
+    services::HomeLayout home;
+    services::HomeUpDown upDown = services::HomeUpDown::Zone;
+    bool menuHelp = true;
+    /// Microphone gain in dB on DMR and on FM channels; none follows the
+    /// codeplug's level, whose gain the plug values give.
+    std::optional<std::uint8_t> dmrMicGainDb;
+    std::optional<std::uint8_t> fmMicGainDb;
+    std::uint8_t plugDmrMicGainDb = services::microphone_gain::StandardDb;
+    std::uint8_t plugFmMicGainDb = services::microphone_gain::StandardDb;
+    std::int16_t frequencyOffsetHz = 0; // a whole step of OffsetSteps
 };
 
-/// Where a setting is kept: the general settings, the channel in use, or
-/// nowhere.
+/// A microphone gain choice of FromCodeplug + N follows the codeplug's
+/// level, N dB; a choice below FromCodeplug is that many dB.
+inline constexpr std::int32_t FromCodeplug = 0x100;
+
+/// Where a setting is kept: the general settings, the radio's own
+/// preferences, the channel in use, or nowhere.
 enum class Kept : std::uint8_t
 {
     Settings,
+    Preferences,
     Channel,
     No,
 };
@@ -178,7 +214,11 @@ using ValueText = lib::StaticString<16>;
 /// @p value of @p item as a row shows it.
 ValueText valueText(Item item, std::int32_t value);
 
-/// The values one item can take, each with its text and an optional note.
+/// The frequency offset's steps, as the board's transceiver tunes.
+inline constexpr services::FrequencyOffset OffsetSteps{board::Fm::TuningStepMilliHz};
+
+/// The values one item can take, each with its text and an optional note:
+/// listed one by one, or made on demand for a long scale.
 class Choices
 {
 public:
@@ -186,27 +226,54 @@ public:
     static constexpr std::size_t TextBytes = 17;
     static constexpr std::size_t NoteBytes = 9;
 
-    void clear() { m_count = 0; }
+    void clear()
+    {
+        m_count = 0;
+        m_coarse = 0;
+        m_madeValue = nullptr;
+        m_madeText = nullptr;
+    }
     /// Cut to fit: keep @p text to 16 characters and @p note to 8.
     void add(std::int32_t value, std::string_view text, std::string_view note = {});
+    /// @p count choices, without notes, the i-th with the value
+    /// @p valueOf(i) and the text @p textOf(i); nothing is stored per
+    /// choice, and a made text lasts until the next text().
+    void make(std::size_t count, std::int32_t (*valueOf)(std::size_t), ValueText (*textOf)(std::size_t));
     std::size_t size() const { return m_count; }
-    std::int32_t value(std::size_t i) const { return m_value[i]; }
-    std::string_view text(std::size_t i) const { return m_text[i]; }
-    std::string_view note(std::size_t i) const { return m_note[i]; }
+    std::int32_t value(std::size_t i) const { return m_madeValue != nullptr ? m_madeValue(i) : m_value[i]; }
+    std::string_view text(std::size_t i) const
+    {
+        if (m_madeText != nullptr) {
+            m_made = m_madeText(i);
+            return m_made.view();
+        }
+        return m_text[i];
+    }
+    std::string_view note(std::size_t i) const { return m_madeText != nullptr ? std::string_view() : m_note[i]; }
     bool hasNotes() const;
     /// The place of @p value, or size() when it is not one of them.
     std::size_t find(std::int32_t value) const;
+    /// The choices are a fine scale: the knob moves one, Up and Down
+    /// @p coarse, and neither goes round from one end to the other.
+    void setScale(std::size_t coarse) { m_coarse = coarse; }
+    /// What Up and Down move on a scale; 0 for other choices.
+    std::size_t coarse() const { return m_coarse; }
 
 private:
     std::int32_t m_value[MaxChoices] = {};
     char m_text[MaxChoices][TextBytes] = {};
     char m_note[MaxChoices][NoteBytes] = {};
     std::size_t m_count = 0;
+    std::size_t m_coarse = 0;
+    std::int32_t (*m_madeValue)(std::size_t) = nullptr;
+    ValueText (*m_madeText)(std::size_t) = nullptr;
+    mutable ValueText m_made;
 };
 
-/// Lists @p item's choices into @p out; false for an item whose choices
-/// come from the codeplug (the roaming zones), which the caller lists.
-bool listChoices(Item item, Choices &out);
+/// Lists @p item's choices into @p out, those that depend on the settings
+/// as in @p s; false for an item whose choices come from the codeplug (the
+/// roaming zones), which the caller lists.
+bool listChoices(Item item, Choices &out, const Settings &s = {});
 
 /// How a value screen shows its choices: up to four as large buttons, more
 /// as one large value with its place on a scale, or a list where they

@@ -11,6 +11,9 @@
 class SimFm
 {
 public:
+    // As the radio's transceiver tunes, so the menu offers the same steps.
+    static constexpr std::uint32_t TuningStepMilliHz = 62'500;
+
     bool present() { return true; }
     bool start()
     {
@@ -40,8 +43,8 @@ public:
     void keepLocked() {}
     void logStatus(std::string_view what) { dmm::services::log::info("sim") << what; }
     void setMicrophoneMuted(bool) {}
+    void setMicrophoneGain(int) {}
     void setGpsPower(bool) {}
-    void setMicrophoneLevel(unsigned) {}
     bool debugCommand(std::string_view) { return false; }
     const char *debugHelp() const { return "none"; }
 

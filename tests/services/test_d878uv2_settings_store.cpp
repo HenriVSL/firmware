@@ -452,6 +452,58 @@ TEST_CASE("preferences record: round trip, and none in an erased codeplug")
     CHECK(dmm::services::d878uv2::decodePreferences(e).has_value());
 }
 
+TEST_CASE("preferences record: the frequency offset round trip")
+{
+    for (const std::int16_t hz : {std::int16_t{0}, std::int16_t{1938}, std::int16_t{-1938}, std::int16_t{5000}, std::int16_t{-5000}}) {
+        RadioPreferences p;
+        p.frequencyOffsetHz = hz;
+        const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+        REQUIRE(q.has_value());
+        CHECK(q->frequencyOffsetHz == hz);
+    }
+}
+
+TEST_CASE("preferences record: the frequency offset's place, after the microphone gains")
+{
+    RadioPreferences p;
+    p.frequencyOffsetHz = -2000;
+    p.fmMicGainDb = 12;
+    p.home.big = dmm::services::HomeLayout::Big::Zone;
+    Record r = encoded(p);
+    CHECK(r[5] == 12);
+    CHECK(r[14] == 0xFF);
+    CHECK(r[15] == 12);
+    CHECK(r[16] == 0x30);
+    CHECK(r[17] == 0xF8);
+
+    // A record from before the offset keeps the fields before it.
+    r[5] = 10;
+    seal(r);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+    CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(12));
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
+
+    // Only the offset's first byte.
+    p.frequencyOffsetHz = 1000;
+    r = encoded(p);
+    r[5] = 11;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+
+    // An offset past 5 kHz.
+    r = encoded(p);
+    r[16] = 0x89;
+    r[17] = 0x13;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->frequencyOffsetHz == 0);
+}
+
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")
 {
     const RadioPreferences p{};
@@ -482,4 +534,143 @@ TEST_CASE("preferences record: a record from a later version with more field byt
     r[6] = 0x12;
     seal(r);
     CHECK(dmm::services::d878uv2::decodePreferences(r).has_value());
+}
+
+TEST_CASE("preferences record: the home screen layout round trip")
+{
+    using dmm::services::HomeLayout;
+    RadioPreferences p;
+    p.home.top = HomeLayout::Top::Number;
+    p.home.clock = false;
+    p.home.big = HomeLayout::Big::Zone;
+    p.home.middle = HomeLayout::Middle::Signal;
+    p.home.beside = HomeLayout::Beside::Volume;
+    p.home.bottom = HomeLayout::Bottom::Position;
+    const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+    REQUIRE(q.has_value());
+    CHECK(q->home == p.home);
+
+    p.home.beside = HomeLayout::Beside::None;
+    const auto none = dmm::services::d878uv2::decodePreferences(encoded(p));
+    REQUIRE(none.has_value());
+    CHECK(none->home.beside == HomeLayout::Beside::None);
+}
+
+TEST_CASE("preferences record: the menu's help text round trip, shown by default")
+{
+    RadioPreferences p;
+    CHECK(p.menuHelp);
+    p.menuHelp = false;
+    const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+    REQUIRE(q.has_value());
+    CHECK(!q->menuHelp);
+
+    // A record from before the field (the home screen's six bytes only)
+    // shows it.
+    Record r = encoded(p);
+    r[5] = 6;
+    seal(r);
+    const auto old = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(old.has_value());
+    CHECK(old->menuHelp);
+    CHECK(old->home == p.home);
+}
+
+TEST_CASE("preferences record: Up and Down's use round trip, zones by default")
+{
+    using dmm::services::HomeUpDown;
+    RadioPreferences p;
+    CHECK(p.upDown == HomeUpDown::Zone);
+    for (const HomeUpDown u : {HomeUpDown::Channel, HomeUpDown::Off, HomeUpDown::Zone}) {
+        p.upDown = u;
+        const auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+        REQUIRE(q.has_value());
+        CHECK(q->upDown == u);
+    }
+
+    // A record from before the field (up to the help text) and a value
+    // out of range give zones.
+    p.upDown = HomeUpDown::Off;
+    p.menuHelp = false;
+    Record r = encoded(p);
+    r[5] = 7;
+    seal(r);
+    auto old = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(old.has_value());
+    CHECK(old->upDown == HomeUpDown::Zone);
+    CHECK(!old->menuHelp);
+    r = encoded(p);
+    r[13] = static_cast<std::uint8_t>(HomeUpDown::Count);
+    seal(r);
+    old = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(old.has_value());
+    CHECK(old->upDown == HomeUpDown::Zone);
+}
+
+TEST_CASE("preferences record: a record without the home screen bytes gives the default layout")
+{
+    using dmm::services::HomeLayout;
+    RadioPreferences p;
+    p.home.big = HomeLayout::Big::Contact;
+    p.home.clock = false;
+    // A record from before the layout: no field bytes.
+    Record r = encoded(p);
+    r[5] = 0;
+    seal(r);
+    auto q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->home == HomeLayout{});
+
+    // Values out of range read as their defaults, one by one.
+    r = encoded(p);
+    r[6] = static_cast<std::uint8_t>(HomeLayout::Top::Count);
+    r[7] = 2;
+    r[8] = 0xFF;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->home.top == HomeLayout{}.top);
+    CHECK(q->home.clock == HomeLayout{}.clock);
+    CHECK(q->home.big == HomeLayout{}.big);
+    CHECK(q->home.middle == p.home.middle);
+}
+
+TEST_CASE("preferences record: the microphone gains, or none to follow the codeplug")
+{
+    RadioPreferences p;
+    auto q = dmm::services::d878uv2::decodePreferences(encoded(p));
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->dmrMicGainDb.has_value());
+    CHECK_FALSE(q->fmMicGainDb.has_value());
+
+    p.dmrMicGainDb = 0;
+    p.fmMicGainDb = 24;
+    Record r = encoded(p);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK(q->dmrMicGainDb == std::optional<std::uint8_t>(0));
+    CHECK(q->fmMicGainDb == std::optional<std::uint8_t>(24));
+
+    // A record from before the fields: the codeplug's levels, the fields
+    // before them kept.
+    p.home.big = dmm::services::HomeLayout::Big::Zone;
+    r = encoded(p);
+    r[5] = 8;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->dmrMicGainDb.has_value());
+    CHECK_FALSE(q->fmMicGainDb.has_value());
+    CHECK(q->home.big == dmm::services::HomeLayout::Big::Zone);
+
+    // Out of range: beyond each one's top.
+    p.dmrMicGainDb = 30;
+    r = encoded(p);
+    r[6 + 8] = 31;
+    r[6 + 9] = 25;
+    seal(r);
+    q = dmm::services::d878uv2::decodePreferences(r);
+    REQUIRE(q.has_value());
+    CHECK_FALSE(q->dmrMicGainDb.has_value());
+    CHECK_FALSE(q->fmMicGainDb.has_value());
 }

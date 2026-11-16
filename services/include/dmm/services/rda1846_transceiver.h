@@ -73,6 +73,8 @@ public:
     Rda1846Transceiver(drivers::radio::Rda1846 &chip, RfHardware &rf, const Pins &pins, void (*sleepMs)(unsigned),
         TrimsSource trims, TuningSource tuning = nullptr);
 
+    static constexpr std::uint32_t TuningStepMilliHz = drivers::radio::Rda1846::FrequencyStepMilliHz;
+
     bool present() { return m_chip.present(); }
     bool start();
     const char *receive(const FmChannel &channel, int squelchLevel);
@@ -93,9 +95,12 @@ public:
     void logStatus(std::string_view what);
     /// Also logs the chip's pin register, as a debug line.
     void setMicrophoneMuted(bool muted);
+    /// Takes the tuning's microphone level nearest @p db and makes up the
+    /// rest with the voice gain; without levels in the tuning, StandardDb
+    /// is the tuning's own gain.
+    void setMicrophoneGain(int db);
     /// Also logs the chip's pin register, as a debug line.
     void setGpsPower(bool on);
-    void setMicrophoneLevel(unsigned level) { m_chip.setMicrophoneLevel(level); }
     /// "<reg> [value]" (hex), "tune <value>|auto", "sweep".
     bool debugCommand(std::string_view command);
     const char *debugHelp() const;

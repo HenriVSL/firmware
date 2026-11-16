@@ -12,6 +12,7 @@ add_library(dmm_services STATIC
     src/d878uv2_storage.cpp
     src/data_link.cpp
     src/dmr.cpp
+    src/frequency_offset.cpp
     src/input.cpp
     src/key_lock.cpp
     src/log.cpp
@@ -19,6 +20,7 @@ add_library(dmm_services STATIC
     src/casic_receiver.cpp
     src/clock.cpp
     src/gps_schedule.cpp
+    src/home_screen.cpp
     src/power.cpp
     src/roaming.cpp
     src/audio.cpp
