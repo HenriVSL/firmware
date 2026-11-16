@@ -17,6 +17,9 @@ if(NOT TARGET dmm_os)
 endif()
 
 add_library(dmm_services STATIC
+    src/afsk.cpp
+    src/aprs.cpp
+    src/ax25.cpp
     src/battery.cpp
     src/channel_selector.cpp
     src/d878uv2_calibration.cpp
@@ -24,6 +27,7 @@ add_library(dmm_services STATIC
     src/d878uv2_plug_editor.cpp
     src/d878uv2_preferences.cpp
     src/d878uv2_settings_store.cpp
+    src/d878uv2_link_board.cpp
     src/d878uv2_programming.cpp
     src/d878uv2_storage.cpp
     src/data_link.cpp
