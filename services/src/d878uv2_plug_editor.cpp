@@ -6,6 +6,7 @@
 #include "d878uv2_layout.h"
 
 #include "dmm/lib/format.h"
+#include "dmm/lib/strings.h"
 #include "dmm/services/log.h"
 
 #include <algorithm>
@@ -1165,7 +1166,7 @@ bool hexWord(std::string_view &text, std::uint32_t &value)
 bool D878Uv2PlugEditor::debugCommand(std::string_view text)
 {
     std::uint32_t address = 0;
-    if (text.starts_with("peek ")) {
+    if (lib::startsWith(text, "peek ")) {
         text.remove_prefix(5);
         std::uint32_t count = 16;
         if (!hexWord(text, address) || (!text.empty() && !hexWord(text, count)) || count == 0 || count > 0x100) {
@@ -1187,7 +1188,7 @@ bool D878Uv2PlugEditor::debugCommand(std::string_view text)
         }
         return true;
     }
-    if (text.starts_with("poke ")) {
+    if (lib::startsWith(text, "poke ")) {
         text.remove_prefix(5);
         std::uint8_t bytes[32];
         std::size_t n = 0;
