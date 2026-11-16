@@ -55,7 +55,8 @@ TOP = ['Channel', 'Roaming', 'GPS', 'Display', 'Settings', 'Tools']
 # after GPS, and has more rows in Tools.
 SHOWN = r'^Channel\n>\nRoaming\n>\nGPS\n>\n(APRS\n>\n)?Display\n>'
 TOOLS_ABOUT = ['The log and the version', 'The log, the key test and the version',
-               'Activity, the log, the key test and the version', 'Codeplug, activity, the log, key test and version']
+               'Activity, the log, the key test and the version', 'Codeplug, activity, the log, key test and version',
+               'Activity, the log and the version', 'Codeplug, activity, the log and the version']
 
 
 def learn_top(ctx):
