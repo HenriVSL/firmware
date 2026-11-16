@@ -265,6 +265,11 @@ bool carrier();
 /// channel's own frequency. Off from start; any task may switch it.
 void setLevelLog(bool on);
 
+/// The receive frequency of the analog FM channel the radio listens on
+/// (without the frequency offset); 0 while it transmits, works on a DMR
+/// channel or does not receive. Any task may ask.
+std::uint32_t analogListeningHz();
+
 /// True once the radio's chips are up and it takes commands that reach the
 /// air; false while they start or restart. Any task may ask.
 bool ready();

@@ -41,6 +41,30 @@ struct Receive
     bool on;
 };
 
+/// Decoding the received audio on the MCU, while receiving is on and the
+/// radio listens on the APRS frequency (On, the default) or on any analog
+/// channel (AnyChannel, for tests).
+enum class McuMode : std::uint8_t
+{
+    Off,
+    On,
+    AnyChannel,
+};
+struct McuReceive
+{
+    McuMode mode;
+};
+/// The MCU decoder repairs frames with one wrong bit or tone (off at
+/// start).
+struct RepairFrames
+{
+    bool on;
+};
+/// Logs the receive state and counts.
+struct ReceiveReport
+{
+};
+
 /// Bytes for the board, from the console; it must be receiving.
 struct BoardCommand
 {
@@ -48,7 +72,7 @@ struct BoardCommand
     std::uint8_t length;
 };
 
-using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand>;
+using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, McuReceive, RepairFrames, ReceiveReport>;
 
 /// A station heard, as the Heard list shows it.
 struct HeardStation
@@ -77,9 +101,15 @@ struct HeardStation
 };
 inline constexpr std::size_t MaxHeard = 16;
 
-/// Starts the aprs task, which owns @p link (nullptr on a board without
-/// one). Beacons wait for a Station message, receiving for Receive.
-void start(board::AprsLink *link);
+/// Starts the aprs task, which owns @p link and uses @p sampler to decode
+/// received audio on the MCU (each nullptr on a board without one).
+/// Beacons wait for a Station message, receiving for Receive.
+void start(board::AprsLink *link, board::AudioSampler *sampler);
+
+/// Lends the audio sampler to another user, the audio probe, or takes it
+/// back: decoding on the MCU pauses meanwhile. Waits until the decoder has
+/// let go of it; false if it did not in time. Any task but the aprs task.
+bool lendSampler(bool lent);
 
 /// How many stations the heard list holds, newest first. Any task.
 std::size_t heardCount();
