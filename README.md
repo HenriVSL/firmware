@@ -202,11 +202,11 @@ time, help text). Settings holds the setup in groups: Home screen (a
 preset, or what each row shows, and what Up and Down do), Audio (DMR
 and FM microphone gain), Radio (frequency offset), Keys (what the lock
 covers, auto lock), Battery (battery save) and Clock (time zone).
-Tools opens the log and shows the version; debug builds also have the
-key test there (built in any build with `-DDMM_KEY_TEST=ON`). The panel
-under the list says what the chosen row does (Display > Help text Off
-hides it). Menu opens a group or a row's value screen, and a digit from
-1 to 9 opens the row at that place.
+Tools opens the activity pages and the log and shows the version; debug
+builds also have the key test there (built in any build with
+`-DDMM_KEY_TEST=ON`). The panel under the list says what the chosen row
+does (Display > Help text Off hides it). Menu opens a group or a row's
+value screen, and a digit from 1 to 9 opens the row at that place.
 On a value screen the squelch, squelch type, brightness and time zone
 take effect as soon as they are chosen; Menu keeps the value, Exit puts
 back the one in use before. Exit goes back one level, onto the row it
