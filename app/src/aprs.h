@@ -4,6 +4,7 @@
 #pragma once
 
 #include "dmm/board/parts.h"
+#include "dmm/services/aprs_home.h"
 #include "dmm/services/codeplug.h"
 
 #include <array>
@@ -41,9 +42,17 @@ struct Receive
     bool on;
 };
 
-/// Decoding the received audio on the MCU, while receiving is on and the
-/// radio listens on the APRS frequency (On, the default) or on any analog
-/// channel (AnyChannel, for tests).
+/// APRS mode is on (or off) and holds the receiver at @c hz: the MCU
+/// decodes the audio while the radio listens there.
+struct ModeOn
+{
+    bool on;
+    std::uint32_t hz;
+};
+
+/// Decoding the received audio on the MCU: in APRS mode (On, the default),
+/// never (Off), or on any analog channel, in the mode or not (AnyChannel,
+/// for tests).
 enum class McuMode : std::uint8_t
 {
     Off,
@@ -65,14 +74,13 @@ struct ReceiveReport
 {
 };
 
-/// Bytes for the board, from the console; it must be receiving.
+/// Bytes for the board, which the console left in the aprs task's buffer
+/// (runCommand); it must be receiving.
 struct BoardCommand
 {
-    std::array<std::uint8_t, board::AprsLinkReader::MaxCommand> bytes;
-    std::uint8_t length;
 };
 
-using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, McuReceive, RepairFrames, ReceiveReport>;
+using Message = std::variant<BeaconInterval, BeaconPower, BeaconNow, Report, Receive, BoardCommand, ModeOn, McuReceive, RepairFrames, ReceiveReport>;
 
 /// A station heard, as the Heard list shows it.
 struct HeardStation
@@ -118,6 +126,18 @@ std::size_t heardCount();
 bool heardStation(std::size_t index, HeardStation &out);
 bool heardStation(std::string_view call, HeardStation &out);
 
+/// What the APRS mode's home screen shows of receiving: the MCU decodes
+/// now, and the packets that reached the heard list. Any task.
+struct ReceiveView
+{
+    bool decoding = false;
+    std::uint32_t packets = 0;
+};
+ReceiveView receiveView();
+
+/// Our beacon's state. Any task.
+services::aprs::BeaconStatus beaconStatus();
+
 /// Queues a message for the aprs task; false when the queue is full.
 bool post(const Message &message);
 
@@ -128,6 +148,8 @@ void setStation(const services::AprsSettings &settings);
 
 /// The console's APRS commands, for its help.
 const char *consoleHelp();
+/// The console's APRS receive commands, for its help.
+const char *receiveHelp();
 
 /// Runs an "aprs ..." console command; false if @p command is not one.
 bool runCommand(std::string_view command);

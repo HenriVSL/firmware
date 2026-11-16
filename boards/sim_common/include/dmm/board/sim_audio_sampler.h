@@ -48,7 +48,7 @@ public:
         const auto elapsedUs = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - m_start).count();
         const auto due = static_cast<std::uint64_t>(elapsedUs) * m_rateHz / 1'000'000;
         // A radio keeps this many; older ones are gone.
-        constexpr std::uint64_t Kept = 2048;
+        constexpr std::uint64_t Kept = 4096;
         if (due - m_made > Kept) {
             const std::uint64_t skipped = due - m_made - Kept;
             for (std::uint64_t i = 0; i < skipped; ++i) {

@@ -1,11 +1,11 @@
 # APRS receive on the MCU
 
 The MCU decodes APRS itself from the received audio (PC0, ADC channel
-10, sampled at 9600 Hz), next to the BT+APRS board. It runs while
-receiving is on (Menu, APRS, Receive: On) and the radio listens on the
-codeplug's APRS frequency on an analog channel; it starts a second after
-the radio settles there and stops at once during a transmission or on
-another channel. The demodulator has seven slicers that favour the 1200
+10, sampled at 9600 Hz), next to the BT+APRS board. It runs only in APRS
+mode (Menu, APRS, APRS mode: On; `docs/dedicated-modes.md`,
+`docs/hw-tests/aprs-mode.md`), which holds the receiver on the codeplug's
+APRS frequency; it starts a second after the radio settles there and
+stops at once during a transmission. The demodulator has seven slicers that favour the 1200
 or 2200 Hz tone by -6 to +9 dB, each with its own bit clock; a frame with
 a right check from any of them is passed on once.
 
@@ -21,13 +21,24 @@ second copy of a frame within 3 s is dropped. Log lines:
 
 Console:
 
-- `aprs rx`: receive state, frames from the board and the MCU and how
-  many both heard, the board frames failing the check, the MCU's frames,
-  repairs, copies between slicers, seconds of audio and lost samples, and
-  per slicer `<dB> <right>/<failed>`.
-- `aprs rx mcu on|off|any`: MCU decoding on the APRS frequency (default),
-  off, or on any analog channel (for a test on another frequency). Not
-  kept over a restart.
+- `aprs rx`, five lines:
+  - `APRS mode on; board receive on; MCU decoding in APRS mode, running,
+    repair off`: the mode, the board, the MCU decoder's setting
+    (`aprs rx mcu`), whether it decodes now, and repairs.
+  - `frames: board <n> (<n> failed the check), MCU <n> (<n> repaired),
+    heard by both <n>`: frames with a right check from each source; a
+    frame both heard counts once for each source and once in `heard by
+    both`.
+  - `MCU: <s> s of audio, <n> samples lost, <n> copies between slicers`.
+  - `reads: longest gap <ms> ms (at <s> s), longest decoding pass <ms> ms`.
+  - `slicers (dB right/failed): -6 <right>/<failed> ...`: per slicer, the
+    frames it read with a right check (copies included) and those of a
+    possible length whose check failed.
+- `aprs: <n> samples lost: no read for <ms> ms` whenever the sampler's
+  ring (0.4 s) overflowed; the time stamp shows what else happened then.
+- `aprs rx mcu on|off|any`: MCU decoding in APRS mode (default), off, or
+  on any analog channel, in the mode or not (for a test on another
+  frequency). Not kept over a restart.
 - `aprs rx repair on|off`: also accept a frame that one wrong bit or one
   wrong tone explains (off by default; it can let a wrong frame through
   now and then).
@@ -40,8 +51,9 @@ noise clips at 0 mV on the ADC; that gives failed frames in `aprs rx`
 ## Before you start
 
 - The log port open in a terminal that logs to a file.
-- The codeplug's APRS frequency set (`aprs` shows it), Menu, APRS,
-  Receive: On, beacons off (Menu, APRS, Beacon: Off) for the comparison.
+- The codeplug's APRS frequency set (`aprs` shows it), Menu, Settings,
+  APRS, Receive: On, beacons off (Menu, APRS, Auto send: Off) for the
+  comparison.
 - A second APRS radio with a display of heard stations, side by side on
   the APRS frequency, both with their usual antennas.
 - `afsk-decode` built on the PC (`cmake --build --preset host`; it is
@@ -54,16 +66,28 @@ the repository; report counts only.
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | Select a channel on the APRS frequency (or `fm rxw <APRS frequency in kHz>`) | After about a second `aprs: MCU decoding on at ...` |
-| 2 | `aprs rx` | `receive on; MCU decoding on the APRS frequency, running, repair off`; seconds of audio growing between two calls; lost samples 0 |
+| 1 | `aprs mode on` | `radio: receiver held at ...`, after about a second `aprs: MCU decoding on at ...` |
+| 2 | `aprs rx` | `APRS mode on; board receive on; MCU decoding in APRS mode, running, repair off`; seconds of audio growing between two calls; lost samples 0 |
 | 3 | The second radio sends a beacon, strong | `aprs: heard (MCU) ...` or `aprs: heard ...` followed by `same frame from the ...`; the station once in Menu, APRS, Heard |
 | 4 | `aprs send` (beacon from this radio, on the APRS frequency) | `aprs: MCU decoding off` before the transmission, `MCU decoding on` again about a second after it |
-| 5 | Switch to a channel on another frequency, then a DMR channel | `MCU decoding off`, and no `on` while there |
-| 6 | `aprs rx mcu any` on an analog channel elsewhere, then `aprs rx mcu off`, then `aprs rx mcu on` | Decoding on there; off; off again until back on the APRS frequency |
+| 5 | `aprs mode off`, then select a channel on the APRS frequency | `MCU decoding off`, and no `on` while the mode is off, on any channel |
+| 6 | `aprs rx mcu any` on an analog channel elsewhere, then `aprs rx mcu off`, then `aprs rx mcu on` | Decoding on there; off; off again until `aprs mode on` |
 | 7 | `audio probe 2000` while decoding | The probe runs as before (`lost 0`); decoding goes on after it (seconds of audio keep growing) |
 | 8 | An hour side by side on real traffic, then `aprs rx` | Count the distinct stations each decoded: the second radio's list, `heard (MCU)` lines (MCU only or first), `heard` lines without the mark plus `same frame from the board` lines (board), `same frame from the MCU` lines (board first, MCU too). Note the counts, the per-slicer counts and the board's failed frames. Pass: the MCU decodes at least the stations the board does, and close to the second radio |
 | 9 | Optionally `aprs rx repair on` for a second hour | Note `repaired` counts and check the repaired packets read sensibly |
 | 10 | The uptime line (`system: uptime ...`) after the hour | The aprs task's unused stack words about 200, at least 100 |
+
+## Human steps
+
+Steps 1, 2, 5, 6, 7 and 10 run from the console alone. These need a
+person:
+
+- A second APRS radio beside this one: step 3 (it sends a beacon), step 8
+  (an hour of real traffic, comparing its heard list) and the missed
+  packet below.
+- Transmitting on the APRS frequency: step 4, with a person at the radio
+  who has said transmitting is fine now.
+- Reading the repaired packets: step 9.
 
 ## A missed packet, offline
 
