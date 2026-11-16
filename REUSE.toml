@@ -58,7 +58,7 @@ SPDX-License-Identifier = "MIT"
 
 # Docs added with the menu.
 [[annotations]]
-path = ["docs/hw-tests/menu.md", "docs/hw-tests/home-screen.md"]
+path = ["docs/hw-tests/menu.md", "docs/hw-tests/home-screen.md", "docs/hw-tests/activity.md"]
 SPDX-FileCopyrightText = "2026 Henri Lavikainen"
 SPDX-License-Identifier = "MIT"
 

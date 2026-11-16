@@ -57,7 +57,10 @@ a frequency on the keypad.
 rows that the menu sets (talkgroup or zone, the time, the channel or
 contact large, frequency or a signal meter, power with the voltage or
 volume, and details, the last caller or the GPS position), and a
-short grouped settings menu. Settings changed on the radio are kept in
+short grouped settings menu. A transmit screen while the user's own
+call or FM transmission is on the air, and activity pages (Menu > Tools >
+Activity): calls heard and made, roaming moves and GPS fixes
+(`docs/hw-tests/activity.md`). Settings changed on the radio are kept in
 the codeplug (`docs/settings-storage.md`). Key lock covers the keypad,
 side keys and knob, with auto lock and forced lock.
 
@@ -199,11 +202,11 @@ time, help text). Settings holds the setup in groups: Home screen (a
 preset, or what each row shows, and what Up and Down do), Audio (DMR
 and FM microphone gain), Radio (frequency offset), Keys (what the lock
 covers, auto lock), Battery (battery save) and Clock (time zone).
-Tools opens the log and shows the version; debug builds also have the
-key test there (built in any build with `-DDMM_KEY_TEST=ON`). The panel
-under the list says what the chosen row does (Display > Help text Off
-hides it). Menu opens a group or a row's value screen, and a digit from
-1 to 9 opens the row at that place.
+Tools opens the activity pages and the log and shows the version; debug
+builds also have the key test there (built in any build with
+`-DDMM_KEY_TEST=ON`). The panel under the list says what the chosen row
+does (Display > Help text Off hides it). Menu opens a group or a row's
+value screen, and a digit from 1 to 9 opens the row at that place.
 On a value screen the squelch, squelch type, brightness and time zone
 take effect as soon as they are chosen; Menu keeps the value, Exit puts
 back the one in use before. Exit goes back one level, onto the row it
