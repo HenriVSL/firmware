@@ -470,7 +470,7 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     p.fmMicGainDb = 12;
     p.home.big = dmm::services::HomeLayout::Big::Zone;
     Record r = encoded(p);
-    CHECK(r[5] == 12);
+    CHECK(r[5] == 80);
     CHECK(r[14] == 0xFF);
     CHECK(r[15] == 12);
     CHECK(r[16] == 0x30);
@@ -502,6 +502,21 @@ TEST_CASE("preferences record: the frequency offset's place, after the microphon
     q = dmm::services::d878uv2::decodePreferences(r);
     REQUIRE(q.has_value());
     CHECK(q->frequencyOffsetHz == RadioPreferences{}.frequencyOffsetHz);
+}
+
+TEST_CASE("preferences record: the fork's area follows the shared fields, unused bytes erased")
+{
+    RadioPreferences p;
+    const Record r = encoded(p);
+    CHECK(r[5] == 80);
+    for (std::size_t i = 6 + 12; i < 6 + 80; ++i) {
+        CHECK(r[i] == 0xFF);
+    }
+    // A record with only the shared fields still reads.
+    Record shared = r;
+    shared[5] = 12;
+    seal(shared);
+    CHECK(dmm::services::d878uv2::decodePreferences(shared).has_value());
 }
 
 TEST_CASE("preferences record: a damaged record, or another mark or version, counts as none")
