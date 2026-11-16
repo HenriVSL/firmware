@@ -4,7 +4,7 @@
 import re
 import time
 
-from radiotest.radio import Failed
+from radiotest.radio import Failed, split_path
 
 
 def panel(text):
@@ -280,3 +280,30 @@ def top_line(pattern):
         ok = not top if pattern is None else any(re.search(pattern, t) for t in top)
         return ok, 'top line %s (want %s)' % (top, 'none' if pattern is None else '/%s/' % pattern)
     return expectation
+
+
+
+def digits(*labels):
+    """In the list on the screen, opens the rows named @p labels one after
+    another with their number keys. Each number is found by the row's
+    name, so a menu with more rows keeps the same checks; the cursor is
+    moved off the row before its key is pressed."""
+    def act(ctx):
+        r = ctx.radio
+        for label in labels:
+            w = r.choose(label)
+            if not w.place:
+                raise Failed('no place shown for %r: %s' % (label, w.summary()))
+            r.key('Up')
+            r.key(w.place.split('/')[0])
+    return act
+
+
+def menu_digits(path):
+    """From standby, Menu and then the rows of @p path ("Display/Help
+    text") by their number keys, as digits() finds them."""
+    def act(ctx):
+        ctx.radio.home()
+        ctx.radio.key('Menu')
+        digits(*split_path(path))(ctx)
+    return act

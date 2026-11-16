@@ -12,8 +12,8 @@ defaults are the simulator's sample codeplug:
 
   --param fm="Zone/Name" --param roam="Zone/Name"
 """
-from _helpers import (channel, log_is, now, panel, press_while_watching, remember, restore, rows_count, set_to,
-                      settings_has, standby, value_is)
+from _helpers import (channel, digits, log_is, menu_digits, now, panel, press_while_watching, remember, restore,
+                      rows_count, set_to, settings_has, standby, value_is)
 from radiotest.runner import Step
 
 TITLE = 'Menu: groups by use, large value screens, values kept'
@@ -240,7 +240,7 @@ STEPS = [
         r'check screen ^\d+\.\d+\.\d+\S*\nup \d+ min$', 'check hint ^Exit: back$', 'key Menu'], expect=[
         'title ^Menu > Tools$', 'row ^Version']),
     Step(18, '1 opens the log; held Exit: the key test in a debug build, then standby', do=[
-        'at Tools/Version', 'key 1', 'check screen console: >', key_test_or_standby], expect=[standby]),
+        'at Tools/Version', digits('Log'), 'check screen console: >', key_test_or_standby], expect=[standby]),
     Step(19, 'P2 opens Channel; Exit goes straight back', do=['home', 'key P2', 'check title ^Menu > Channel$',
                                                               'key Exit'], expect=[standby]),
     Step(20, 'P2 on the row last chosen; squelch one lower, back to standby', changes=True, timeout=8, do=[
@@ -290,7 +290,8 @@ STEPS = [
              'title ^Roaming$', r'noscreen ^\d+[ *]\d{3}\.\d+', r'screen ^In use\n(Excellent|Good|Fair|Weak|Poor|Quiet|Lost|Search)$'],
          human='Look at the roaming status: the repeaters by name, a green pointer left of the one in use.'),
     Step(33, 'Help text Off: lists without the panel; On again', changes=True, timeout=8, do=[
-        'home', 'keys Menu 4 3', 'set Off', 'check row ^Help text Off$', 'check noscreen ' + panel('These two lines'),
-        'shot no-help', 'keys Exit 6 Up', r'check row ^Version \d+\.\d+', 'keys Exit 4 3', 'set On', 'home'], expect=[
+        menu_digits('Display/Help text'), 'set Off', 'check row ^Help text Off$',
+        'check noscreen ' + panel('These two lines'), 'shot no-help', 'key Exit', digits('Tools'), 'choose Version',
+        r'check row ^Version \d+\.\d+', 'key Exit', digits('Display', 'Help text'), 'set On', 'home'], expect=[
         r'log \bui: menu help hidden', r'log \bui: menu help shown', r'log@8 \bsettings kept in the codeplug']),
 ]
